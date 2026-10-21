@@ -29,6 +29,7 @@ import { requestDevice } from '../umgeni/src/gpu/runtime.js';
 // @ts-expect-error generated at build time, plain JS
 import { compileMs, makeRegistry, rasterize2IR } from './gen/pipeline.gen.js';
 import { quoteNile } from './src/quote.js';
+import { frameScheduler } from './src/schedule.js';
 import textNl from './nl/text.nl';
 import spansNl from './nl/spans.nl';
 import rasterizeNl from '../gezira/rasterize.nl';
@@ -200,7 +201,7 @@ async function render(): Promise<void> {
     `${spans.toLocaleString()} spans · ${(performance.now() - t0).toFixed(1)} ms`;
 }
 
-const rerender = () => void render();
+const rerender = frameScheduler(render);
 textEl.addEventListener('input', rerender);
 sizeEl.addEventListener('input', rerender);
 modeEl.addEventListener('change', rerender);

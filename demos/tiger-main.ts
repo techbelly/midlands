@@ -13,6 +13,7 @@ import { makeVectorRegistry } from './gen/vector.gen.js';
 import { rasterize2IR } from './gen/pipeline.gen.js';
 import svgSrc from './tiger.svg';
 import { quoteNile } from './src/quote.js';
+import { frameScheduler } from './src/schedule.js';
 import svgNl from './nl/svg.nl';
 import vectorNl from './nl/vector.nl';
 import spansNl from './nl/spans.nl';
@@ -37,6 +38,7 @@ const base = Math.min(canvas.width, canvas.height) / 900;
 interface GpuState {
   gpu: TigerGpu;
   context: GPUCanvasContext;
+  device: GPUDevice;
 }
 let gpuState: GpuState | 'unavailable' | null = null;
 
@@ -53,7 +55,7 @@ async function ensureGpu(): Promise<GpuState | null> {
   context.configure({ device, format, alphaMode: 'opaque' });
   const size = { width: canvasGpu.width, height: canvasGpu.height };
   const shaders = lowerFusedPipeline(rasterize2IR, size);
-  gpuState = { gpu: createTigerGpu(device, shaders, { ...size, format }), context };
+  gpuState = { gpu: createTigerGpu(device, shaders, { ...size, format }), context, device };
   return gpuState;
 }
 
@@ -87,9 +89,15 @@ async function draw(): Promise<void> {
     t0 = performance.now();
     state.gpu.frame(batches, state.context.getCurrentTexture().createView());
     const submitMs = performance.now() - t0;
+    // The GPU runs after submit; wait for it, so the next frame starts on a
+    // free GPU and the figures add up to what a frame really takes.
+    t0 = performance.now();
+    await state.device.queue.onSubmittedWorkDone();
+    const gpuMs = performance.now() - t0;
     statsEl.textContent =
       `${tiger.paths.length} paths · ${segs.toLocaleString()} cubics · ${z.toFixed(1)}× · ` +
-      `front (CPU Nile) ${frontMs.toFixed(0)} ms · submit ${submitMs.toFixed(0)} ms · fences: 0`;
+      `front (CPU Nile) ${frontMs.toFixed(0)} ms + submit ${submitMs.toFixed(0)} ms + GPU ${gpuMs.toFixed(0)} ms ` +
+      `= ${(frontMs + submitMs + gpuMs).toFixed(0)} ms a frame`;
     return;
   }
 
@@ -103,12 +111,7 @@ async function draw(): Promise<void> {
     `${(performance.now() - t0).toFixed(0)} ms (CPU, fused pipelines + bucketed sort)`;
 }
 
-let timer = 0;
-function scheduleDraw(): void {
-  statsEl.textContent = 'rendering…';
-  clearTimeout(timer);
-  timer = window.setTimeout(draw, 30);
-}
+const scheduleDraw = frameScheduler(draw);
 
 // View controls, attached to BOTH canvases (only one is visible at a time;
 // the GPU canvas needs its own listeners too). Double-click cycles the zoom
@@ -160,6 +163,6 @@ function addViewControls(el: HTMLCanvasElement): void {
 addViewControls(canvas);
 addViewControls(canvasGpu);
 
-modeEl.addEventListener('change', () => void draw());
+modeEl.addEventListener('change', scheduleDraw);
 statsEl.textContent = 'rendering…';
-requestAnimationFrame(() => requestAnimationFrame(() => void draw()));
+scheduleDraw();
