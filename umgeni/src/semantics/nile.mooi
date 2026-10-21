@@ -1,0 +1,112 @@
+-- The semantics of Nile kernels, as equations.
+--
+-- Run on numbers this is an interpreter; run on symbolic scalars it is the
+-- compiler's front end (its residue is the scalar IR). The primitives come
+-- from the host: D (the domain: num, bin, un, select, let, cell, branch,
+-- emit, feed, state, forward), P (the program: types, operators, process
+-- parameters), prim (a builtin operator on scalars), the value algebra
+-- (lift, fit, leaves, tree, tuple, part, destructure, shapeOf, width) and a
+-- small prelude (lists, environments).
+
+-- Expressions denote values: trees with scalars at the leaves.
+expr num{value} ρ                 = scalar (D.num value)
+expr var{name} ρ                  = lookup ρ name
+expr binOp{op, left, right} ρ     = apply op [expr left ρ, expr right ρ]
+expr unOp{op, operand} ρ          = apply op [expr operand ρ]
+expr cond{cases, otherwise} ρ     = foldr (guard ρ) (expr otherwise ρ) cases
+expr tuple{elements} ρ            = tuple (map (\e -> expr e ρ) elements)
+expr field{object, field} ρ       = part (expr object ρ) field
+expr typed{expr: e, type: t} ρ    = must (fit (expr e ρ) (P.type t)) "cannot ascribe this value to its type"
+
+-- { a if c, rest } is select(c, a, rest), lifted like any operator.
+guard ρ arm rest = lift [R, R, R] (\[c, a, b] -> scalar (D.select (s c) (s a) (s b))) [expr arm.cond ρ, expr arm.value ρ, rest]
+
+-- An operator: a builtin on scalars, or a user operator's body with the
+-- arguments bound — lifted over records either way.
+apply op args | builtin op = lift (map (\_ -> R) args) (\xs -> scalar (prim op (map s xs))) args
+apply op args              = let d = must (P.op op) ("unknown operator " ++ op)
+                             in lift (map (\p -> p.shape) d.params) (\xs -> expr d.body (bindAll empty (map (\p -> p.name) d.params) xs)) args
+
+-- Statements are effects; each returns the environment that follows it.
+exec io decl{name, type: t, value} ρ = bind ρ name (share name (ascribe (expr value ρ) t))
+exec io patAssign{pattern, value} ρ  = foldl (assignOrBind) ρ (destructure pattern (share "#pat" (expr value ρ)))
+exec io assign{name, value} ρ        = assignTo ρ (name ++ "'") (expr value ρ)
+exec io out{exprs} ρ                 = each (\e -> D.emit (leaves (must (fit (expr e ρ) io.output) "a '>>' value does not fit the output type"))) exprs; ρ
+exec io in{exprs} ρ | io.flush       = fail "`<<` is not allowed in a flush body"
+exec io in{exprs} ρ                  = each (\e -> D.feed (leaves (must (fit (expr e ρ) io.input) "a '<<' value does not fit the input type"))) exprs; ρ
+exec io if{cond: c, then: t, else: f} ρ = D.branch (scalarOf (expr c ρ)) (\_ -> execs io t ρ) (\_ -> execs io (f ?? []) ρ); ρ
+exec io forward{pipeline} ρ          = D.forward (map (stage ρ) pipeline); ρ
+
+execs io stmts ρ = foldl (\ρ st -> exec io st ρ) ρ stmts
+
+assignOrBind ρ [n, v] | primed n = assignTo ρ n v
+assignOrBind ρ [n, v]            = bind ρ n v
+
+-- A stage of a mid-stream ⇒: its process and its arguments, fitted.
+stage ρ identityPipeline{} = null
+stage ρ kernelRef{name}    = {name: name, args: []}
+stage ρ kernelApp{name, args} =
+  let shapes = must (P.params name) ("⇒ names unknown process " ++ name)
+  in {name: name, args: concat (zipWith (\a sh -> leaves (must (fit (expr a ρ) sh) "an argument does not fit its parameter")) args shapes)}
+
+ascribe v null = v
+ascribe v t    = must (fit v (P.type t)) "a value does not fit its declared type"
+
+-- A value computed once, under a name: each leaf let-bound.
+share n v = let ls = leaves v in tree (shapeOf v) (mapi (\x i -> D.let (leafName n i (length ls)) x) ls)
+leafName n i 1 = n
+leafName n i k = n ++ "#" ++ str i
+
+-- x' = v writes the cells standing for x'.
+assignTo ρ n v = let c = must (cellsOf ρ n) ("'" ++ n ++ " =' must update a state binding declared before ∀")
+                 in eachi (\x i -> (at c.cells i).set x) (leaves (must (fit v c.shape) "a value does not fit the state it updates")); ρ
+
+-- A kernel: state declared by its prologue, a step per token, a flush.
+kernel k params names sig =
+  let layout = stateLayout k params names
+  in { initial: concat (map (\l -> l.initial) layout)
+     , init:    \_ -> execs sig (filter (\st -> not (isDecl st)) k.prologue) (phase params names layout)
+     , step:    \input -> step k sig (phase params names layout) layout input
+     , flush:   \_ -> execs (with sig "flush" true) k.epilogue (phase params names layout) }
+
+-- Prologue declarations, in order: each a state variable with its slots.
+stateLayout k params names = scanState (bindAll empty names params) 0 (filter isDecl k.prologue)
+scanState ρ base []             = []
+scanState ρ base [st, ...rest]  =
+  let vars = declared st (ascribe (expr st.value ρ) (st.type ?? null))
+  in layoutOf vars base ++ scanState (foldl (\ρ [n, v] -> bind ρ n v) ρ vars) (base + sumWidths vars) rest
+declared decl{name} v           = [[name, v]]
+declared patAssign{pattern} v   = destructure pattern v
+layoutOf [] base                = []
+layoutOf [[n, v], ...rest] base = [{name: n, shape: shapeOf v, base: base, initial: leaves v}] ++ layoutOf rest (base + width (shapeOf v))
+sumWidths vars = sum (map (\[n, v] -> width (shapeOf v)) vars)
+
+-- Each phase sees the params and the *current* state.
+phase params names layout = foldl (\ρ l -> bind ρ l.name (tree l.shape (map (\i -> (D.state (l.base + i)).get unit) (range (width l.shape))))) (bindAll empty names params) layout
+
+-- One token. Primed state: x' is a cell starting from the pattern's x' or
+-- from x, written back to x after the body.
+step k sig ρ layout input | length k.forAlls == 0 = if width sig.input == width sig.output then D.emit (leaves input) else unit
+step k sig ρ layout input =
+  let fa     = head k.forAlls,
+      ρ1     = foldl (\ρ [n, v] -> bind ρ n v) ρ (destructure fa.pattern input),
+      ps     = primedNames fa.body,
+      backs  = filter (\b -> b != null) (map (writeBack ρ1 ps) layout),
+      ρ2     = foldl (\ρ b -> if b.fresh then bindCells ρ b.primed b.cells b.slot.shape else ρ) ρ1 backs
+  in execs sig fa.body ρ2; each (\b -> eachi (\c i -> (D.state (b.slot.base + i)).set (c.get unit)) b.cells) backs
+
+writeBack ρ ps l | member (l.name ++ "'") ps =
+  let start = leaves (lookup ρ (if bound ρ (l.name ++ "'") then l.name ++ "'" else l.name))
+  in {slot: l, primed: l.name ++ "'", fresh: true, cells: mapi (\x i -> D.cell (leafName (l.name ++ "'") i (length start)) x) start}
+writeBack ρ ps l | bound ρ (l.name ++ "'") = {slot: l, fresh: false, cells: map (\x -> constCell x) (leaves (lookup ρ (l.name ++ "'")))}
+writeBack ρ ps l = null
+
+primedNames stmts = concat (map primedIn stmts)
+primedIn assign{name}       = [name ++ "'"]
+primedIn patAssign{pattern} = filter primed (patternNames pattern)
+primedIn if{then: t, else: f} = primedNames t ++ primedNames (f ?? [])
+primedIn _                  = []
+
+isDecl decl{}     = true
+isDecl patAssign{} = true
+isDecl _          = false

@@ -1,0 +1,152 @@
+import { describe, expect, it } from 'vitest';
+import { gezira } from './sources.js';
+import { compileProgram, makeStreamer } from '../src/compile.js';
+
+
+describe('generated kernels', () => {
+  it('runs a stateful running sum with epilogue', () => {
+    const src = [
+      'RunningSum : Real >> Real',
+      '    s = 0',
+      '    ∀ a',
+      "        s' = s + a",
+      "        >> s'",
+      '    >> s × 10',
+    ].join('\n');
+    const program = compileProgram([src]);
+    const s = makeStreamer(program, 'RunningSum');
+    expect(s.push([1])).toEqual([[1]]);
+    expect(s.push([2])).toEqual([[3]]);
+    expect(s.push([4])).toEqual([[7]]);
+    expect(s.end()).toEqual([[70]]);
+  });
+
+  it('broadcasts scalars into records and lifts operators componentwise', () => {
+    const src = [
+      'Point <: (x, y : Real)',
+      'Shift (d : Real) : Point >> Point',
+      '    ∀ P',
+      '        >> P + d',
+    ].join('\n');
+    const s = makeStreamer(compileProgram([src]), 'Shift', [10]);
+    expect(s.push([1, 2])).toEqual([[11, 12]]);
+  });
+
+  it('selects per component when a guard condition is record-valued', () => {
+    // max via ▷ lifted over Point: each component picks independently.
+    const src = [
+      'Point <: (x, y : Real)',
+      '(a : Real) ▷ (b : Real) : Real',
+      '    { a if a > b, b }',
+      'ClampLow (m : Point) : Point >> Point',
+      '    ∀ P',
+      '        >> P ▷ m',
+    ].join('\n');
+    const s = makeStreamer(compileProgram([src]), 'ClampLow', [0, 5]);
+    expect(s.push([3, 3])).toEqual([[3, 5]]);
+    expect(s.push([-1, 7])).toEqual([[0, 7]]);
+  });
+
+  it('runs a prologue-seeded generator (RectangleSpans)', () => {
+    const program = compileProgram([gezira('types.nl'), gezira('rasterize.nl')]);
+    const s = makeStreamer(program, 'RectangleSpans', [0, 0, 2, 2]);
+    // Seed (0.5, 0.5); each row emits a span and feeds the next row down.
+    expect(s.end()).toEqual([
+      [0.5, 0.5, 1, 2],
+      [0.5, 1.5, 1, 2],
+    ]);
+  });
+
+  it('runs feedback subdivision to a fixpoint (DecomposeBeziers on a curve)', () => {
+    const program = compileProgram([gezira('types.nl'), gezira('rasterize.nl')]);
+    const s = makeStreamer(program, 'DecomposeBeziers');
+    const out = [...s.push([0, 0, 1, 2, 2, 0]), ...s.end()];
+    expect(out.length).toBeGreaterThan(2);
+    // Every edge sample lands on a pixel centre with |area| ≤ 1.
+    for (const [x, y, a] of out) {
+      expect(x - Math.floor(x)).toBeCloseTo(0.5, 12);
+      expect(y - Math.floor(y)).toBeCloseTo(0.5, 12);
+      expect(Math.abs(a)).toBeLessThanOrEqual(1.000001);
+    }
+    // A path returning to y=0 has zero net winding in h.
+    const hSum = out.reduce((n, t) => n + t[3], 0);
+    expect(hSum).toBeCloseTo(0, 9);
+  });
+
+  it('computes bounds via primed state updated only on some tokens', () => {
+    const program = compileProgram([gezira('types.nl'), gezira('bezier.nl')]);
+    const s = makeStreamer(program, 'CalculateBounds');
+    s.push([1, 2, 3, 9, 5, 4]);
+    s.push([0, 7, 0, 7, 0, 7]); // horizontal: ignored by the ¬(…) guard
+    expect(s.end()).toEqual([[1, 2, 5, 9]]);
+  });
+
+  it('exposes the generated JS source as an inspectable artifact', () => {
+    const program = compileProgram([gezira('types.nl'), gezira('rasterize.nl')]);
+    expect(program.source).toContain('R["DecomposeBeziers"]');
+    expect(program.source).toContain('rt.sortBy(0)'); // SortBy (@x) resolved to offset 0
+  });
+
+  it('compiles all of stroke.nl: mid-stream ⇒, generators, DupCat, Reverse', () => {
+    const program = compileProgram([gezira('types.nl'), gezira('bezier.nl'), gezira('stroke.nl')]);
+    expect(program.unsupported).toEqual([]);
+    expect(program.registry.has('StrokeBezierPath')).toBe(true); // checked vs the original in stroke-oracle.test.ts
+  });
+
+  it('reports unsupported constructs honestly instead of miscompiling', () => {
+    // The gezira corpus has none left; a scan clause on a window arm (an
+    // Umgeni-extension combination) is still unimplemented.
+    const scanWindow = 'Pick : Point >> Real\n    ∀ p ∷ q with H = +[ p.x ] by @y\n        >> H\n';
+    const program = compileProgram([gezira('types.nl'), gezira('texture.nl'), scanWindow]);
+    expect(program.unsupported.map((u) => u.name)).toEqual(['Pick']);
+    // Everything else in the same program still compiles.
+    expect(program.registry.has('RepeatTexture')).toBe(true);
+    expect(program.templates).toContain('CompositeTextures'); // process-typed: instantiated at use
+  });
+});
+
+describe('dependency honesty', () => {
+  it('a pipeline using a process that failed to compile is unsupported too', () => {
+    const src = [
+      'Bad : Real >> Real\n    ∀ x\n        >> nope\n',
+      'UsesBad : Real >> Real\n    ⇒ Bad → Bad\n',
+      'UsesUsesBad : Real >> Real\n    ⇒ UsesBad\n',
+    ].join('\n');
+    const program = compileProgram([src]);
+    expect(program.unsupported.map((u) => u.name).sort()).toEqual(['Bad', 'UsesBad', 'UsesUsesBad']);
+    expect(program.unsupported.find((u) => u.name === 'UsesUsesBad')!.reason).toMatch(/UsesBad/);
+  });
+});
+
+describe('patterns', () => {
+  const run = (src: string, name: string, tokens: number[][]) => {
+    const program = compileProgram([src]);
+    expect(program.unsupported).toEqual([]);
+    const s = makeStreamer(program, name);
+    return [...tokens.flatMap((t) => s.push(t)), ...s.end()];
+  };
+
+  it('destructures nested tuple patterns in ∀', () => {
+    const src = 'Pt <: (x, y : Real)\nSeg <: (a, b : Pt)\nDx : Seg >> Real\n    ∀ ((x0, _), (x1, _))\n        >> x1 - x0\n';
+    expect(run(src, 'Dx', [[1, 2, 5, 9]])).toEqual([[4]]);
+  });
+
+  it('binds tuple patterns in statements, prologue state, and primed updates', () => {
+    const src = [
+      'Fib : Real >> Real',
+      '    (a, b) = (0, 1)', // prologue: two state slots
+      '    ∀ _',
+      "        (s, d) = (a + b, b - a)",
+      "        (a', b') = (b, s)",
+      '        >> d',
+      '',
+    ].join('\n');
+    // d = b - a before each step: 1, 0, 1, 1, 2
+    expect(run(src, 'Fib', [[0], [0], [0], [0], [0]]).flat()).toEqual([1, 0, 1, 1, 2]);
+  });
+
+  it('destructures window patterns', () => {
+    const src = 'Pt <: (x, y : Real)\nRun : Pt >> Real\n    ∀ (x, _) ∷ (u, _)\n        >> u - x\n';
+    expect(run(src, 'Run', [[1, 0], [4, 0], [9, 0]]).flat()).toEqual([3, 5]);
+  });
+});

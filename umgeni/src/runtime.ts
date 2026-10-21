@@ -1,0 +1,313 @@
+// The streaming runtime. Ported from chari's runtime (which validated the
+// model against the tiger demo), with one representational change: a token is
+// always a flat array of numbers — records are scalarized by elaboration, so
+// a Bezier flows through as 6 numbers. This keeps the runtime shape-blind and
+// leaves the road open to typed-array batching.
+//
+// Kernels themselves are generated code (codegen.ts: every kernel runs as a
+// segment, with feedback as a LIFO worklist — recursive subdivision runs
+// depth-first as iteration, not JS recursion). This module supplies the
+// builtin stages, composition, and the boundary to the host.
+
+export type Token = number[];
+export type Emit = (t: Token) => void;
+export type Feed = (t: Token) => void;
+
+export interface Op {
+  push(t: Token): void;
+  end(): void;
+  setEmit(e: Emit): void;
+  // Optional batch path, equivalent to pushing each token in order: a
+  // barrier that emits its whole buffer at once hands it over in one call
+  // (a wasm segment then loops inside wasm instead of crossing per token).
+  pushAll?(ts: Token[]): void;
+  setEmitAll?(e: (ts: Token[]) => void): void;
+}
+
+// A buffering sort stage: collects every token, emits stably sorted by the
+// given flattened field offset on end(). It stalls the streaming overlap but
+// composes through the same end() propagation as any other op.
+//
+// The sort itself exploits the keys rasterization produces — pixel
+// coordinates, i.e. half-integers in a bounded range: tokens are bucketed by
+// the integer part of the key (O(n), stable by construction), and a bucket
+// only pays for a comparison sort if it actually contains distinct keys.
+// For scanline data every bucket is single-keyed, so no comparisons happen
+// at all. Keys that don't fit (wide range, non-finite) fall back to a plain
+// stable sort, so the result is always exactly a stable sort by key.
+export function sortTokens(buffer: Token[], keyIndex: number): Token[] {
+  const n = buffer.length;
+  if (n < 2) return buffer;
+
+  let min = Infinity;
+  let max = -Infinity;
+  let finite = true;
+  for (const t of buffer) {
+    const v = t[keyIndex];
+    if (!Number.isFinite(v)) {
+      finite = false;
+      break;
+    }
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+
+  // Bucket count must stay O(n) for this to be a win.
+  if (!finite || max - min > 4 * n + 1024) {
+    return buffer.sort((a, b) => a[keyIndex] - b[keyIndex]); // native sort is stable
+  }
+
+  const base = Math.floor(min);
+  const buckets: Token[][] = new Array(Math.floor(max) - base + 1);
+  const mixed: boolean[] = new Array(buckets.length);
+  for (const t of buffer) {
+    const i = Math.floor(t[keyIndex]) - base;
+    const b = buckets[i];
+    if (b === undefined) {
+      buckets[i] = [t];
+    } else {
+      if (t[keyIndex] !== b[0][keyIndex]) mixed[i] = true;
+      b.push(t);
+    }
+  }
+  const out: Token[] = [];
+  for (let i = 0; i < buckets.length; i++) {
+    const b = buckets[i];
+    if (b === undefined) continue;
+    if (mixed[i]) b.sort((a, c) => a[keyIndex] - c[keyIndex]);
+    for (const t of b) out.push(t);
+  }
+  return out;
+}
+
+// A barrier is a function on finite streams: buffer every token, apply f at
+// end of stream, emit the result (whole, to a stage that takes batches).
+export function barrier(f: (ts: Token[]) => Token[]): Op {
+  let buffer: Token[] = [];
+  let emit: Emit = () => {};
+  let emitAll: ((ts: Token[]) => void) | null = null;
+  return {
+    push(t) {
+      buffer.push(t);
+    },
+    end() {
+      const out = f(buffer);
+      buffer = [];
+      if (emitAll) emitAll(out);
+      else for (const t of out) emit(t);
+    },
+    setEmit(e) {
+      emit = e;
+    },
+    setEmitAll(e) {
+      emitAll = e;
+    },
+  };
+}
+
+export const sortBy = (keyIndex: number): Op => barrier((ts) => sortTokens(ts, keyIndex));
+
+// GroupBy: buffer, order by keys (major first), emit on end(). The language
+// contract is key order only; this implementation happens to be stable
+// (successive stable sorts, minor key first), which is a valid instance.
+export const groupBy = (keyIndexes: number[], _stable: boolean): Op =>
+  barrier((ts) => keyIndexes.reduceRight((acc, k) => sortTokens(acc, k), ts));
+
+// ReduceBy: merge adjacent same-key runs (the upstream GroupBy guarantees
+// grouping) with per-field combining functions; other fields keep the first
+// token's values.
+export function reduceBy(
+  keyIndexes: number[],
+  fields: { index: number; fn: (a: number, b: number) => number }[],
+): Op {
+  let cur: Token | null = null;
+  let emit: Emit = () => {};
+  return {
+    push(t) {
+      if (cur !== null && keyIndexes.every((k) => cur![k] === t[k])) {
+        for (const f of fields) cur[f.index] = f.fn(cur[f.index], t[f.index]);
+        return;
+      }
+      if (cur !== null) emit(cur);
+      cur = t.slice();
+    },
+    end() {
+      if (cur !== null) emit(cur);
+      cur = null;
+    },
+    setEmit(e) {
+      emit = e;
+    },
+  };
+}
+
+export const reverse = (): Op => barrier((ts) => ts.reverse());
+
+// DupCat: the first branch streams; the second replays the buffered input
+// once the first has finished.
+export function dupCat(a: Op, b: Op): Op {
+  const buffer: Token[] = [];
+  return {
+    push(t) {
+      buffer.push(t);
+      a.push(t);
+    },
+    end() {
+      a.end();
+      for (const t of buffer) b.push(t);
+      b.end();
+    },
+    setEmit(e) {
+      a.setEmit(e);
+      b.setEmit(e);
+    },
+  };
+}
+
+// DupZip: both branches stream; each output of the first pairs with the
+// matching output of the second, emitted as soon as both exist.
+export function dupZip(a: Op, b: Op): Op {
+  const qa: Token[] = [];
+  const qb: Token[] = [];
+  let emit: Emit = () => {};
+  a.setEmit((t) => void qa.push(t));
+  b.setEmit((t) => void qb.push(t));
+  const pair = () => {
+    const n = Math.min(qa.length, qb.length);
+    for (let i = 0; i < n; i++) emit([...qa[i], ...qb[i]]);
+    qa.splice(0, n);
+    qb.splice(0, n);
+  };
+  return {
+    push(t) {
+      a.push(t);
+      b.push(t);
+      pair();
+    },
+    end() {
+      a.end();
+      b.end();
+      pair();
+    },
+    setEmit(e) {
+      emit = e;
+    },
+  };
+}
+
+// A fused segment compiled to WebAssembly (src/wasm.ts). Each op instance
+// gets its own wasm instance (its own state); push() calls straight into
+// stage 0 with the token's values, and whatever reached the output buffer is
+// emitted when the call returns (or mid-call, if the buffer fills).
+export const wasmModule = (bytes: number[]): WebAssembly.Module => new WebAssembly.Module(Uint8Array.from(bytes));
+
+export function wasmSegment(module: WebAssembly.Module, layout: { outBase: number; outWidth: number; inBase: number; inWidth: number; inTokens: number }, params: number[]): Op {
+  const { outBase, outWidth, inBase, inWidth, inTokens } = layout;
+  let emit: Emit = () => {};
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let x: any = null;
+  let mem: Float64Array = new Float64Array(0); // memory never grows: one view
+  const base = outBase / 8;
+  // push/pushAll/end return the output pointer; drain() (also called by wasm
+  // when the buffer fills) emits everything below it and resets it.
+  const drain = (stop: number = x.out.value) => {
+    for (let p = base; p < stop / 8; p += outWidth) {
+      const t: number[] = [];
+      for (let i = 0; i < outWidth; i++) t.push(mem[p + i]);
+      emit(t);
+    }
+    x.out.value = outBase;
+  };
+  x = new WebAssembly.Instance(module, { env: { drain: () => drain() } }).exports;
+  mem = new Float64Array(x.memory.buffer);
+  mem.set(params, 0);
+  x.init();
+  const call: (...t: number[]) => number = x.push;
+  const done = (stop: number) => {
+    if (stop !== outBase) drain(stop);
+  };
+  return {
+    push: (t) => done(call(...t)),
+    pushAll(ts) {
+      // Copy a chunk of tokens into linear memory; wasm loops over them.
+      for (let k = 0; k < ts.length; k += inTokens) {
+        const m = Math.min(inTokens, ts.length - k);
+        let o = inBase / 8;
+        for (let j = 0; j < m; j++) {
+          const t = ts[k + j];
+          for (let i = 0; i < inWidth; i++) mem[o++] = t[i];
+        }
+        done(x.pushAll(m));
+      }
+    },
+    end: () => done(x.end()),
+    setEmit(e) {
+      emit = e;
+    },
+  };
+}
+
+export function identity(): Op {
+  let emit: Emit = () => {};
+  return {
+    push: (t) => emit(t),
+    end: () => {},
+    setEmit: (e) => {
+      emit = e;
+    },
+  };
+}
+
+// Compose `a → b`: a's output becomes b's input; end() drains a then b.
+export function compose(a: Op, b: Op): Op {
+  a.setEmit((t) => b.push(t));
+  if (a.setEmitAll && b.pushAll) a.setEmitAll((ts) => b.pushAll!(ts));
+  return {
+    push: (t) => a.push(t),
+    ...(a.pushAll ? { pushAll: (ts: Token[]) => a.pushAll!(ts) } : {}),
+    end: () => {
+      a.end();
+      b.end();
+    },
+    setEmit: (e) => b.setEmit(e),
+    ...(b.setEmitAll ? { setEmitAll: (e: (ts: Token[]) => void) => b.setEmitAll!(e) } : {}),
+  };
+}
+
+export function pipeline(ops: Op[]): Op {
+  if (ops.length === 0) return identity();
+  return ops.reduce((acc, op) => compose(acc, op));
+}
+
+// The boundary surface: push(token) returns exactly the outputs that token
+// produced; end() returns whatever the flush bodies emit.
+export interface Streamer {
+  push(t: Token): Token[];
+  end(): Token[];
+}
+
+export function streamer(op: Op): Streamer {
+  let buffer: Token[] = [];
+  op.setEmit((t) => buffer.push(t));
+  return {
+    push(t) {
+      buffer = [];
+      op.push(t);
+      return buffer;
+    },
+    end() {
+      buffer = [];
+      op.end();
+      return buffer;
+    },
+  };
+}
+
+// Convenience: run a batch of tokens through an op and collect all output.
+export function run(op: Op, tokens: Token[]): Token[] {
+  const out: Token[] = [];
+  op.setEmit((t) => out.push(t));
+  for (const t of tokens) op.push(t);
+  op.end();
+  return out;
+}

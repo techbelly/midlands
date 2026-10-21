@@ -1,0 +1,64 @@
+-- The value algebra: Nile values are trees with scalars at the leaves; a
+-- shape is a tree's skeleton. Operators are defined on scalars and lifted:
+-- a scalar broadcasts against a record, records of one shape zip.
+
+scalar x       = {k: "scalar", expr: x}
+agg sh parts   = {k: "agg", shape: sh, parts: parts}
+s v            = v.expr
+
+width real{}         = 1
+width record{fields} = sum (map (\f -> width f.shape) fields)
+
+shapeOf scalar{}     = R
+shapeOf agg{shape}   = shape
+
+leaves scalar{expr}  = [expr]
+leaves agg{parts}    = concat (map leaves parts)
+
+-- The tree of a shape whose leaves are xs, in order.
+tree real{} xs          = scalar (head xs)
+tree sh xs              = agg sh (chunks sh.fields xs)
+chunks [] xs            = []
+chunks [f, ...fs] xs    = [tree f.shape (take (width f.shape) xs)] ++ chunks fs (drop (width f.shape) xs)
+
+tuple parts = agg {k: "record", name: null, fields: map (\p -> {name: null, shape: shapeOf p}) parts} parts
+
+-- A scalar fills any shape; a record fits a shape of the same arity, field
+-- by field. (null: it does not fit.)
+fit v real{} | isScalar v = v
+fit v sh     | isScalar v = agg sh (map (\f -> fit v f.shape) sh.fields)
+fit v real{}              = null
+fit v sh | length v.parts != length sh.fields = null
+fit v sh = let fs = zipWith (\p f -> fit p f.shape) v.parts sh.fields
+           in if all (\x -> x != null) fs then agg sh fs else null
+
+-- Apply f to arguments fitted to its parameter shapes, or — when some
+-- argument is a bigger record — componentwise over that record's shape.
+lift shapes f args =
+  let fs = zipWith fit args shapes
+  in if all (\x -> x != null) fs then f fs
+     else let sh = liftShape (filter (\a -> a != null) (zipWith (\a x -> if x == null then a else null) args fs))
+          in agg sh (mapi (\_ i -> lift shapes f (zipWith (\a x -> if x == null then component a i else a) args fs)) sh.fields)
+
+liftShape [a, ...rest] | isScalar a = fail "operator argument does not fit its parameter"
+liftShape [a, ...rest] | any (\b -> not (sameShape (shapeOf b) a.shape)) rest = fail "cannot lift an operator across different record shapes"
+liftShape [a, ...rest] = a.shape
+
+component v i | isScalar v = v
+component v i = at v.parts i
+
+sameShape real{} real{}               = true
+sameShape record{fields: a} record{fields: b} = length a == length b && all id (zipWith (\x y -> sameShape x.shape y.shape) a b)
+sameShape _ _                         = false
+
+part v f | isScalar v = fail ("field '." ++ f ++ "' on a scalar")
+part v f = at v.parts (must (indexOf f (map (\x -> x.name) v.shape.fields)) ("no field '." ++ f ++ "'"))
+
+-- Take a value apart by a (possibly nested) tuple pattern.
+destructure varPat{name} v        = [[name, v]]
+destructure wildcardPat{} v       = []
+destructure tuplePat{elements} v | isScalar v = fail "cannot destructure a Real"
+destructure tuplePat{elements} v | length elements != length v.parts = fail "pattern binds the wrong number of components"
+destructure tuplePat{elements} v  = concat (zipWith destructure elements v.parts)
+
+isScalar v = v.k == "scalar"

@@ -1,0 +1,269 @@
+// JS code generation: IR -> readable JS source.
+//
+// The output is a single arrow function `(rt) => { ... return R; }` mapping
+// process names to factories. A factory takes the flattened parameter vector
+// and returns a runtime Op. The generated source is a first-class artifact:
+// compileProgram exposes it for inspection alongside the executable form.
+
+import { anyStmt, type FusedIR, type FusedStage, type KernelIR, type ModuleIR, type PipelineIR, type ScalarExpr, type Stmt } from './ir.js';
+import { opCount } from './passes/cse.js';
+import { compileSegment } from './wasm.js';
+import { renderCond, renderExpr, type Dialect } from './scalar.js';
+
+export interface CodegenOptions {
+  // Emit conditions as JS booleans (`a < b`) instead of round-tripping
+  // through 1/0 (`((a < b) ? 1 : 0) !== 0`). Values used as numbers still
+  // materialize 1/0.
+  boolCond?: boolean;
+  // Instrument the module with a dynamic IR-operation counter, exposed as
+  // R.__ops(). Counts bin/un/select nodes per executed statement (ternary
+  // short-circuiting is not modelled: both arms count).
+  countOps?: boolean;
+  // Compile fused kernel segments to WebAssembly instead of JS (src/wasm.ts).
+  // Output is bit-identical; barriers and unfused pipelines stay JS.
+  target?: 'js' | 'wasm';
+}
+
+// Local names come from Nile identifiers (letters/digits, an optional prime)
+// plus '#n' leaf suffixes from elaboration. Nile identifiers contain no
+// underscore, so the mangled forms cannot collide.
+function mangle(name: string): string {
+  return '_' + name.replace(/'/g, '_p').replace(/#/g, '_');
+}
+
+// How slot references and emit/feed render: the standalone-kernel default is
+// P/S/IN arrays with runtime emit/feed; fused stages rebind these (arguments
+// for inputs, direct calls to the next stage for emits).
+interface GenEnv {
+  param(i: number): string;
+  state(i: number): string;
+  input(i: number): string;
+  emit(vals: string[]): string;
+  feed(vals: string[]): string;
+}
+
+const KERNEL_ENV: GenEnv = {
+  param: (i) => `P[${i}]`,
+  state: (i) => `S[${i}]`,
+  input: (i) => `IN[${i}]`,
+  emit: (vals) => `emit([${vals.join(', ')}]);`,
+  feed: (vals) => `feed([${vals.join(', ')}]);`,
+};
+
+// JS is the C-like rendering of scalar.ts with JS spellings.
+const jsDialect = (o: CodegenOptions, env: GenEnv): Dialect => ({
+  num: (v) => (v < 0 ? `(${v})` : String(v)),
+  leaf: (e) =>
+    e.k === 'param' ? env.param(e.index)
+    : e.k === 'state' ? env.state(e.index)
+    : e.k === 'input' ? env.input(e.index)
+    : mangle((e as { name: string }).name),
+  ofBool: (c) => `(${c} ? 1 : 0)`,
+  truthy: (x) => `(${x} !== 0)`,
+  select: (c, a, b) => `(${c} ? ${a} : ${b})`,
+  fn: (f) => `Math.${f}`,
+  eq: '===',
+  ne: '!==',
+  boolCond: !!o.boolCond,
+});
+const genExpr = (e: ScalarExpr, o: CodegenOptions, env: GenEnv) => renderExpr(e, jsDialect(o, env));
+const genCond = (e: ScalarExpr, o: CodegenOptions, env: GenEnv) => renderCond(e, jsDialect(o, env));
+
+function genStmts(stmts: Stmt[], indent: string, o: CodegenOptions, env: GenEnv): string {
+  const lines: string[] = [];
+  const count = (n: number) => {
+    if (o.countOps && n > 0) lines.push(`${indent}OPS += ${n};`);
+  };
+  for (const s of stmts) {
+    switch (s.k) {
+      case 'let':
+        count(opCount(s.expr));
+        lines.push(`${indent}let ${mangle(s.name)} = ${genExpr(s.expr, o, env)};`);
+        break;
+      case 'assign':
+        count(opCount(s.expr));
+        lines.push(`${indent}${mangle(s.name)} = ${genExpr(s.expr, o, env)};`);
+        break;
+      case 'setState':
+        count(opCount(s.expr));
+        lines.push(`${indent}${env.state(s.index)} = ${genExpr(s.expr, o, env)};`);
+        break;
+      case 'emit':
+        count(s.values.reduce((n, v) => n + opCount(v), 0));
+        lines.push(`${indent}${env.emit(s.values.map((v) => genExpr(v, o, env)))}`);
+        break;
+      case 'feed':
+        count(s.values.reduce((n, v) => n + opCount(v), 0));
+        lines.push(`${indent}${env.feed(s.values.map((v) => genExpr(v, o, env)))}`);
+        break;
+      case 'if': {
+        count(opCount(s.cond));
+        lines.push(`${indent}if (${genCond(s.cond, o, env)}) {`);
+        lines.push(genStmts(s.then, indent + '  ', o, env));
+        if (s.else.length > 0) {
+          lines.push(`${indent}} else {`);
+          lines.push(genStmts(s.else, indent + '  ', o, env));
+        }
+        lines.push(`${indent}}`);
+        break;
+      }
+    }
+  }
+  return lines.filter((l) => l !== '').join('\n');
+}
+
+// A standalone kernel is a segment of one, its arguments its own params.
+function genKernel(k: KernelIR, o: CodegenOptions): string {
+  const own: ScalarExpr[] = Array.from({ length: k.paramWidth }, (_, i) => ({ k: 'param', index: i }));
+  return `R[${JSON.stringify(k.name)}] = (P = []) => ${genSegment([{ name: k.name, kernel: k, args: [own] }], o)};`;
+}
+
+// The runtime expression for a non-kernel stage (shared by the fused and
+// unfused pipeline forms), or null for kernel stages.
+function genBuiltinStage(s: Exclude<PipelineIR['stages'][number], { k: 'stage' }>, o: CodegenOptions): string {
+  switch (s.k) {
+    case 'sortBy':
+      return `rt.sortBy(${s.keyIndex})`;
+    case 'identity':
+      return `rt.identity()`;
+    case 'reverse':
+      return `rt.reverse()`;
+    case 'dupCat':
+    case 'dupZip':
+      return `rt.${s.k}(${s.branches.map((b) => genStages(b, o)).join(', ')})`;
+    case 'groupBy':
+      return `rt.groupBy([${s.keyIndexes.join(', ')}], ${s.stable})`;
+    case 'reduceBy': {
+      const fields = s.fields.map((f) => {
+        const env: GenEnv = { ...KERNEL_ENV };
+        return `{ index: ${f.index}, fn: (${mangle('#ra')}, ${mangle('#rb')}) => ${genExpr(f.op, o, env)} }`;
+      });
+      return `rt.reduceBy([${s.keyIndexes.join(', ')}], [${fields.join(', ')}])`;
+    }
+  }
+}
+
+function genStages(stages: PipelineIR['stages'], o: CodegenOptions): string {
+  const ops = stages.map((s) => {
+    if (s.k !== 'stage') return genBuiltinStage(s, o);
+    const args = s.args.flat().map((a) => genExpr(a, o, KERNEL_ENV)).join(', ');
+    return `R[${JSON.stringify(s.name)}]([${args}])`;
+  });
+  return `rt.pipeline([${ops.join(', ')}])`;
+}
+
+function genPipeline(p: PipelineIR, o: CodegenOptions): string {
+  return `R[${JSON.stringify(p.name)}] = (P = []) => ${genStages(p.stages, o)};`;
+}
+
+// --- segments: the one execution model for kernels ---
+// A run of kernels becomes one op: each stage is a local function taking its
+// input token as scalar arguments; emit is a direct call to the next stage
+// (the last stage calls the op's emit). A standalone kernel is a segment of
+// one. A stage with feedback keeps a LIFO worklist; a stage with prologue
+// statements seeds on first use (first token, or end of stream), so the
+// pipeline is wired before it emits.
+
+const stmtsFeed = (stmts: Stmt[]) => anyStmt(stmts, (s) => s.k === 'feed');
+
+// Wasm modules are compiled once, when the registry is built; each pipeline
+// instance then instantiates its own.
+let wasmModules: string[] = [];
+
+function genSegment(stages: FusedStage[], o: CodegenOptions): string {
+  const lines: string[] = [];
+  lines.push(`(() => { // segment: ${stages.map((s) => s.name).join(' → ')}`);
+  lines.push(`  let EMIT = (t) => {};`);
+  const ends: string[] = [];
+
+  stages.forEach((stage, j) => {
+    const k = stage.kernel;
+    const argJs = stage.args.flat().map((a) => genExpr(a, o, KERNEL_ENV)); // over the op's P
+    const feeds = stmtsFeed(k.body) || stmtsFeed(k.init);
+    const env: GenEnv = {
+      param: (i) => argJs[i],
+      state: (i) => `S${j}[${i}]`,
+      input: (i) => (feeds ? `T${j}[${i}]` : `a${i}`),
+      emit: (vals) => (j + 1 < stages.length ? `st${j + 1}(${vals.join(', ')});` : `EMIT([${vals.join(', ')}]);`),
+      feed: (vals) => `q${j}.push([${vals.join(', ')}]);`,
+    };
+    lines.push(`  const S${j} = new Float64Array(${k.stateInit.length});`);
+    k.stateInit.forEach((e, i) => lines.push(`  S${j}[${i}] = ${genExpr(e, o, env)};`));
+    const seed = k.init.length > 0 ? `sd${j}(); ` : '';
+    if (seed) {
+      lines.push(`  let seeded${j} = false;`);
+      lines.push(`  function sd${j}() {`);
+      lines.push(`    if (seeded${j}) return;`);
+      lines.push(`    seeded${j} = true;`);
+      lines.push(genStmts(k.init, '    ', o, env));
+      lines.push(`  }`);
+    }
+    const params = Array.from({ length: k.inputWidth }, (_, i) => `a${i}`).join(', ');
+    if (feeds) {
+      lines.push(`  const q${j} = [];`);
+      lines.push(`  function run${j}() {`);
+      lines.push(`    while (q${j}.length > 0) {`);
+      lines.push(`      const T${j} = q${j}.pop();`);
+      lines.push(genStmts(k.body, '      ', o, env));
+      lines.push(`    }`);
+      lines.push(`  }`);
+      lines.push(`  function st${j}(${params}) { ${seed}q${j}.push([${params}]); run${j}(); }`);
+    } else {
+      lines.push(`  function st${j}(${params}) {`);
+      if (seed) lines.push(`    ${seed.trim()}`);
+      lines.push(genStmts(k.body, '    ', o, env));
+      lines.push(`  }`);
+    }
+    if (k.epilogue.length > 0) {
+      lines.push(`  function fl${j}() {`);
+      lines.push(genStmts(k.epilogue, '    ', o, env));
+      lines.push(`  }`);
+    }
+    ends.push(`${seed}${feeds ? `run${j}(); ` : ''}${k.epilogue.length > 0 ? `fl${j}();` : ''}`.trim());
+  });
+
+  const w0 = stages[0].kernel.inputWidth;
+  const pushArgs = Array.from({ length: w0 }, (_, i) => `t[${i}]`).join(', ');
+  lines.push(`  return {`);
+  lines.push(`    push(t) { st0(${pushArgs}); },`);
+  lines.push(`    end() { ${ends.filter((e) => e !== '').join(' ')} },`);
+  lines.push(`    setEmit(e) { EMIT = e; },`);
+  lines.push(`  };`);
+  lines.push(`})()`);
+  return lines.filter((l) => l !== '').join('\n');
+}
+
+function genFused(p: FusedIR, o: CodegenOptions): string {
+  const segs = p.segments.map((s) => {
+    if (s.k !== 'kernels') return `    ${genBuiltinStage(s, o)},`;
+    if (o.target === 'wasm' && s.stages.every((st) => st.kernel.init.length === 0)) {
+      const w = compileSegment(s.stages, p.paramWidth);
+      const name = `W${wasmModules.length}`;
+      wasmModules.push(`const ${name} = rt.wasmModule([${w.bytes.join(',')}]); // ${s.stages.map((st) => st.name).join(' → ')}`);
+      const layout = { outBase: w.outBase, outWidth: w.outputWidth, inBase: w.inBase, inWidth: w.inputWidth, inTokens: w.inTokens };
+      return `    rt.wasmSegment(${name}, ${JSON.stringify(layout)}, P),`;
+    }
+    return `    ${genSegment(s.stages, o)},`;
+  });
+  return [
+    `R[${JSON.stringify(p.name)}] = (P = []) => rt.pipeline([`,
+    ...segs,
+    `]);`,
+  ].join('\n');
+}
+
+export function generate(mod: ModuleIR, opts: CodegenOptions = {}): string {
+  wasmModules = [];
+  const defs = mod.processes.map((p) =>
+    p.k === 'kernel' ? genKernel(p, opts) : p.k === 'fused' ? genFused(p, opts) : genPipeline(p, opts));
+  return [
+    `(rt) => {`,
+    `const R = Object.create(null);`,
+    ...wasmModules,
+    ...(opts.countOps ? [`let OPS = 0;`] : []),
+    ...defs,
+    ...(opts.countOps ? [`R.__ops = () => OPS;`] : []),
+    `return R;`,
+    `}`,
+  ].join('\n');
+}

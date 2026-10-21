@@ -1,0 +1,29 @@
+{
+  "name": "midlands",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Small languages, big results: a Nile compiler (umgeni) whose front end is written in an equational language (mooi), rendering gezira's graphics.",
+  "license": "MIT",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "demo:build": "node demos/tools/build.mjs",
+    "demo:serve": "node demos/tools/build.mjs && npx esbuild --servedir=demos/dist",
+    "bench": "npx tsx demos/tools/bench.ts",
+    "bench:gpu": "deno run --allow-read --allow-env --unstable-sloppy-imports umgeni/tools/bench-gpu.ts",
+    "bench:gpu:resident": "deno run --allow-read --allow-env --unstable-sloppy-imports demos/tools/bench-gpu-resident.ts",
+    "check:present": "deno run --allow-read --allow-env --unstable-sloppy-imports demos/tools/check-present.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.1",
+    "@webgpu/types": "^0.1.71",
+    "esbuild": "^0.28.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "ohm-js": "^17.1.0"
+  }
+}

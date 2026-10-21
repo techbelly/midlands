@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Umgeni — Nile text pipeline</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 880px; padding: 0 1rem; color: #222; }
+  h1 { font-size: 1.2rem; }
+  textarea { width: 100%; box-sizing: border-box; font: inherit; }
+  canvas { border: 1px solid #ccc; width: 100%; image-rendering: pixelated; background: #fff; }
+  .row { display: flex; gap: 1rem; align-items: center; margin: 0.6rem 0; flex-wrap: wrap; }
+  #stats { color: #666; font-variant-numeric: tabular-nums; }
+  .note { color: #666; font-size: 0.85rem; }
+  nav a { margin-right: 1rem; }
+</style>
+</head>
+<body>
+<nav><a href="index.html"><b>text</b></a> <a href="tiger.html">tiger</a> <a href="strokes.html">strokes</a> <a href="paint.html">paint</a></nav>
+<h1>Umgeni — text rendered by a compiled Nile pipeline</h1>
+<p class="note">
+  string → glyph outlines (TrueType's quadratic curves are exactly gezira's
+  beziers) → <code>Reverse → WordWidths → Reverse → LayoutGlyphs →
+  TransformBeziers → ClipBeziers → Rasterize</code>, all compiled from Nile
+  source. Word wrapping happens in Nile: running backwards over the text tells
+  each word's first letter how wide the word is. Colour emoji (Twemoji, CC-BY
+  4.0) are stacks of coloured outline layers — each layer is rasterized by the
+  same pipeline and composited in order. Drop any <code>.ttf</code> onto the
+  page to set the text in it.
+</p>
+<textarea id="text" rows="5">Here is a question that sounds like it should have a short answer: how much code does it take to draw things on a screen? Not a rectangle — everything. Text in any font 🔤, curves 🌈, filled shapes with holes in them 🍩, smooth edges.
+Nile does it in about three hundred lines 🐯, and this paragraph is set by them. 😀🎉</textarea>
+<div class="row">
+  <label>font <select id="font">
+      <option value="serif">Source Serif 4 + Twemoji colour emoji</option>
+      <option value="stub">stub (hand-drawn skeleton)</option>
+    </select></label>
+  <label>size <input id="size" type="range" min="6" max="64" value="22"> <span id="sizeval"></span>px</label>
+  <label>renderer
+    <select id="mode">
+      <option value="cpu">CPU (compiled Nile → JS)</option>
+      <option value="gpu">GPU (IR → WGSL, readback)</option>
+      <option value="gpu0">GPU (IR → WGSL, zero-fence present)</option>
+    </select>
+  </label>
+  <span id="stats"></span>
+</div>
+<canvas id="canvas" width="880" height="360"></canvas>
+<canvas id="canvasgpu" width="880" height="360" style="display:none"></canvas>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,252 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`WGSL generation > generates the TransformBeziers shader (golden) 1`] = `
+"// generated from Nile kernel TransformBeziers (map class)
+// P layout: [0..6) params, [6..) folded state
+struct Meta { n : u32 }
+@group(0) @binding(0) var<uniform> META : Meta;
+@group(0) @binding(1) var<storage, read> P : array<f32>;
+@group(0) @binding(2) var<storage, read> INBUF : array<f32>;
+@group(0) @binding(3) var<storage, read_write> OUTBUF : array<f32>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
+  let i = gid.x;
+  if (i >= META.n) { return; }
+  let inBase = i * 6u;
+  let outBase = i * 6u;
+  OUTBUF[outBase + 0u] = (((P[0u] * INBUF[inBase + 0u]) + (P[2u] * INBUF[inBase + 1u])) + P[4u]);
+  OUTBUF[outBase + 1u] = (((P[1u] * INBUF[inBase + 0u]) + (P[3u] * INBUF[inBase + 1u])) + P[5u]);
+  OUTBUF[outBase + 2u] = (((P[0u] * INBUF[inBase + 2u]) + (P[2u] * INBUF[inBase + 3u])) + P[4u]);
+  OUTBUF[outBase + 3u] = (((P[1u] * INBUF[inBase + 2u]) + (P[3u] * INBUF[inBase + 3u])) + P[5u]);
+  OUTBUF[outBase + 4u] = (((P[0u] * INBUF[inBase + 4u]) + (P[2u] * INBUF[inBase + 5u])) + P[4u]);
+  OUTBUF[outBase + 5u] = (((P[1u] * INBUF[inBase + 4u]) + (P[3u] * INBUF[inBase + 5u])) + P[5u]);
+}
+"
+`;
+
+exports[`pipeline lowering (gpu/lower.ts) > lowers Rasterize2 to both shaders from IR alone (golden) 1`] = `
+"// pass B generated from 'WindScan' (scan by key 1) and
+// 'SpansOf' (window), lowered per major-key segment.
+// rowBase lets a caller dispatch only a band of segments (0 = whole frame).
+struct Meta { n : u32, width : u32, height : u32, rowBase : u32 }
+@group(0) @binding(0) var<uniform> META : Meta;
+@group(0) @binding(1) var<storage, read> GA : array<i32>;
+@group(0) @binding(2) var<storage, read> GH : array<i32>;
+@group(0) @binding(3) var<storage, read_write> COV : array<f32>;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
+  let y = gid.x + META.rowBase;
+  if (y >= META.height) { return; }
+  var S1 : array<f32, 3>;
+  S1[0] = 0.0;
+  S1[1] = 0.0;
+  S1[2] = 0.0;
+  var S2 : array<f32, 5>;
+  S2[0] = 0.0;
+  S2[1] = 0.0;
+  S2[2] = 0.0;
+  S2[3] = 0.0;
+  S2[4] = 0.0;
+  for (var xi = 0u; xi < META.width; xi += 1u) {
+    let gi = y * META.width + xi;
+    var T1 : array<f32, 4>;
+    T1[0] = f32(xi) + 0.5;
+    T1[1] = f32(y) + 0.5;
+    T1[2] = f32(GA[gi]) / 65536.0;
+    T1[3] = f32(GH[gi]) / 65536.0;
+    var ss_H_ = S1[0];
+    var sk_H_ = S1[1];
+    var son_H_ = S1[2];
+    let sH = select(0.0, S1[0], ((S1[2] != 0.0) && (T1[1u] == S1[1])));
+    {
+      var T2 : array<f32, 4>;
+      T2[0] = T1[0u];
+      T2[1] = T1[1u];
+      T2[2] = (sH + T1[2u]);
+      T2[3] = (sH + T1[3u]);
+      var wprev___0 = S2[0];
+      var wprev___1 = S2[1];
+      var wprev___2 = S2[2];
+      var wprev___3 = S2[3];
+      var won__ = S2[4];
+      if ((S2[4] != 0.0)) {
+        if ((T2[1u] == S2[1])) {
+          let wp_0 = S2[0];
+          let wp_1 = S2[1];
+          let wp_2 = S2[2];
+          let wp_3 = S2[3];
+          let wq_0 = T2[0u];
+          let wq_1 = T2[1u];
+          let wq_2 = T2[2u];
+          let wq_3 = T2[3u];
+          let w_cse0 = select(wp_2, (-wp_2), (wp_2 < 0.0));
+          {
+            let sx = i32(floor(wp_0));
+            let sl = i32(round(1.0));
+            let sc = select(1.0, w_cse0, (w_cse0 < 1.0));
+            for (var si = 0; si < sl; si += 1) {
+              let px = sx + si;
+              if (px >= 0 && px < i32(META.width)) {
+                let ci = y * META.width + u32(px);
+                COV[ci] = min(COV[ci] + sc, 1.0);
+              }
+            }
+          }
+          let w_cse1 = select(wp_3, (-wp_3), (wp_3 < 0.0));
+          {
+            let sx = i32(floor((wp_0 + 1.0)));
+            let sl = i32(round(((wq_0 - wp_0) - 1.0)));
+            let sc = select(1.0, w_cse1, (w_cse1 < 1.0));
+            for (var si = 0; si < sl; si += 1) {
+              let px = sx + si;
+              if (px >= 0 && px < i32(META.width)) {
+                let ci = y * META.width + u32(px);
+                COV[ci] = min(COV[ci] + sc, 1.0);
+              }
+            }
+          }
+        } else {
+          let wp_0_u1 = S2[0];
+          let wp_1_u1 = S2[1];
+          let wp_2_u1 = S2[2];
+          let wp_3_u1 = S2[3];
+          let w_cse2 = select(wp_2_u1, (-wp_2_u1), (wp_2_u1 < 0.0));
+          {
+            let sx = i32(floor(wp_0_u1));
+            let sl = i32(round(1.0));
+            let sc = select(1.0, w_cse2, (w_cse2 < 1.0));
+            for (var si = 0; si < sl; si += 1) {
+              let px = sx + si;
+              if (px >= 0 && px < i32(META.width)) {
+                let ci = y * META.width + u32(px);
+                COV[ci] = min(COV[ci] + sc, 1.0);
+              }
+            }
+          }
+        }
+      }
+      wprev___0 = T2[0u];
+      wprev___1 = T2[1u];
+      wprev___2 = T2[2u];
+      wprev___3 = T2[3u];
+      won__ = 1.0;
+      S2[0] = wprev___0;
+      S2[1] = wprev___1;
+      S2[2] = wprev___2;
+      S2[3] = wprev___3;
+      S2[4] = won__;
+    }
+    ss_H_ = (sH + T1[3u]);
+    sk_H_ = T1[1u];
+    son_H_ = 1.0;
+    S1[0] = ss_H_;
+    S1[1] = sk_H_;
+    S1[2] = son_H_;
+  }
+  if ((S2[4] != 0.0)) {
+    let wp_0_u2 = S2[0];
+    let wp_1_u2 = S2[1];
+    let wp_2_u2 = S2[2];
+    let wp_3_u2 = S2[3];
+    let w_cse0 = select(wp_2_u2, (-wp_2_u2), (wp_2_u2 < 0.0));
+    {
+      let sx = i32(floor(wp_0_u2));
+      let sl = i32(round(1.0));
+      let sc = select(1.0, w_cse0, (w_cse0 < 1.0));
+      for (var si = 0; si < sl; si += 1) {
+        let px = sx + si;
+        if (px >= 0 && px < i32(META.width)) {
+          let ci = y * META.width + u32(px);
+          COV[ci] = min(COV[ci] + sc, 1.0);
+        }
+      }
+    }
+  }
+}"
+`;
+
+exports[`resident rasterizer shaders > generates the decompose worklist shader from Nile IR (golden) 1`] = `
+"// pass A: DecomposeBeziers (body generated from Nile IR) over a per-thread worklist,
+// accumulating edge samples into fixed-point atomic grids.
+struct Meta { n : u32, width : u32, height : u32 }
+@group(0) @binding(0) var<uniform> META : Meta;
+@group(0) @binding(1) var<storage, read> INBUF : array<f32>;
+@group(0) @binding(2) var<storage, read_write> GA : array<atomic<i32>>;
+@group(0) @binding(3) var<storage, read_write> GH : array<atomic<i32>>;
+@group(0) @binding(4) var<storage, read_write> OVERFLOW : atomic<u32>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
+  let i = gid.x;
+  if (i >= META.n) { return; }
+  var F : array<f32, 768>;
+  var T : array<f32, 6>;
+  for (var k = 0u; k < 6u; k += 1u) { F[k] = INBUF[i * 6u + k]; }
+  var sp : u32 = 1u;
+  var guard : u32 = 0u;
+  loop {
+    if (sp == 0u || guard > 1000000u) { break; }
+    guard += 1u;
+    sp -= 1u;
+    for (var k = 0u; k < 6u; k += 1u) { T[k] = F[sp * 6u + k]; }
+    let vinside_0 = select(0.0, 1.0, ((floor(T[0u]) == floor(T[4u])) || (ceil(T[0u]) == ceil(T[4u]))));
+    let vinside_1 = select(0.0, 1.0, ((floor(T[1u]) == floor(T[5u])) || (ceil(T[1u]) == ceil(T[5u]))));
+    if (((vinside_0 != 0.0) && (vinside_1 != 0.0))) {
+      let vP_0 = select(floor(T[4u]), floor(T[0u]), (floor(T[0u]) < floor(T[4u])));
+      let vP_1 = select(floor(T[5u]), floor(T[1u]), (floor(T[1u]) < floor(T[5u])));
+      let vw = ((vP_0 + 1.0) - ((T[4u] + T[0u]) / 2.0));
+      let vh = (T[5u] - T[1u]);
+      {
+        let ex = i32(floor((vP_0 + (1.0 / 2.0))));
+        let ey = i32(floor((vP_1 + (1.0 / 2.0))));
+        if (ex >= 0 && ex < i32(META.width) && ey >= 0 && ey < i32(META.height)) {
+          let gi = u32(ey) * META.width + u32(ex);
+          atomicAdd(&GA[gi], i32(round((vw * vh) * 65536.0)));
+          atomicAdd(&GH[gi], i32(round(vh * 65536.0)));
+        }
+      }
+    } else {
+      let v_cse0 = ((T[0u] + T[2u]) / 2.0);
+      let v_cse1 = ((T[2u] + T[4u]) / 2.0);
+      let vABBC_0 = ((v_cse0 + v_cse1) / 2.0);
+      let v_cse2 = ((T[1u] + T[3u]) / 2.0);
+      let v_cse3 = ((T[3u] + T[5u]) / 2.0);
+      let vABBC_1 = ((v_cse2 + v_cse3) / 2.0);
+      let vmin_0 = floor(vABBC_0);
+      let vmin_1 = floor(vABBC_1);
+      let vmax_0 = ceil(vABBC_0);
+      let vmax_1 = ceil(vABBC_1);
+      let vnearmin_0 = select(0.0, 1.0, (select((vABBC_0 - vmin_0), (-(vABBC_0 - vmin_0)), ((vABBC_0 - vmin_0) < 0.0)) < 0.1));
+      let vnearmin_1 = select(0.0, 1.0, (select((vABBC_1 - vmin_1), (-(vABBC_1 - vmin_1)), ((vABBC_1 - vmin_1) < 0.0)) < 0.1));
+      let vnearmax_0 = select(0.0, 1.0, (select((vABBC_0 - vmax_0), (-(vABBC_0 - vmax_0)), ((vABBC_0 - vmax_0) < 0.0)) < 0.1));
+      let vnearmax_1 = select(0.0, 1.0, (select((vABBC_1 - vmax_1), (-(vABBC_1 - vmax_1)), ((vABBC_1 - vmax_1) < 0.0)) < 0.1));
+      let vM_0 = select(select(vABBC_0, vmax_0, (vnearmax_0 != 0.0)), vmin_0, (vnearmin_0 != 0.0));
+      let vM_1 = select(select(vABBC_1, vmax_1, (vnearmax_1 != 0.0)), vmin_1, (vnearmin_1 != 0.0));
+      if (sp < 128u) {
+        F[sp * 6u + 0u] = vM_0;
+        F[sp * 6u + 1u] = vM_1;
+        F[sp * 6u + 2u] = v_cse1;
+        F[sp * 6u + 3u] = v_cse3;
+        F[sp * 6u + 4u] = T[4u];
+        F[sp * 6u + 5u] = T[5u];
+        sp += 1u;
+      } else {
+        atomicStore(&OVERFLOW, 1u);
+      }
+      if (sp < 128u) {
+        F[sp * 6u + 0u] = T[0u];
+        F[sp * 6u + 1u] = T[1u];
+        F[sp * 6u + 2u] = v_cse0;
+        F[sp * 6u + 3u] = v_cse2;
+        F[sp * 6u + 4u] = vM_0;
+        F[sp * 6u + 5u] = vM_1;
+        sp += 1u;
+      } else {
+        atomicStore(&OVERFLOW, 1u);
+      }
+    }
+  }
+}
+"
+`;

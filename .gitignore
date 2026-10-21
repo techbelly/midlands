@@ -1,0 +1,5 @@
+node_modules/
+demos/dist/
+demos/gen/
+umgeni/tools/oracle/build/
+.DS_Store

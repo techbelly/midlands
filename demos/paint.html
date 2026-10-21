@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Umgeni — Paint</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 1060px; padding: 0 1rem; color: #222; }
+  h1 { font-size: 1.2rem; }
+  nav a { margin-right: 1rem; }
+  .note { color: #666; font-size: 0.85rem; max-width: 720px; }
+  .cols { display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-start; }
+  .left { flex: 1 1 440px; min-width: 0; }
+  .right { flex: 0 1 480px; min-width: 0; }
+  textarea { width: 100%; box-sizing: border-box; height: 380px; font: 12.5px/1.45 ui-monospace, Menlo, monospace;
+             padding: 0.6rem; border: 1px solid #ccc; border-radius: 4px; tab-size: 4; white-space: pre; }
+  canvas { width: 100%; border: 1px solid #ccc; border-radius: 4px; }
+  select { font: inherit; margin-bottom: 0.5rem; }
+  #status { white-space: pre-wrap; font-size: 0.85rem; color: #555; min-height: 2.6em; }
+  #status.err { color: #b42318; }
+  .bar { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.5rem; }
+  details { margin-top: 0.5rem; }
+  summary { cursor: pointer; color: #444; font-size: 0.9rem; }
+  #shader { font: 11.5px/1.4 ui-monospace, Menlo, monospace; background: #f6f6f6; padding: 0.6rem;
+            border-radius: 4px; max-height: 320px; overflow: auto; white-space: pre; margin: 0.4rem 0 0; }
+</style>
+</head>
+<body>
+<nav><a href="index.html">text</a> <a href="tiger.html">tiger</a> <a href="strokes.html">strokes</a> <a href="paint.html"><b>paint</b></a></nav>
+<h1>Paint: edit Nile, see it render</h1>
+<p class="note">
+  The Umgeni compiler runs in this page. Each edit compiles your text together
+  with Dan Amelang's gezira library — gradients, colour spans, 25 compositors,
+  bilinear, bicubic and Gaussian filters — into JavaScript, then fills a disc, a
+  star and a thick stroke with your <code>Paint</code> texture. Textures are
+  pipelines that take a point and produce a colour, so a blur or a blend takes a
+  whole texture as its argument; the compiler inlines those arguments where
+  they're used. On the GPU, <code>Paint</code> is compiled once more, into a
+  WGSL function the fragment shader calls for every pixel: open the shader
+  panel to see what your Nile became.
+</p>
+<div class="cols">
+  <div class="left">
+    <select id="preset" aria-label="Example"></select>
+    <textarea id="src" spellcheck="false" aria-label="Nile source"></textarea>
+  </div>
+  <div class="right">
+    <div class="bar">
+      <label>renderer <select id="mode">
+        <option value="cpu">CPU (Nile → JS)</option>
+        <option value="gpu">GPU (Nile → WGSL)</option>
+      </select></label>
+    </div>
+    <canvas id="view" width="480" height="360"></canvas>
+    <canvas id="viewgpu" width="480" height="360" style="display:none"></canvas>
+    <p id="status"></p>
+    <details>
+      <summary>The WGSL your <code>Paint</code> became</summary>
+      <pre id="shader"></pre>
+    </details>
+  </div>
+</div>
+<script src="paint-app.js"></script>
+</body>
+</html>

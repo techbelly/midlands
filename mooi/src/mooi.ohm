@@ -1,0 +1,67 @@
+Mooi {
+  // A program is equations, one definition per paragraph: the preprocessor
+  // puts the separator ¶ before every line that starts at column 0.
+  Program = "¶"? ListOf<Def, "¶"> "¶"?
+  Def = ident Pat* Guard? "=" Expr
+  Guard = "|" Expr
+
+  Pat = nodeOpen ListOf<FieldPat, ","> "}"                 -- node
+      | "[" "]"                                            -- nil
+      | "[" NonemptyListOf<Pat, ","> "," "..." ident "]"   -- cons
+      | "[" NonemptyListOf<Pat, ","> "]"                   -- list
+      | "_"                                                -- wild
+      | number                                             -- num
+      | string                                             -- str
+      | ident                                              -- var
+      | "(" Pat ")"                                        -- paren
+  FieldPat = name ":" Pat   -- rename
+           | name           -- same
+
+  Expr = "\\" Pat+ "->" Expr                              -- lam
+       | "let" NonemptyListOf<Binding, ","> "in" Expr      -- let
+       | "if" Expr "then" Expr "else" Expr                 -- if
+       | Seq
+  Binding = Pat "=" Expr
+  Seq = Seq ";" Coal   -- seq
+      | Coal
+  Coal = Coal "??" Or  -- coal
+       | Or
+  Or = Or "||" And     -- or
+     | And
+  And = And "&&" Cmp   -- and
+      | Cmp
+  Cmp = Cat cmpOp Cat  -- cmp
+      | Cat
+  cmpOp = "==" | "!=" | "<=" | ">=" | "<" | ">"
+  Cat = Cat "++" Add   -- cat
+      | Add
+  Add = Add addOp Mul  -- add
+      | Mul
+  addOp = "+" | "-"
+  Mul = Mul mulOp App  -- mul
+      | App
+  mulOp = "*" | "/"
+  App = App Post       -- app
+      | Post
+  Post = Post "." name -- field
+       | Atom
+  Atom = "(" Expr ")"                          -- paren
+       | "[" ListOf<Expr, ","> "]"             -- list
+       | nodeOpen ListOf<FieldInit, ","> "}"   -- node
+       | "{" ListOf<FieldInit, ","> "}"        -- record
+       | number                                -- num
+       | string                                -- str
+       | ident                                 -- var
+  FieldInit = "..." Expr     -- spread
+            | name ":" Expr  -- field
+
+  // A node is written name{…} with no space (so `in {…}` is not a node).
+  nodeOpen = name "{"
+  ident = ~keyword name
+  name = (letter | "_") (alnum | "_" | "'")*
+  keyword = ("let" | "in" | "if" | "then" | "else") ~(alnum | "_" | "'")
+  number = digit+ ("." digit+)?
+  string = "\"" (~"\"" any)* "\""
+  space += comment
+  comment = "--" (~"\n" any)*
+}

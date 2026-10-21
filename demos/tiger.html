@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Umgeni — Tiger</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 720px; padding: 0 1rem; color: #222; }
+  h1 { font-size: 1.2rem; }
+  canvas { border: 1px solid #ccc; width: 100%; touch-action: none; cursor: grab; background: #fff; }
+  #stats { color: #666; font-variant-numeric: tabular-nums; }
+  .note { color: #666; font-size: 0.85rem; }
+  nav a { margin-right: 1rem; }
+</style>
+</head>
+<body>
+<nav><a href="index.html">text</a> <a href="tiger.html"><b>tiger</b></a> <a href="strokes.html">strokes</a> <a href="paint.html">paint</a></nav>
+<h1>The Ghostscript Tiger through compiled Nile</h1>
+<p class="note">
+  240 paths of cubic beziers. Host does SVG→cubics and pixel compositing;
+  transform, cubic flattening, stroke expansion, clipping and rasterization
+  run in Umgeni-compiled Nile: gezira's own kernels, including its unmodified
+  <code>stroke.nl</code>, plus <code>nl/vector.nl</code>.
+  Double-click to zoom (100% → 200% → 400% → back), drag to pan — clipping
+  keeps zoom cheap and vector-crisp.
+</p>
+<div>
+  <label>renderer
+    <select id="mode">
+      <option value="cpu">CPU (compiled Nile → JS)</option>
+      <option value="gpu">GPU (IR → WGSL, zero-fence, per-path composite)</option>
+    </select>
+  </label>
+  <span id="stats">loading…</span>
+</div>
+<canvas id="view" width="680" height="680"></canvas>
+<canvas id="viewgpu" width="680" height="680" style="display:none"></canvas>
+<script src="tiger-app.js"></script>
+</body>
+</html>

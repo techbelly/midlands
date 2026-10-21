@@ -1,0 +1,161 @@
+// Nile grammar (core).
+//
+// The input is preprocessed: physical lines are joined into logical lines
+// (inside brackets, or after a trailing "→"), then indentation is encoded as
+// sentinel characters so this grammar stays context-free:
+//   \u{1} = end of logical line ("eol")
+//   \u{2} = indent
+//   \u{3} = dedent
+//
+// User-defined operators: infix operators are parsed generically (any run of
+// operator glyphs that is not a reserved builtin). Prefix and outfix operators
+// are ambiguous without registration, so a scanning pass collects opDef
+// headers and generates an extension grammar overriding userPrefixOp,
+// UserOutfix, and extraReservedTok. In this core grammar those rules match
+// nothing (\u{0} never appears in input).
+
+Nile {
+  Start = TopLevel*
+
+  TopLevel = TypeDef | OpDef | Kernel
+
+  // --- type definitions ---
+  TypeDef = ident "<:" AType eol                 -- record
+          | ident "::" (AkType | KType) eol      -- process
+
+  AType = "(" NonemptyListOf<FieldGroup, ","> ")"  -- record
+        | "(" NonemptyListOf<AType, ","> ")"       -- tuple
+        | ident                                     -- named
+  FieldGroup = NonemptyListOf<ident, ","> ":" AType
+  KType = AType ">>" AType   -- stream
+        | ident              -- named
+  AkType = "(" NonemptyListOf<FieldGroup, ","> ")" ":" KType
+
+  // --- operator definitions ---
+  OpDef = OpDefHeader eol OpBody
+  OpDefHeader = "(" ident ":" AType ")" opSeq "(" ident ":" AType ")" ":" AType  -- infix
+              | opSeq "(" ident ":" AType ")" opSeq ":" AType                    -- outfix
+              | opSeq "(" ident ":" AType ")" ":" AType                          -- prefix
+  OpBody = indent Expr eol dedent
+
+  // --- kernels ---
+  Kernel = ident KernelSig eol KernelBody
+  KernelSig = AkType        -- params
+            | ":" KType     -- plain
+  KernelBody = indent Stmt* ForAll* Stmt* dedent
+  ForAll = "∀" Pat ConsPart? WithClause? eol Block?
+  ConsPart = "∷" Pat SegBy?   -- pat
+           | "∷" "∅"          -- end
+  SegBy = byKw "@" ident
+  WithClause = withKw ident "=" redOp "[" Expr "]" byKw "@" ident
+  Block = indent Stmt* dedent
+
+  // --- statements ---
+  Stmt = OutStmt | InStmt | IfStmt | Forwarding | TypedDecl | Decl | PatAssign
+  OutStmt = OutPart+ eol
+  OutPart = ">>" Expr
+  InStmt = InPart+ eol
+  InPart = "<<" Expr
+  IfStmt = ifKw Expr eol Block ElsePart?
+  ElsePart = elseKw IfStmt        -- elseif
+           | elseKw eol Block     -- else
+  Forwarding = "⇒" Pipeline eol
+  TypedDecl = ident ":" AType "=" Expr eol
+  Decl = ident "=" Expr eol
+  PatAssign = Pat "=" Expr eol
+
+  Pat = "(" NonemptyListOf<Pat, ","> ")"  -- tuple
+      | "_"                               -- wildcard
+      | ident                             -- var
+
+  // --- pipelines ---
+  Pipeline = NonemptyListOf<KI, "→">
+  KI = GroupByStage
+     | ReduceByStage
+     | ident "(" NonemptyListOf<KArg, ","> ")"  -- app
+     | "(" "→" ")"                              -- identity
+     | ident                                    -- ref
+  GroupByStage = groupByKw stableKw? "(" NonemptyListOf<KeyRef, ","> ")"
+  ReduceByStage = reduceByKw "(" NonemptyListOf<KeyRef, ","> ";" NonemptyListOf<FieldReduce, ","> ")"
+  FieldReduce = ident "⊕" redOp
+  KeyRef = "@" ident
+  KArg = MultiPipeline | KIApp | IdentityKI | Expr
+  MultiPipeline = KI ("→" KI)+
+  KIApp = ident "(" NonemptyListOf<KArg, ","> ")"
+  IdentityKI = "(" "→" ")"
+
+  // --- expressions (precedence low to high) ---
+  Expr = OrExpr
+  CondExpr = Expr ifKw Expr "," CondExpr  -- cond
+           | Expr
+  OrExpr = OrExpr "∨" AndExpr   -- bin
+         | AndExpr
+  AndExpr = AndExpr "∧" EqExpr  -- bin
+          | EqExpr
+  EqExpr = RelExpr eqOp RelExpr   -- bin
+         | RelExpr
+  RelExpr = AddExpr relOp AddExpr  -- bin
+          | AddExpr
+  AddExpr = AddExpr addOp MulExpr        -- bin
+          | AddExpr userInfixOp MulExpr  -- userbin
+          | MulExpr
+  MulExpr = MulExpr mulOp PostExpr  -- bin
+          | PostExpr
+  // (No `e[i]`: the old OMeta grammar parsed it but nothing ever gave it a
+  // meaning, and Amelang's final maru grammar dropped it.)
+  PostExpr = PostExpr "." ident     -- field
+           | UnExpr ":" AType       -- typed
+           | UnExpr
+  UnExpr = "√" UnExpr         -- sqrt
+         | negOp UnExpr       -- neg
+         | "¬" UnExpr         -- not
+         | userPrefixOp UnExpr  -- userpre
+         | PrimExpr
+  PrimExpr = "{" CondExpr "}"                    -- cond
+           | "⌊" Expr "⌋"                        -- floor
+           | "⌈" Expr "⌉"                        -- ceil
+           | UserOutfix
+           | "(" NonemptyListOf<Expr, ","> ")"   -- parenOrTuple
+           | "[" NonemptyListOf<Expr, ","> "]"   -- brackTuple
+           | "@" ident                           -- offset
+           | number                              -- num
+           | ident                               -- var
+
+  // --- lexical rules ---
+  eqOp = ("=" | "≠") ~opChar
+  relOp = ("≤" | "≥" | "<" | ">") ~opChar
+  addOp = ("+" | "-") ~opChar
+  mulOp = ("×" | "/") ~opChar
+  negOp = "-" ~opChar
+
+  userInfixOp = ~(reservedTok ~opChar) opSeq
+  reservedTok = ">>" | "<<" | "<:" | "::" | "→" | "⇒" | "∀" | "∷"
+              | "×" | "/" | "+" | "-" | "≤" | "≥" | "<" | ">"
+              | "=" | "≠" | "∧" | "∨" | "√" | "¬" | "."
+              | "⌊" | "⌋" | "⌈" | "⌉" | extraReservedTok
+  extraReservedTok = "\u{0}"
+  userPrefixOp = "\u{0}"
+  UserOutfix = "\u{0}"
+
+  opChar = ~(" " | "\t" | "\n" | "\r" | "\u{1}" | "\u{2}" | "\u{3}"
+            | "(" | ")" | "{" | "}" | "[" | "]"
+            | "," | ":" | "@" | "_" | "\"" | "\\"
+            | letter | digit) any
+  opSeq = opChar+
+
+  ident = letter alnum* "'"?
+  ifKw = "if" ~alnum
+  elseKw = "else" ~alnum
+  withKw = "with" ~alnum
+  byKw = "by" ~alnum
+  groupByKw = "GroupBy" ~alnum
+  reduceByKw = "ReduceBy" ~alnum
+  stableKw = "stable" ~alnum
+  redOp = opSeq
+  number = digit+ ("." digit+)?
+
+  eol = "\u{1}"
+  indent = "\u{2}"
+  dedent = "\u{3}"
+  space := " " | "\t"
+}
