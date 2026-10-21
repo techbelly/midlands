@@ -25,7 +25,7 @@ const raster = compileProgram([
   read('demos/nl/text.nl'),
   read('umgeni/nl/rasterize2.nl'),
 ]);
-const tiger = parseSvg(read('demos/tiger.svg'));
+const tiger = parseSvg(read('demos/tiger.svg'), vector.registry);
 
 const W = Number(Deno.args[0] ?? 512);
 const H = W;

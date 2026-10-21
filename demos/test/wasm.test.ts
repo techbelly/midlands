@@ -25,7 +25,7 @@ describe('wasm backend: bit-identical to JS', () => {
   });
 
   it('the whole tiger', () => {
-    const tiger = parseSvg(read('demos/tiger.svg'));
+    const tiger = parseSvg(read('demos/tiger.svg'), compileVectorPipeline().registry);
     const img = (opts: object) => {
       const im = { width: 96, height: 96, data: new Uint8ClampedArray(96 * 96 * 4).fill(255) };
       drawTiger(im, tiger, fitView(96, 96), compileVectorPipeline(undefined, opts).registry);

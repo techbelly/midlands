@@ -7,12 +7,12 @@ import { describe, expect, it } from 'vitest';
 import { read } from '../src/sources.js';
 import { compileVectorPipeline } from '../src/vector/compile.js';
 import { collectSpans, strokeOutline } from '../src/vector/draw.js';
-import { parseSvg, pathSubpaths } from '../src/vector/svg.js';
+import { parseSvg, pathCubics, pathSubpaths } from '../src/vector/svg.js';
 import { drawTiger, fitView } from '../src/vector/tiger.js';
 
 
 const program = compileVectorPipeline();
-const tiger = parseSvg(read('demos/tiger.svg'));
+const tiger = parseSvg(read('demos/tiger.svg'), program.registry);
 
 describe('the tiger demo, headless', () => {
   it('compiles the gezira kernels with nothing unsupported', () => {
@@ -59,9 +59,23 @@ describe('the tiger demo, headless', () => {
   });
 
   it('strokes subpaths as SVG draws them: closed only by Z', () => {
-    expect(pathSubpaths('M0 0 L10 0 L10 10').map((p) => p.length)).toEqual([2]);
-    expect(pathSubpaths('M0 0 L10 0 L10 10 Z').map((p) => p.length)).toEqual([3]);
-    expect(pathSubpaths('M0 0 L10 0 M20 0 L30 0').map((p) => p.length)).toEqual([1, 1]);
+    const subpaths = (d: string) => pathSubpaths(program.registry, d);
+    expect(subpaths('M0 0 L10 0 L10 10').map((p) => p.length)).toEqual([2]);
+    expect(subpaths('M0 0 L10 0 L10 10 Z').map((p) => p.length)).toEqual([3]);
+    expect(subpaths('M0 0 L10 0 M20 0 L30 0').map((p) => p.length)).toEqual([1, 1]);
+  });
+
+  it('interprets path commands as SVG does (in Nile: nl/svg.nl)', () => {
+    const ends = (d: string) => pathCubics(program.registry, d).map((c) => c.slice(6));
+    // relative coordinates, H and V, implicit repeats (after m they are l)
+    expect(ends('m1 1 2 0 h3 v4 H0 V1')).toEqual([[3, 1], [6, 1], [6, 5], [0, 5], [0, 1], [1, 1]]);
+    // a relative m is measured from the current point, or after z from the subpath's start
+    expect(ends('M0 0 l10 0 m5 5 l1 0')).toEqual([[10, 0], [0, 0], [16, 5], [15, 5]]);
+    expect(ends('M2 2 l10 0 z m5 5 l1 0')).toEqual([[12, 2], [2, 2], [8, 7], [7, 7]]);
+    // S reflects the previous control point, and only after C or S
+    const [, s] = pathCubics(program.registry, 'M0 0 C1 0 2 1 3 3 S5 6 6 6');
+    expect(s.slice(0, 4)).toEqual([3, 3, 4, 5]);
+    expect(pathCubics(program.registry, 'M0 0 L3 3 S5 6 6 6')[1].slice(0, 4)).toEqual([3, 3, 3, 3]);
   });
 
   it('strokes a path with caps and joins (the strokes demo pipeline)', () => {

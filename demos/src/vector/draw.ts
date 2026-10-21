@@ -21,12 +21,6 @@ export function collectSpans(op: Op, tokens: Token[]): number[][] {
   return spans;
 }
 
-// SVG's stroke defaults: miter joins with limit 4, butt caps. (gezira:
-// join l < 0 is round, otherwise a miter with that limit; cap c < 0 is round,
-// otherwise a square extension of c × half-width, so 0 is butt.)
-export const SVG_JOIN = 4;
-export const SVG_CAP = 0;
-
 // A stroke's outline: gezira's StrokeBezierPath, unmodified, run once per
 // subpath (its end of stream is where it caps or closes the path). The
 // result is flat beziers, filled together so overlaps aren't double-painted.

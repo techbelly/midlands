@@ -1,5 +1,13 @@
 Cubic <: (A, B, C, D : Point)
 
+-- Affine maps compose: (M ∘ N) ⊗ P = M ⊗ (N ⊗ P).
+(M : Matrix) ∘ (N : Matrix) : Matrix
+    (M.a × N.a + M.c × N.b, M.b × N.a + M.d × N.b, M.a × N.c + M.c × N.d, M.b × N.c + M.d × N.d, M.a × N.e + M.c × N.f + M.e, M.b × N.e + M.d × N.f + M.f)
+
+-- How a map scales area; its square root is how it scales lengths.
+∆(M : Matrix) : Real
+    M.a × M.d - M.b × M.c
+
 TransformCubics (M : Matrix) : Cubic >> Cubic
     ∀ (A, B, C, D)
         >> (M ⊗ A, M ⊗ B, M ⊗ C, M ⊗ D)

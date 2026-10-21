@@ -15,7 +15,7 @@ import { rasterize2IR } from './gen/pipeline.gen.js';
 import svgSrc from './tiger.svg';
 
 const registry = makeVectorRegistry(rt);
-const tiger = parseSvg(svgSrc);
+const tiger = parseSvg(svgSrc, registry);
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const canvasGpu = document.getElementById('viewgpu') as HTMLCanvasElement;
