@@ -5,10 +5,10 @@
 // and returns a runtime Op. The generated source is a first-class artifact:
 // compileProgram exposes it for inspection alongside the executable form.
 
-import { anyStmt, type FusedIR, type FusedStage, type KernelIR, type ModuleIR, type PipelineIR, type ScalarExpr, type Stmt } from './ir.js';
-import { opCount } from './passes/cse.js';
+import { anyStmt, type FusedIR, type FusedStage, type KernelIR, type ModuleIR, type PipelineIR, type ScalarExpr, type Stmt } from '../ir.js';
+import { opCount } from '../passes/cse.js';
 import { compileSegment } from './wasm.js';
-import { renderCond, renderExpr, type Dialect } from './scalar.js';
+import { renderCond, renderExpr, type Dialect } from '../scalar.js';
 
 export interface CodegenOptions {
   // Emit conditions as JS booleans (`a < b`) instead of round-tripping
@@ -19,7 +19,7 @@ export interface CodegenOptions {
   // R.__ops(). Counts bin/un/select nodes per executed statement (ternary
   // short-circuiting is not modelled: both arms count).
   countOps?: boolean;
-  // Compile fused kernel segments to WebAssembly instead of JS (src/wasm.ts).
+  // Compile fused kernel segments to WebAssembly instead of JS (wasm.ts).
   // Output is bit-identical; barriers and unfused pipelines stay JS.
   target?: 'js' | 'wasm';
 }

@@ -3,7 +3,8 @@
 *Research notes, 20 October 2026. Branch `exp/staged-semantics` (since merged).*
 
 > **Paths.** Written before the repository became *midlands*: `src/…` is now
-> `umgeni/src/…`, `src/meta/` is `umgeni/src/semantics/`, `src/mooi/` is
+> `umgeni/src/…`, `src/meta/` is `umgeni/src/semantics/`, the CPU backend
+> (`codegen.ts`, now `js.ts`; `wasm.ts`; `runtime.ts`) is `umgeni/src/cpu/`, `src/mooi/` is
 > `mooi/`, `test/fixtures/*.nl` from gezira are in `gezira/`, and the demos'
 > code and Nile (`demo/`, `src/text/`, `src/vector/`, `nl/text.nl`,
 > `nl/vector.nl`) are in `demos/`. The TypeScript semantics and sugar were

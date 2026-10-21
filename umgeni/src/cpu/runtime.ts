@@ -4,7 +4,7 @@
 // a Bezier flows through as 6 numbers. This keeps the runtime shape-blind and
 // leaves the road open to typed-array batching.
 //
-// Kernels themselves are generated code (codegen.ts: every kernel runs as a
+// Kernels themselves are generated code (js.ts: every kernel runs as a
 // segment, with feedback as a LIFO worklist — recursive subdivision runs
 // depth-first as iteration, not JS recursion). This module supplies the
 // builtin stages, composition, and the boundary to the host.
@@ -195,7 +195,7 @@ export function dupZip(a: Op, b: Op): Op {
   };
 }
 
-// A fused segment compiled to WebAssembly (src/wasm.ts). Each op instance
+// A fused segment compiled to WebAssembly (wasm.ts). Each op instance
 // gets its own wasm instance (its own state); push() calls straight into
 // stage 0 with the token's values, and whatever reached the output buffer is
 // emitted when the call returns (or mid-call, if the buffer fills).

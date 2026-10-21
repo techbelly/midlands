@@ -12,7 +12,7 @@
 //   gpu0 — the colour runs rasterized and composited on the GPU in one
 //          submission to a WebGPU canvas: zero fences per frame.
 
-import * as rt from '../umgeni/src/runtime.js';
+import * as rt from '../umgeni/src/cpu/runtime.js';
 import { colorRuns, fallback, paintCoverage, textSpansParams, textTokens, type ColorRun, type GlyphSource } from './src/text/host.js';
 import { glyphFor as stubGlyph } from './src/text/stubfont.js';
 import { parseTrueType } from './src/text/ttf.js';

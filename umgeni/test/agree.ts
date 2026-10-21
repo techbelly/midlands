@@ -6,7 +6,7 @@ import { compileProgram } from '../src/compile.js';
 import { parseProgram } from '../src/parser.js';
 import { kernelContexts } from '../src/elaborate.js';
 import { interpretKernel } from '../src/semantics/concrete.js';
-import { run } from '../src/runtime.js';
+import { run } from '../src/cpu/runtime.js';
 import { shapeWidth } from '../src/values.js';
 
 let seed = 1;

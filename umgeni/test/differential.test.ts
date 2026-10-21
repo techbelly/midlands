@@ -5,7 +5,7 @@
 // bitwise, not approximate — fused or not.
 import { describe, expect, it } from 'vitest';
 import { compileProgram } from '../src/compile.js';
-import { run } from '../src/runtime.js';
+import { run } from '../src/cpu/runtime.js';
 import { fixture } from './sources.js';
 
 const kernels = fixture('chari-kernels.nl');

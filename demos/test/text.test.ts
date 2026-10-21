@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compileTextPipeline, renderText } from '../src/text/render.js';
 import { asciiArt, paintCoverage, textTokens } from '../src/text/host.js';
-import { run, streamer } from '../../umgeni/src/runtime.js';
+import { run, streamer } from '../../umgeni/src/cpu/runtime.js';
 
 const program = compileTextPipeline();
 

@@ -1,5 +1,5 @@
 // WebAssembly backend for fused kernel segments — the same unit fused JS
-// compiles (passes/fuse.ts, codegen.ts genSegment), with the same shape:
+// compiles (passes/fuse.ts, js.ts genSegment), with the same shape:
 //
 //   stage j          → wasm function st_j(input… : f64)
 //   `>>` to stage j+1 → a direct call st_{j+1}(values…)
@@ -12,8 +12,8 @@
 // wasm segment's output is bit-identical to the JS backend's — that is the
 // test. The module is emitted directly in the binary format (no assembler).
 
-import { anyStmt, type FusedStage, type ScalarExpr, type Stmt } from './ir.js';
-import { BIN, UN } from './scalar.js';
+import { anyStmt, type FusedStage, type ScalarExpr, type Stmt } from '../ir.js';
+import { BIN, UN } from '../scalar.js';
 
 // --- a minimal binary encoder ---------------------------------------------------
 

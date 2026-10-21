@@ -7,11 +7,11 @@
 import type * as ast from './ast.js';
 import { parseProgram } from './parser.js';
 import { elaborateProgram } from './elaborate.js';
-import { generate, type CodegenOptions } from './codegen.js';
+import { generate, type CodegenOptions } from './cpu/js.js';
 import { cseModule } from './passes/cse.js';
 import { fuseModule } from './passes/fuse.js';
 import type { ModuleIR } from './ir.js';
-import * as rt from './runtime.js';
+import * as rt from './cpu/runtime.js';
 
 export type ProcessFactory = (params?: number[]) => rt.Op;
 

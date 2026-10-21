@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest';
 import { read } from '../src/sources.js';
 import { compileProgram } from '../../umgeni/src/compile.js';
-import * as rt from '../../umgeni/src/runtime.js';
+import * as rt from '../../umgeni/src/cpu/runtime.js';
 import { textSpansParams, textTokens } from '../src/text/host.js';
 
 

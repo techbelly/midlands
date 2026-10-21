@@ -13,7 +13,7 @@ import { compileProgram } from '../../umgeni/src/compile.js';
 import { createRasterHost } from '../../umgeni/src/gpu/raster.js';
 import { lowerFusedPipeline } from '../../umgeni/src/gpu/lower.js';
 import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
-import * as rt from '../../umgeni/src/runtime.js';
+import * as rt from '../../umgeni/src/cpu/runtime.js';
 import { paintCoverage, textSpansParams, textTokens } from '../src/text/host.js';
 
 const program = compileProgram([

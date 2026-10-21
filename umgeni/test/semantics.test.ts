@@ -23,7 +23,7 @@ describe.each(PROGRAMS)('interpreter ≡ compiler, kernel by kernel: %s', (_, so
 // Mid-stream ⇒, interpreted literally (the process becomes the pipeline, as
 // in the 2012 C runtime) vs the compiler's defunctionalization
 // (substitute.ts) vs the 2012 runtime itself (fixtures/stroke-oracle.json).
-import { dupCat, pipeline, reverse, run } from '../src/runtime.js';
+import { dupCat, pipeline, reverse, run } from '../src/cpu/runtime.js';
 
 describe('mid-stream ⇒: interpreter ≡ compiler ≡ the 2012 runtime', () => {
   const sources = ['types', 'bezier', 'stroke'].map((n) => gezira(`${n}.nl`));

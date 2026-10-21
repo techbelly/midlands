@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sortTokens, type Token } from '../src/runtime.js';
+import { sortTokens, type Token } from '../src/cpu/runtime.js';
 
 // Reference: a by-construction stable sort (decorate with index).
 function referenceSort(tokens: Token[], k: number): Token[] {

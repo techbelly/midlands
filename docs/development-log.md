@@ -1,7 +1,8 @@
 # Umgeni — development log
 
 > **Paths.** Written before the repository became *midlands*: `src/…` is now
-> `umgeni/src/…`, `src/meta/` is `umgeni/src/semantics/`, `src/mooi/` is
+> `umgeni/src/…`, `src/meta/` is `umgeni/src/semantics/`, the CPU backend
+> (`codegen.ts`, now `js.ts`; `wasm.ts`; `runtime.ts`) is `umgeni/src/cpu/`, `src/mooi/` is
 > `mooi/`, `test/fixtures/*.nl` from gezira are in `gezira/`, and the demos'
 > code and Nile (`demo/`, `src/text/`, `src/vector/`, `nl/text.nl`,
 > `nl/vector.nl`) are in `demos/`. The TypeScript semantics and sugar were
@@ -34,8 +35,8 @@ Frankish:
   is parse → elaborate ([src/elaborate.ts](../umgeni/src/elaborate.ts), scalarization:
   records/tuples flattened to Reals, operators inlined, broadcasting/lifting
   compiled away) → IR ([src/ir.ts](../umgeni/src/ir.ts), plain data, structured control
-  flow, no SSA/CSE yet) → generated JS ([src/codegen.ts](../umgeni/src/codegen.ts),
-  inspectable source) → streaming runtime ([src/runtime.ts](../umgeni/src/runtime.ts),
+  flow, no SSA/CSE yet) → generated JS ([src/codegen.ts](../umgeni/src/cpu/js.ts),
+  inspectable source) → streaming runtime ([src/runtime.ts](../umgeni/src/cpu/runtime.ts),
   ported from chari: LIFO feedback queue, buffering sort, end() propagation).
   Tokens are flat number arrays (a Bezier is 6 Reals) — the layout that makes
   typed-array/SoA batching reachable later.
@@ -98,7 +99,7 @@ Frankish:
 
   All variants are span-identical (bench gate), and the differential suite
   passes bit-identical against chari on both fused and unfused builds.
-- **SortBy: bucketed stable sort** (in [src/runtime.ts](../umgeni/src/runtime.ts)).
+- **SortBy: bucketed stable sort** (in [src/runtime.ts](../umgeni/src/cpu/runtime.ts)).
   Profiling showed 78% of raster time inside the two SortBy end() calls
   (~39k edge samples × 2 per paragraph, comparator sort over wrapper
   objects). Rasterization keys are half-integers in a bounded range, so
@@ -248,7 +249,7 @@ Frankish:
   `\n` is a hard break). A 7.5k-token paragraph lays out and rasterizes in
   ~17 ms (node). The text page sets Source Serif by default and accepts any
   dropped `.ttf`. Not yet: kerning (GPOS) and shaping.
-- **WebAssembly backend** ([src/wasm.ts](../umgeni/src/wasm.ts), `compileProgram(…,
+- **WebAssembly backend** ([src/wasm.ts](../umgeni/src/cpu/wasm.ts), `compileProgram(…,
   { target: 'wasm' })`): each fused kernel segment becomes one wasm module,
   emitted directly in the binary format (~350 lines, no assembler) — stage
   = function, `>>` = direct call with f64 arguments, `<<` = LIFO worklist in
@@ -281,8 +282,8 @@ counts as of October 2026):
 | higher-order | [substitute.ts](../umgeni/src/substitute.ts) | 205 | mid-stream `⇒` is a state machine plus feedback over frames |
 | IR | [ir.ts](../umgeni/src/ir.ts), [scalar.ts](../umgeni/src/scalar.ts) | 151 + 107 | one tree, two folds; every scalar operator defined once |
 | passes | [fuse](../umgeni/src/passes/fuse.ts), [cse](../umgeni/src/passes/cse.ts) | 84 + 226 | stages call each other directly; value numbering without SSA |
-| JS | [codegen.ts](../umgeni/src/codegen.ts), [runtime.ts](../umgeni/src/runtime.ts) | 269 + 313 | every kernel is a segment; barriers are functions on finite streams |
-| wasm | [wasm.ts](../umgeni/src/wasm.ts) | 341 | the same segments, in the binary format, bit-identical |
+| JS | [codegen.ts](../umgeni/src/cpu/js.ts), [runtime.ts](../umgeni/src/cpu/runtime.ts) | 269 + 313 | every kernel is a segment; barriers are functions on finite streams |
+| wasm | [wasm.ts](../umgeni/src/cpu/wasm.ts) | 341 | the same segments, in the binary format, bit-identical |
 | GPU | [wgsl](../umgeni/src/gpu/wgsl.ts), [lower](../umgeni/src/gpu/lower.ts), [texture](../umgeni/src/gpu/texture.ts), [classify](../umgeni/src/gpu/classify.ts) | 143 + 310 + 113 + 21 | declarations license parallel lowering; textures become one `paint()` |
 
 ## Design notes (parser)

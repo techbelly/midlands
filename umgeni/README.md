@@ -25,9 +25,10 @@ Nile ─Ohm─▶ AST ─sugar.mooi─▶ core AST ─nile.mooi, staged─▶ sc
 - **Higher order**: mid-stream `⇒` (a process becoming a pipeline), DupCat,
   DupZip and Reverse are defunctionalised in [src/substitute.ts](src/substitute.ts).
 - **Backends**:
-  - [src/codegen.ts](src/codegen.ts) emits JS, the reference.
-  - [src/wasm.ts](src/wasm.ts) emits WebAssembly binary directly, bit-identical
-    to the JS.
+  - [src/cpu/](src/cpu/): [js.ts](src/cpu/js.ts) emits JavaScript, the
+    reference; [wasm.ts](src/cpu/wasm.ts) emits WebAssembly binary directly for
+    fused segments, bit-identical to the JS; [runtime.ts](src/cpu/runtime.ts)
+    streams tokens through both.
   - [src/gpu/](src/gpu/) lowers map kernels, scans, the Rasterize2 pipeline
     ([nl/rasterize2.nl](nl/rasterize2.nl)) and gezira's textures to WGSL.
 

@@ -4,7 +4,7 @@
 // advance, line wrapping, transform, clip, rasterization) is compiled Nile —
 // see nl/text.nl.
 
-import { run, type Op, type Token } from '../../../umgeni/src/runtime.js';
+import { run, type Op, type Token } from '../../../umgeni/src/cpu/runtime.js';
 import { glyphFor as stubGlyph, type Glyph, type Rgba } from './stubfont.js';
 
 /** Where glyph outlines come from: the stub font, or a TrueType font (ttf.ts). */

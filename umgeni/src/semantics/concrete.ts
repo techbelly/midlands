@@ -4,7 +4,7 @@
 // must agree bit for bit.
 
 import type * as A from '../ast.js';
-import { identity, pipeline, type Op, type Token } from '../runtime.js';
+import { identity, pipeline, type Op, type Token } from '../cpu/runtime.js';
 import { BIN, UN } from '../scalar.js';
 import { fromExprs, shapeWidth, type Shape, type Value } from '../values.js';
 import type { Domain, Program } from './domain.js';

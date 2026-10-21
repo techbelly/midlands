@@ -5,7 +5,7 @@
 // stroke/bezier/rasterize source plus nl/vector.nl; this module does only
 // SVG→cubics and span→pixel compositing. DOM-free: shared by the browser demo and tests.
 
-import type { Op, Token } from '../../../umgeni/src/runtime.js';
+import type { Op, Token } from '../../../umgeni/src/cpu/runtime.js';
 
 export type Cubic = number[]; // 8 floats: A B C D as x,y pairs
 

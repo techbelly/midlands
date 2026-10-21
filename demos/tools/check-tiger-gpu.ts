@@ -11,7 +11,7 @@ import { compileProgram } from '../../umgeni/src/compile.js';
 import { createTigerGpu } from '../../umgeni/src/gpu/tiger.js';
 import { lowerFusedPipeline } from '../../umgeni/src/gpu/lower.js';
 import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
-import * as rt from '../../umgeni/src/runtime.js';
+import * as rt from '../../umgeni/src/cpu/runtime.js';
 import { compileVectorPipeline } from '../src/vector/compile.js';
 import { drawTiger, fitView, parseTiger, tigerBatches } from '../src/vector/tiger.js';
 

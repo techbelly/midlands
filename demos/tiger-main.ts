@@ -1,7 +1,7 @@
 // The tiger demo shell: zoom/pan state and canvas plumbing. Ported from
 // chari/web/tiger-main.ts; the pipeline is Umgeni-compiled (vector.gen.js).
 
-import * as rt from '../umgeni/src/runtime.js';
+import * as rt from '../umgeni/src/cpu/runtime.js';
 import { drawTiger, parseTiger, tigerBatches } from './src/vector/tiger.js';
 import { createTigerGpu, type TigerGpu } from '../umgeni/src/gpu/tiger.js';
 import { lowerFusedPipeline } from '../umgeni/src/gpu/lower.js';

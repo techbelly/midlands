@@ -6,7 +6,7 @@ import { writeFileSync } from 'node:fs';
 import { compileTextPipeline } from '../src/text/render.js';
 import { compileVectorPipeline } from '../src/vector/compile.js';
 import { textSpansParams, driveTextSpans } from '../src/text/host.js';
-import * as rt from '../../umgeni/src/runtime.js';
+import * as rt from '../../umgeni/src/cpu/runtime.js';
 
 const t0 = performance.now();
 // This file executes as a bundle at demos/gen/.gen-entry.mjs, so the

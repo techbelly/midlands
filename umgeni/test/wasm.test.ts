@@ -1,4 +1,4 @@
-// The WebAssembly backend (src/wasm.ts) against the JS backend: wasm f64 is
+// The WebAssembly backend (src/cpu/wasm.ts) against the JS backend: wasm f64 is
 // IEEE-identical to JS numbers, so every fused segment compiled to wasm must
 // produce BIT-IDENTICAL output. Inputs are the oracle suites' cases;
 // demos/test/wasm.test.ts does the same for the text and tiger demos.

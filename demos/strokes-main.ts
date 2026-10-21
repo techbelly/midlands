@@ -1,7 +1,7 @@
 // Stroke demo: gezira's own stroke.nl — unmodified, higher-order (mid-stream
 // ⇒, recursive generators, DupCat, Reverse) — compiled by Umgeni.
 
-import * as rt from '../umgeni/src/runtime.js';
+import * as rt from '../umgeni/src/cpu/runtime.js';
 import { collectSpans, hexRGB, paintSpans, strokeOutline } from './src/vector/tiger.js';
 // @ts-expect-error generated at build time, plain JS
 import { makeVectorRegistry } from './gen/vector.gen.js';

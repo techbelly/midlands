@@ -3,7 +3,7 @@ import { gezira } from './sources.js';
 import { compileProgram, makeStreamer } from '../src/compile.js';
 import { opCount } from '../src/passes/cse.js';
 import type { ScalarExpr, Stmt } from '../src/ir.js';
-import { run } from '../src/runtime.js';
+import { run } from '../src/cpu/runtime.js';
 
 function staticOps(program: ReturnType<typeof compileProgram>, name: string): number {
   const k = program.ir.processes.find((p) => p.name === name);
