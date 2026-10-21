@@ -25,6 +25,9 @@
             border-radius: 4px; max-height: 320px; overflow: auto; white-space: pre; margin: 0.4rem 0 0; }
   .nile { background: #f6f6f3; border-left: 3px solid #c9c4b5; padding: 0.6rem 0.9rem; font: 12px/1.45 ui-monospace, Menlo, monospace; overflow-x: auto; margin: 0.6rem 0; }
   .help { background: #eef4fb; border-radius: 4px; padding: 0.45rem 0.75rem; font-size: 0.9rem; }
+  .pipeline { margin: 0.5rem 0; }
+  .pipeline summary { cursor: pointer; color: #555; }
+  .pipeline .nile { margin-top: 0.4rem; }
   .lede { margin: 0.2rem 0 0.4rem; }
 </style>
 </head>
@@ -32,7 +35,9 @@
 <nav><a href="index.html">text</a> <a href="tiger.html">tiger</a> <a href="strokes.html">strokes</a> <a href="paint.html"><b>paint</b></a></nav>
 <h1>Paint</h1>
 <p class="lede">Edit a Nile texture and see it painted. The compiler runs in this page.</p>
+<details class="pipeline"><summary>See the Nile pipeline</summary>
 <pre class="nile" id="nile"></pre>
+</details>
 <p class="note">
   A texture is a pipeline from points to colours. Each edit compiles your
   <code>Paint</code> with gezira's library (gradients, colour spans, 25
