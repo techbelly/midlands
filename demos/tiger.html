@@ -21,15 +21,22 @@
 <body>
 <nav><a href="index.html">text</a> <a href="tiger.html"><b>tiger</b></a> <a href="strokes.html">strokes</a> <a href="paint.html">paint</a></nav>
 <h1>Tiger</h1>
-<p class="lede">The Ghostscript Tiger: 240 SVG paths, interpreted, filled and stroked by Nile.</p>
+<p class="lede">
+  These Nile pipelines draw the Ghostscript Tiger's 240 SVG paths. Plain
+  TypeScript lexes each path's <code>d</code> attribute into
+  <code>PathCommand</code>s, and <code>PathCubics</code> interprets them into
+  cubic curves. <code>SvgFill</code> transforms a path's cubics, flattens them
+  to quadratic beziers, clips them and rasterizes them into coverage spans;
+  <code>SvgStroke</code> transforms and flattens them, then outlines them with
+  gezira's stroker. <code>PaintSpans</code> turns the spans into coloured
+  pixels, which TypeScript writes to the canvas. The pipelines are
+  parameterized by the view matrix (zoom and pan), the SVG's own transform,
+  the clip rectangle and, for strokes, the width, a minimum width, the join and
+  the cap. On the GPU, rasterizing and compositing run as WGSL.
+</p>
 <details class="pipeline"><summary>See the Nile pipeline</summary>
 <pre class="nile" id="nile"></pre>
 </details>
-<p class="note">
-  The host lexes the SVG into path commands, chooses the view, and writes the
-  painted pixels. gezira's kernels, its stroker included, are used unmodified.
-  On the GPU, each path's beziers are rasterized and composited in WGSL.
-</p>
 <p class="help"><b>How to use:</b> double-click to zoom in (100%, 200%, 400%,
   then back), and drag to pan. The renderer menu switches between the CPU and
   the GPU.</p>

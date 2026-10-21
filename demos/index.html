@@ -23,19 +23,23 @@
 <body>
 <nav><a href="index.html"><b>text</b></a> <a href="tiger.html">tiger</a> <a href="strokes.html">strokes</a> <a href="paint.html">paint</a></nav>
 <h1>Text</h1>
-<p class="lede">A paragraph laid out, rasterized and painted by Nile: glyph outlines in, pixels out.</p>
+<p class="lede">
+  This Nile pipeline, <code>TextSpans</code>, takes a stream of
+  <code>GlyphBezier</code>s: each glyph's outline curves, read from the font by
+  plain TypeScript, tagged with the glyph's advance. It wraps the text into
+  lines (<code>WordWidths</code> runs backwards, so each word's first glyph
+  knows how wide the word is), lays the glyphs out, transforms them onto the
+  page, clips them and rasterizes them into coverage spans.
+  <code>PaintSpans</code> turns the spans into coloured pixels, which TypeScript
+  writes to the canvas. The pipeline is parameterized by the line width, the
+  line height, a matrix that scales and places the text, and the clip
+  rectangle. Colour emoji are layers of outlines, so the page splits the stream
+  after layout and paints each colour in turn. On the GPU, the rasterizer runs
+  as WGSL (<code>Rasterize2</code>).
+</p>
 <details class="pipeline"><summary>See the Nile pipeline</summary>
 <pre class="nile" id="nile"></pre>
 </details>
-<p class="note">
-  The host reads the font and turns each character into its outline beziers
-  (TrueType's quadratic curves are exactly gezira's beziers), then writes the
-  painted pixels. Words wrap in Nile: <code>WordWidths</code> runs over the text
-  backwards, so each word's first glyph knows the word's width. A colour emoji
-  is a stack of coloured outline layers, painted in order. On the GPU,
-  <code>Rasterize2</code> (the same rasterizer, written with declared scans) is
-  lowered to WGSL.
-</p>
 <p class="help"><b>How to use:</b> edit the text, drag the size, or pick a font;
   drop a <code>.ttf</code> file onto the page to set the text in it. The renderer
   menu switches between the CPU and the GPU.</p>

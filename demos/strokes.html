@@ -25,17 +25,23 @@
 <body>
 <nav><a href="index.html">text</a> <a href="tiger.html">tiger</a> <a href="strokes.html"><b>strokes</b></a> <a href="paint.html">paint</a></nav>
 <h1>Strokes</h1>
-<p class="lede">Paths stroked by gezira's <code>stroke.nl</code>, unmodified: offsets, joins, caps and the miter limit.</p>
+<p class="lede">
+  This Nile pipeline, <code>StrokeOutline</code>, takes a stream of cubic
+  curves (the paths, written in plain TypeScript) and outlines them with
+  gezira's <code>stroke.nl</code>, unmodified. <code>StrokeBezierPath</code>
+  offsets each curve to both sides, subdividing it where needed
+  (<code>OffsetBezier</code> replaces itself with a pipeline mid-stream), joins
+  neighbouring segments and caps the ends, stroking the second side with
+  <code>DupCat</code> and <code>Reverse</code>. <code>FillBeziers</code> then
+  clips and rasterizes the outline, and <code>PaintSpans</code> turns the spans
+  into coloured pixels, which TypeScript writes to the canvas. The pipeline is
+  parameterized by a transform, the stroke width, the join (round, or a miter
+  limit) and the cap (round, butt or square). The faint white lines are the
+  input paths.
+</p>
 <details class="pipeline"><summary>See the Nile pipeline</summary>
 <pre class="nile" id="nile"></pre>
 </details>
-<p class="note">
-  <code>StrokeBezierPath</code> is higher-order: <code>OffsetBezier</code> subdivides
-  a curve by replacing itself with a pipeline mid-stream, and the path's two
-  sides are stroked with <code>DupCat</code> and <code>Reverse</code>. umgeni
-  compiles these to plain first-order code. The host supplies the cubics and
-  writes the painted pixels. The faint white lines are the input paths.
-</p>
 <p class="help"><b>How to use:</b> choose a cap and a join, drag the width (and
   the miter limit, for miter joins), and tick <i>show outline</i> to see the
   offset beziers the stroker produces.</p>

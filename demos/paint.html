@@ -34,19 +34,23 @@
 <body>
 <nav><a href="index.html">text</a> <a href="tiger.html">tiger</a> <a href="strokes.html">strokes</a> <a href="paint.html"><b>paint</b></a></nav>
 <h1>Paint</h1>
-<p class="lede">Edit a Nile texture and see it painted. The compiler runs in this page.</p>
+<p class="lede">
+  This Nile pipeline, <code>PaintBeziers</code>, takes a stream of beziers (a
+  disc, a star and a thick stroke, made in Nile from shapes written in plain
+  TypeScript), clips and rasterizes them, and paints them with
+  <code>Paint</code>, the texture you write here. A texture is itself a
+  pipeline, from points to colours: <code>ApplyTexture</code> expands the spans
+  into pixels and asks <code>Paint</code> for each pixel's colour, and
+  TypeScript writes the pixels to the canvas. The pipeline is parameterized by
+  the clip rectangle and by the texture, which can itself take textures (a blur,
+  a blend) as parameters. The compiler runs in this page: each edit compiles
+  your <code>Paint</code> with gezira's gradients, compositors and filters to
+  JavaScript, and, for the GPU, to a WGSL function the fragment shader calls
+  for each pixel.
+</p>
 <details class="pipeline"><summary>See the Nile pipeline</summary>
 <pre class="nile" id="nile"></pre>
 </details>
-<p class="note">
-  A texture is a pipeline from points to colours. Each edit compiles your
-  <code>Paint</code> with gezira's library (gradients, colour spans, 25
-  compositors, bilinear, bicubic and Gaussian filters) to JavaScript, and
-  fills a disc, a star and a thick stroke with it. Filters take a whole
-  texture as an argument; the compiler inlines it where it is used. For the
-  GPU, <code>Paint</code> is compiled again, to a WGSL function the fragment
-  shader calls for each pixel.
-</p>
 <p class="help"><b>How to use:</b> pick an example from the menu, or edit the
   source; the picture updates as you type. <code>Paint</code> must be a texture
   (<code>Point &gt;&gt; Color</code>). Open <i>The WGSL your Paint became</i>
