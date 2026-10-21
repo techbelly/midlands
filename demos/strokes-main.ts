@@ -2,7 +2,8 @@
 // ⇒, recursive generators, DupCat, Reverse) — compiled by Umgeni.
 
 import * as rt from '../umgeni/src/cpu/runtime.js';
-import { collectSpans, hexRGB, paintSpans, strokeOutline } from './src/vector/tiger.js';
+import { collectSpans, strokeOutline } from './src/vector/draw.js';
+import { hexRGB, paintSpans } from './src/vector/spans.js';
 // @ts-expect-error generated at build time, plain JS
 import { makeVectorRegistry } from './gen/vector.gen.js';
 

@@ -2,7 +2,8 @@
 // chari/web/tiger-main.ts; the pipeline is Umgeni-compiled (vector.gen.js).
 
 import * as rt from '../umgeni/src/cpu/runtime.js';
-import { drawTiger, parseTiger, tigerBatches } from './src/vector/tiger.js';
+import { parseSvg } from './src/vector/svg.js';
+import { drawTiger, tigerBatches } from './src/vector/tiger.js';
 import { createTigerGpu, type TigerGpu } from '../umgeni/src/gpu/tiger.js';
 import { lowerFusedPipeline } from '../umgeni/src/gpu/lower.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
@@ -14,7 +15,7 @@ import { rasterize2IR } from './gen/pipeline.gen.js';
 import svgSrc from './tiger.svg';
 
 const registry = makeVectorRegistry(rt);
-const tiger = parseTiger(svgSrc);
+const tiger = parseSvg(svgSrc);
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const canvasGpu = document.getElementById('viewgpu') as HTMLCanvasElement;

@@ -5,11 +5,13 @@
 import { describe, expect, it } from 'vitest';
 import { read } from '../src/sources.js';
 import { compileVectorPipeline } from '../src/vector/compile.js';
-import { collectSpans, drawTiger, fitView, parseTiger, pathSubpaths, strokeOutline } from '../src/vector/tiger.js';
+import { collectSpans, strokeOutline } from '../src/vector/draw.js';
+import { parseSvg, pathSubpaths } from '../src/vector/svg.js';
+import { drawTiger, fitView } from '../src/vector/tiger.js';
 
 
 const program = compileVectorPipeline();
-const tiger = parseTiger(read('demos/tiger.svg'));
+const tiger = parseSvg(read('demos/tiger.svg'));
 
 describe('the tiger demo, headless', () => {
   it('compiles the gezira kernels with nothing unsupported', () => {

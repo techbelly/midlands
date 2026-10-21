@@ -16,7 +16,8 @@ import * as rt from '../umgeni/src/cpu/runtime.js';
 import { colorRuns, fallback, paintCoverage, textSpansParams, textTokens, type ColorRun, type GlyphSource } from './src/text/host.js';
 import { glyphFor as stubGlyph } from './src/text/stubfont.js';
 import { parseTrueType } from './src/text/ttf.js';
-import { collectSpans, paintSpans } from './src/vector/tiger.js';
+import { collectSpans } from './src/vector/draw.js';
+import { paintSpans } from './src/vector/spans.js';
 // @ts-expect-error binary import resolved by esbuild (fonts/OFL.txt)
 import sourceSerif from './fonts/SourceSerif4.ttf';
 // @ts-expect-error binary import resolved by esbuild (fonts/TWEMOJI-LICENSE.md: CC-BY 4.0)

@@ -13,7 +13,8 @@ import { lowerFusedPipeline } from '../../umgeni/src/gpu/lower.js';
 import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
 import * as rt from '../../umgeni/src/cpu/runtime.js';
 import { compileVectorPipeline } from '../src/vector/compile.js';
-import { drawTiger, fitView, parseTiger, tigerBatches } from '../src/vector/tiger.js';
+import { parseSvg } from '../src/vector/svg.js';
+import { drawTiger, fitView, tigerBatches } from '../src/vector/tiger.js';
 
 
 const vector = compileVectorPipeline();
@@ -24,7 +25,7 @@ const raster = compileProgram([
   read('demos/nl/text.nl'),
   read('umgeni/nl/rasterize2.nl'),
 ]);
-const tiger = parseTiger(read('demos/tiger.svg'));
+const tiger = parseSvg(read('demos/tiger.svg'));
 
 const W = Number(Deno.args[0] ?? 512);
 const H = W;
@@ -74,7 +75,7 @@ const warmGpuMs = performance.now() - t0;
 // Rasterize pipeline, composited with the same colors. This isolates GPU
 // raster+composite correctness from f32-vs-f64 front-half precision (which
 // only shifts antialiased edge pixels).
-import { paintSpans } from '../src/vector/tiger.js';
+import { paintSpans } from '../src/vector/spans.js';
 const refImg = { width: W, height: H, data: new Uint8ClampedArray(W * H * 4).fill(255) };
 for (const b of batches) {
   const op = raster.registry.get('Rasterize')!();

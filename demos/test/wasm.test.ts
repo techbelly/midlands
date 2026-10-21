@@ -7,7 +7,8 @@ import { read } from '../src/sources.js';
 import { compileTextPipeline, renderText } from '../src/text/render.js';
 import { parseTrueType } from '../src/text/ttf.js';
 import { compileVectorPipeline } from '../src/vector/compile.js';
-import { drawTiger, fitView, parseTiger } from '../src/vector/tiger.js';
+import { parseSvg } from '../src/vector/svg.js';
+import { drawTiger, fitView } from '../src/vector/tiger.js';
 
 describe('wasm backend: bit-identical to JS', () => {
   it('text: stub font and Source Serif, through word wrapping and the rasterizer', () => {
@@ -24,7 +25,7 @@ describe('wasm backend: bit-identical to JS', () => {
   });
 
   it('the whole tiger', () => {
-    const tiger = parseTiger(read('demos/tiger.svg'));
+    const tiger = parseSvg(read('demos/tiger.svg'));
     const img = (opts: object) => {
       const im = { width: 96, height: 96, data: new Uint8ClampedArray(96 * 96 * 4).fill(255) };
       drawTiger(im, tiger, fitView(96, 96), compileVectorPipeline(undefined, opts).registry);

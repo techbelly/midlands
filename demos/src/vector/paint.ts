@@ -3,7 +3,8 @@
 // of painted pixels. A paint program is gezira's library + nl/vector.nl +
 // nl/rasterize2.nl + the user's `Paint` + PAINT_GLUE.
 
-import { collectSpans, strokeOutline, type ImgLike, type Registry } from './tiger.js';
+import { collectSpans, strokeOutline, type Registry } from './draw.js';
+import type { ImgLike } from './spans.js';
 
 export const PAINT_GLUE = `
 PaintBeziers (min, max : Point) : Bezier >> (Color, CoveragePoint)

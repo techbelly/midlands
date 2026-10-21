@@ -8,7 +8,7 @@ import { createTigerGpu, type TigerGpu } from '../umgeni/src/gpu/tiger.js';
 import { lowerFusedPipeline } from '../umgeni/src/gpu/lower.js';
 import { lowerTexture } from '../umgeni/src/gpu/texture.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
-import { collectSpans } from './src/vector/tiger.js';
+import { collectSpans } from './src/vector/draw.js';
 import { PAINT_GLUE, paintPixels, paintShapes } from './src/vector/paint.js';
 import { PRESETS } from './paint-presets.js';
 // @ts-expect-error text imports resolved by esbuild
