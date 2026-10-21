@@ -18,9 +18,9 @@ import { glyphFor as stubGlyph } from './src/text/stubfont.js';
 import { parseTrueType } from './src/text/ttf.js';
 import { collectSpans } from './src/vector/draw.js';
 import { paintSpans } from './src/vector/spans.js';
-// @ts-expect-error binary import resolved by esbuild (fonts/OFL.txt)
+// Source Serif 4: SIL OFL 1.1 (fonts/OFL.txt)
 import sourceSerif from './fonts/SourceSerif4.ttf';
-// @ts-expect-error binary import resolved by esbuild (fonts/TWEMOJI-LICENSE.md: CC-BY 4.0)
+// Twemoji Mozilla: CC-BY 4.0 art (fonts/TWEMOJI-LICENSE.md)
 import twemoji from './fonts/Twemoji.Mozilla.ttf';
 import { createRasterHost, type GpuRasterizer } from '../umgeni/src/gpu/raster.js';
 import { createTigerGpu, type TigerGpu } from '../umgeni/src/gpu/tiger.js';
@@ -28,6 +28,16 @@ import { lowerFusedPipeline, type LoweredShaders } from '../umgeni/src/gpu/lower
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
 // @ts-expect-error generated at build time, plain JS
 import { compileMs, makeRegistry, rasterize2IR } from './gen/pipeline.gen.js';
+import { quoteNile } from './src/quote.js';
+import textNl from './nl/text.nl';
+import spansNl from './nl/spans.nl';
+import rasterizeNl from '../gezira/rasterize.nl';
+import rasterize2Nl from '../umgeni/nl/rasterize2.nl';
+
+(document.getElementById('nile') as HTMLElement).textContent = quoteNile(
+  [textNl, spansNl, rasterizeNl, rasterize2Nl],
+  ['TextSpans', 'TextLayout', 'WordWidths', 'LayoutGlyphs', 'Rasterize', 'Rasterize2', 'PaintSpans'],
+);
 
 const registry = makeRegistry(rt);
 

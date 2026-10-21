@@ -11,8 +11,18 @@ import { requestDevice } from '../umgeni/src/gpu/runtime.js';
 import { makeVectorRegistry } from './gen/vector.gen.js';
 // @ts-expect-error generated at build time, plain JS
 import { rasterize2IR } from './gen/pipeline.gen.js';
-// @ts-expect-error text import resolved by esbuild
 import svgSrc from './tiger.svg';
+import { quoteNile } from './src/quote.js';
+import svgNl from './nl/svg.nl';
+import vectorNl from './nl/vector.nl';
+import spansNl from './nl/spans.nl';
+import strokeNl from '../gezira/stroke.nl';
+import rasterizeNl from '../gezira/rasterize.nl';
+
+(document.getElementById('nile') as HTMLElement).textContent = quoteNile(
+  [svgNl, vectorNl, spansNl, strokeNl, rasterizeNl],
+  ['PathCubics', 'SvgFill', 'FillPath', 'FillBeziers', 'Rasterize', 'SvgStroke', 'StrokeOutline', 'StrokeBezierPath', 'PaintSpans'],
+);
 
 const registry = makeVectorRegistry(rt);
 const tiger = parseSvg(svgSrc, registry);

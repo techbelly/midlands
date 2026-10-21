@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Umgeni — Paint</title>
+<title>midlands — paint</title>
 <style>
   body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 1060px; padding: 0 1rem; color: #222; }
   h1 { font-size: 1.2rem; }
@@ -23,22 +23,29 @@
   summary { cursor: pointer; color: #444; font-size: 0.9rem; }
   #shader { font: 11.5px/1.4 ui-monospace, Menlo, monospace; background: #f6f6f6; padding: 0.6rem;
             border-radius: 4px; max-height: 320px; overflow: auto; white-space: pre; margin: 0.4rem 0 0; }
+  .nile { background: #f6f6f3; border-left: 3px solid #c9c4b5; padding: 0.6rem 0.9rem; font: 12px/1.45 ui-monospace, Menlo, monospace; overflow-x: auto; margin: 0.6rem 0; }
+  .help { background: #eef4fb; border-radius: 4px; padding: 0.45rem 0.75rem; font-size: 0.9rem; }
+  .lede { margin: 0.2rem 0 0.4rem; }
 </style>
 </head>
 <body>
 <nav><a href="index.html">text</a> <a href="tiger.html">tiger</a> <a href="strokes.html">strokes</a> <a href="paint.html"><b>paint</b></a></nav>
-<h1>Paint: edit Nile, see it render</h1>
+<h1>Paint</h1>
+<p class="lede">Edit a Nile texture and see it painted. The compiler runs in this page.</p>
+<pre class="nile" id="nile"></pre>
 <p class="note">
-  The Umgeni compiler runs in this page. Each edit compiles your text together
-  with Dan Amelang's gezira library — gradients, colour spans, 25 compositors,
-  bilinear, bicubic and Gaussian filters — into JavaScript, then fills a disc, a
-  star and a thick stroke with your <code>Paint</code> texture. Textures are
-  pipelines that take a point and produce a colour, so a blur or a blend takes a
-  whole texture as its argument; the compiler inlines those arguments where
-  they're used. On the GPU, <code>Paint</code> is compiled once more, into a
-  WGSL function the fragment shader calls for every pixel: open the shader
-  panel to see what your Nile became.
+  A texture is a pipeline from points to colours. Each edit compiles your
+  <code>Paint</code> with gezira's library (gradients, colour spans, 25
+  compositors, bilinear, bicubic and Gaussian filters) to JavaScript, and
+  fills a disc, a star and a thick stroke with it. Filters take a whole
+  texture as an argument; the compiler inlines it where it is used. For the
+  GPU, <code>Paint</code> is compiled again, to a WGSL function the fragment
+  shader calls for each pixel.
 </p>
+<p class="help"><b>How to use:</b> pick an example from the menu, or edit the
+  source; the picture updates as you type. <code>Paint</code> must be a texture
+  (<code>Point &gt;&gt; Color</code>). Open <i>The WGSL your Paint became</i>
+  to see the shader. Textures with filters paint on the CPU only.</p>
 <div class="cols">
   <div class="left">
     <select id="preset" aria-label="Example"></select>
@@ -47,8 +54,8 @@
   <div class="right">
     <div class="bar">
       <label>renderer <select id="mode">
-        <option value="cpu">CPU (Nile → JS)</option>
-        <option value="gpu" selected>GPU (Nile → WGSL)</option>
+        <option value="cpu">CPU — Nile compiled to JavaScript</option>
+        <option value="gpu" selected>GPU — Nile compiled to WGSL</option>
       </select></label>
     </div>
     <canvas id="view" width="480" height="360"></canvas>

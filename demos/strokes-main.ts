@@ -6,6 +6,16 @@ import { collectSpans, strokeOutline } from './src/vector/draw.js';
 import { hexRGB, paintSpans } from './src/vector/spans.js';
 // @ts-expect-error generated at build time, plain JS
 import { makeVectorRegistry } from './gen/vector.gen.js';
+import { quoteNile } from './src/quote.js';
+import vectorNl from './nl/vector.nl';
+import spansNl from './nl/spans.nl';
+import strokeNl from '../gezira/stroke.nl';
+import rasterizeNl from '../gezira/rasterize.nl';
+
+(document.getElementById('nile') as HTMLElement).textContent = quoteNile(
+  [vectorNl, spansNl, strokeNl, rasterizeNl],
+  ['StrokeOutline', 'StrokeBezierPath', 'FillBeziers', 'Rasterize', 'PaintSpans'],
+);
 
 const registry = makeVectorRegistry(rt);
 const fillBeziers = registry['FillBeziers'];

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Umgeni — Strokes</title>
+<title>midlands — strokes</title>
 <style>
   body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 720px; padding: 0 1rem; color: #222; }
   h1 { font-size: 1.2rem; }
@@ -14,20 +14,26 @@
   .seg button:last-child { border-radius: 0 4px 4px 0; }
   .note { color: #666; font-size: 0.85rem; }
   nav a { margin-right: 1rem; }
+  .nile { background: #f6f6f3; border-left: 3px solid #c9c4b5; padding: 0.6rem 0.9rem; font: 12px/1.45 ui-monospace, Menlo, monospace; overflow-x: auto; margin: 0.6rem 0; }
+  .help { background: #eef4fb; border-radius: 4px; padding: 0.45rem 0.75rem; font-size: 0.9rem; }
+  .lede { margin: 0.2rem 0 0.4rem; }
 </style>
 </head>
 <body>
 <nav><a href="index.html">text</a> <a href="tiger.html">tiger</a> <a href="strokes.html"><b>strokes</b></a> <a href="paint.html">paint</a></nav>
-<h1>Stroking with gezira's own stroke.nl</h1>
+<h1>Strokes</h1>
+<p class="lede">Paths stroked by gezira's <code>stroke.nl</code>, unmodified: offsets, joins, caps and the miter limit.</p>
+<pre class="nile" id="nile"></pre>
 <p class="note">
-  Offsets, caps, joins and the miter limit come from Dan Amelang's original
-  <code>stroke.nl</code>, unmodified: it recursively subdivides curves
-  (<code>OffsetBezier</code> substitutes itself mid-stream), joins each pair of
-  segments, and strokes the path's two sides with <code>DupCat</code> and
-  <code>Reverse</code>. Umgeni compiles all of that to plain first-order
-  pipelines; the host only feeds cubics and composites spans. Faint white
-  lines are the input paths.
+  <code>StrokeBezierPath</code> is higher-order: <code>OffsetBezier</code> subdivides
+  a curve by replacing itself with a pipeline mid-stream, and the path's two
+  sides are stroked with <code>DupCat</code> and <code>Reverse</code>. umgeni
+  compiles these to plain first-order code. The host supplies the cubics and
+  writes the painted pixels. The faint white lines are the input paths.
 </p>
+<p class="help"><b>How to use:</b> choose a cap and a join, drag the width (and
+  the miter limit, for miter joins), and tick <i>show outline</i> to see the
+  offset beziers the stroker produces.</p>
 <div class="row">
   <span class="seg" id="cap">cap:
     <button data-v="0">butt</button><button data-v="-1" class="on">round</button><button data-v="1">square</button>

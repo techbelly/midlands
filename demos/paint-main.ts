@@ -12,26 +12,22 @@ import { collectSpans } from './src/vector/draw.js';
 import { PAINT_GLUE, paintShapes } from './src/vector/paint.js';
 import { writePixels } from './src/vector/spans.js';
 import { PRESETS } from './paint-presets.js';
-// @ts-expect-error text imports resolved by esbuild
 import types from '../gezira/types.nl';
-// @ts-expect-error
 import bezier from '../gezira/bezier.nl';
-// @ts-expect-error
 import stroke from '../gezira/stroke.nl';
-// @ts-expect-error
 import rasterize from '../gezira/rasterize.nl';
-// @ts-expect-error
 import texture from '../gezira/texture.nl';
-// @ts-expect-error
 import compositor from '../gezira/compositor.nl';
-// @ts-expect-error
 import gradient from '../gezira/gradient.nl';
-// @ts-expect-error
 import filter from '../gezira/filter.nl';
-// @ts-expect-error
 import vector from './nl/vector.nl';
-// @ts-expect-error
 import rasterize2 from '../umgeni/nl/rasterize2.nl';
+import { quoteNile } from './src/quote.js';
+
+(document.getElementById('nile') as HTMLElement).textContent = quoteNile(
+  [PAINT_GLUE, texture, rasterize],
+  ['PaintBeziers', 'Rasterize', 'ApplyTexture', 'ExpandSpans'],
+);
 
 const LIBRARY: string[] = [types, bezier, stroke, rasterize, texture, compositor, gradient, filter, vector, rasterize2];
 

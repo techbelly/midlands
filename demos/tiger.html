@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Umgeni — Tiger</title>
+<title>midlands — tiger</title>
 <style>
   body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 720px; padding: 0 1rem; color: #222; }
   h1 { font-size: 1.2rem; }
@@ -10,24 +10,29 @@
   #stats { color: #666; font-variant-numeric: tabular-nums; }
   .note { color: #666; font-size: 0.85rem; }
   nav a { margin-right: 1rem; }
+  .nile { background: #f6f6f3; border-left: 3px solid #c9c4b5; padding: 0.6rem 0.9rem; font: 12px/1.45 ui-monospace, Menlo, monospace; overflow-x: auto; margin: 0.6rem 0; }
+  .help { background: #eef4fb; border-radius: 4px; padding: 0.45rem 0.75rem; font-size: 0.9rem; }
+  .lede { margin: 0.2rem 0 0.4rem; }
 </style>
 </head>
 <body>
 <nav><a href="index.html">text</a> <a href="tiger.html"><b>tiger</b></a> <a href="strokes.html">strokes</a> <a href="paint.html">paint</a></nav>
-<h1>The Ghostscript Tiger through compiled Nile</h1>
+<h1>Tiger</h1>
+<p class="lede">The Ghostscript Tiger: 240 SVG paths, interpreted, filled and stroked by Nile.</p>
+<pre class="nile" id="nile"></pre>
 <p class="note">
-  240 paths of cubic beziers. Host does SVG→cubics and pixel compositing;
-  transform, cubic flattening, stroke expansion, clipping and rasterization
-  run in Umgeni-compiled Nile: gezira's own kernels, including its unmodified
-  <code>stroke.nl</code>, plus <code>nl/vector.nl</code>.
-  Double-click to zoom (100% → 200% → 400% → back), drag to pan — clipping
-  keeps zoom cheap and vector-crisp.
+  The host lexes the SVG into path commands, chooses the view, and writes the
+  painted pixels. gezira's kernels, its stroker included, are used unmodified.
+  On the GPU, each path's beziers are rasterized and composited in WGSL.
 </p>
+<p class="help"><b>How to use:</b> double-click to zoom in (100%, 200%, 400%,
+  then back), and drag to pan. The renderer menu switches between the CPU and
+  the GPU.</p>
 <div>
   <label>renderer
     <select id="mode">
-      <option value="cpu">CPU (compiled Nile → JS)</option>
-      <option value="gpu" selected>GPU (IR → WGSL, zero-fence, per-path composite)</option>
+      <option value="cpu">CPU — Nile compiled to JavaScript</option>
+      <option value="gpu" selected>GPU — WGSL, composited per path</option>
     </select>
   </label>
   <span id="stats">loading…</span>
