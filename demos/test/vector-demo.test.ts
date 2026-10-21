@@ -2,6 +2,7 @@
 // (stroke.nl unmodified) + nl/vector.nl compiled by Umgeni, driven with flat
 // cubics from the SVG parser, composited by paintSpans.
 
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { read } from '../src/sources.js';
 import { compileVectorPipeline } from '../src/vector/compile.js';
@@ -47,6 +48,14 @@ describe('the tiger demo, headless', () => {
     expect(colored).toBeGreaterThan(W * H * 0.3);
     // eslint-disable-next-line no-console
     console.log(`tiger ${W}x${H}: ${colored} colored px in ${ms.toFixed(0)} ms`);
+  });
+
+  // Every pixel, pinned: a refactor of any stage (SVG parsing included) must
+  // reproduce the tiger exactly.
+  it('renders the same tiger, pixel for pixel', () => {
+    const img = { width: 200, height: 200, data: new Uint8ClampedArray(200 * 200 * 4).fill(255) };
+    drawTiger(img, tiger, fitView(200, 200), program.registry);
+    expect(createHash('sha256').update(img.data).digest('hex')).toMatchSnapshot();
   });
 
   it('strokes subpaths as SVG draws them: closed only by Z', () => {
