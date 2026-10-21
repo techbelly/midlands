@@ -9,7 +9,8 @@ import { lowerFusedPipeline } from '../umgeni/src/gpu/lower.js';
 import { lowerTexture } from '../umgeni/src/gpu/texture.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
 import { collectSpans } from './src/vector/draw.js';
-import { PAINT_GLUE, paintPixels, paintShapes } from './src/vector/paint.js';
+import { PAINT_GLUE, paintShapes } from './src/vector/paint.js';
+import { writePixels } from './src/vector/spans.js';
 import { PRESETS } from './paint-presets.js';
 // @ts-expect-error text imports resolved by esbuild
 import types from '../gezira/types.nl';
@@ -138,7 +139,7 @@ async function render(): Promise<void> {
   for (const bs of shapes) {
     const out = collectSpans(p.registry.get('PaintBeziers')!([0, 0, W, H]), bs);
     px += out.length;
-    paintPixels(img, out);
+    writePixels(img, out);
   }
   ctx.putImageData(img, 0, 0);
   statusEl.textContent = `${compileNote}  Painted ${px.toLocaleString()} pixels on the CPU in ` +

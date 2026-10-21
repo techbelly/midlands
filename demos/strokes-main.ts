@@ -46,7 +46,7 @@ function draw(): void {
   for (const outline of outlines) {
     const s = collectSpans(fillBeziers([0, 0, W, H]), outline);
     spans += s.length;
-    paintSpans(img, s, hexRGB('#2b6cb0'));
+    paintSpans(img, registry, s, hexRGB('#2b6cb0'));
   }
   const ms = performance.now() - t0;
   ctx.putImageData(img, 0, 0);

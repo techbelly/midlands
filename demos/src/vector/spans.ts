@@ -1,7 +1,11 @@
-// Coverage spans → pixels: the host's one rendering job on the CPU path.
-// A span is flat [x, y, coverage, length].
+// Coverage spans → pixels. Expanding each span to its pixels and colouring
+// them is Nile (nl/spans.nl: gezira's ExpandSpans and UniformColor); the
+// host only writes the resulting pixels, since Nile has no random-access
+// memory. The paint page writes its textured pixels the same way.
 
-export type RGB = readonly [number, number, number];
+import { collectSpans, get, type Registry } from './draw.js';
+
+export type RGB = readonly [number, number, number]; // 0..255
 
 export function hexRGB(hex: string): RGB {
   let h = hex.replace('#', '');
@@ -15,27 +19,27 @@ export interface ImgLike {
   data: Uint8ClampedArray | number[];
 }
 
-// Composite CoverageSpans (flat [x, y, c, l]) over the image in `color`.
-// Span coordinates are pixel centres (n + 0.5), so they FLOOR to pixel n —
-// the same convention as paintCoverage and the GPU grid. (chari's original
-// rounded, shifting its whole image by one pixel, self-consistently.)
-export function paintSpans(img: ImgLike, spans: number[][], color: RGB): void {
+// Composite (Color, CoveragePoint) tokens — premultiplied (a, r, g, b) in
+// 0..1, then the pixel (centre n + 0.5, so it floors to n) and its coverage —
+// over the image.
+export function writePixels(img: ImgLike, tokens: number[][]): void {
   const { width, height, data } = img;
-  for (const [x, y, c, l] of spans) {
-    const cov = Math.min(1, Math.abs(c));
-    if (cov <= 0) continue;
+  for (const [a, r, g, b, x, y, c] of tokens) {
+    const xi = Math.floor(x);
     const yi = Math.floor(y);
-    if (yi < 0 || yi >= height) continue;
-    const len = Math.max(1, Math.round(l));
-    const x0 = Math.floor(x);
-    for (let i = 0; i < len; i++) {
-      const xi = x0 + i;
-      if (xi < 0 || xi >= width) continue;
-      const idx = (yi * width + xi) * 4;
-      data[idx] = color[0] * cov + (data[idx] as number) * (1 - cov);
-      data[idx + 1] = color[1] * cov + (data[idx + 1] as number) * (1 - cov);
-      data[idx + 2] = color[2] * cov + (data[idx + 2] as number) * (1 - cov);
-      data[idx + 3] = 255;
-    }
+    if (xi < 0 || yi < 0 || xi >= width || yi >= height) continue;
+    const i = (yi * width + xi) * 4;
+    const keep = 1 - a * c;
+    data[i] = 255 * r * c + (data[i] as number) * keep;
+    data[i + 1] = 255 * g * c + (data[i + 1] as number) * keep;
+    data[i + 2] = 255 * b * c + (data[i + 2] as number) * keep;
+    data[i + 3] = 255;
   }
+}
+
+// Coverage spans (flat [x, y, c, l]) painted in an opaque colour: PaintSpans
+// in Nile, then written.
+export function paintSpans(img: ImgLike, registry: Registry, spans: number[][], color: RGB): void {
+  const paint = get(registry, 'PaintSpans')([1, color[0] / 255, color[1] / 255, color[2] / 255]);
+  writePixels(img, collectSpans(paint, spans));
 }

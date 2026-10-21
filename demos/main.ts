@@ -182,7 +182,7 @@ async function render(): Promise<void> {
   for (const r of colourRuns) {
     const s = collectSpans(registry['Rasterize'](), placed(r, params));
     spans += s.length;
-    paintSpans(img, s, rgb255(r));
+    paintSpans(img, registry, s, rgb255(r));
   }
   ctx2d.putImageData(img, 0, 0);
   stats.textContent =

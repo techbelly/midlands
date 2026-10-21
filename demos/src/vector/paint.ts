@@ -1,10 +1,9 @@
 // The paint page's host side, DOM-free (shared with the headless GPU check):
-// the sample shapes, their geometry through compiled Nile, and compositing
-// of painted pixels. A paint program is gezira's library + nl/vector.nl +
+// the sample shapes and their geometry through compiled Nile (pixels are
+// written by spans.ts writePixels). A paint program is gezira's library + nl/vector.nl +
 // nl/rasterize2.nl + the user's `Paint` + PAINT_GLUE.
 
 import { collectSpans, strokeOutline, type Registry } from './draw.js';
-import type { ImgLike } from './spans.js';
 
 export const PAINT_GLUE = `
 PaintBeziers (min, max : Point) : Bezier >> (Color, CoveragePoint)
@@ -46,20 +45,4 @@ export function paintShapes(registry: Registry, W: number, H: number): number[][
     flat(star(320, 120, 42, 100)),
     clip(strokeOutline(registry, [1, 0, 0, 1, 0, 0], 34, -1, -1, [wave])),
   ];
-}
-
-// Composite (Color, CoveragePoint) tokens — premultiplied (a, r, g, b), then
-// the pixel and its coverage — over the image.
-export function paintPixels(img: ImgLike, tokens: number[][]): void {
-  const { width, height, data } = img;
-  for (const [a, r, g, b, x, y, c] of tokens) {
-    const xi = Math.floor(x);
-    const yi = Math.floor(y);
-    if (xi < 0 || yi < 0 || xi >= width || yi >= height) continue;
-    const i = (yi * width + xi) * 4;
-    const keep = 1 - a * c;
-    data[i] = 255 * r * c + (data[i] as number) * keep;
-    data[i + 1] = 255 * g * c + (data[i + 1] as number) * keep;
-    data[i + 2] = 255 * b * c + (data[i + 2] as number) * keep;
-  }
 }

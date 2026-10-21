@@ -81,11 +81,11 @@ export function drawTiger(
   const fillBeziers = get(registry, 'FillBeziers');
   for (const path of tiger.paths) {
     if (path.fill) {
-      paintSpans(img, collectSpans(fill([...view, ...tiger.matrix, ...clip]), path.cubics), hexRGB(path.fill));
+      paintSpans(img, registry, collectSpans(fill([...view, ...tiger.matrix, ...clip]), path.cubics), hexRGB(path.fill));
     }
     if (path.stroke) {
       const outline = stroke(registry, tiger, view, path.strokeWidth, minStroke, path.subpaths);
-      paintSpans(img, collectSpans(fillBeziers(clip), outline), hexRGB(path.stroke));
+      paintSpans(img, registry, collectSpans(fillBeziers(clip), outline), hexRGB(path.stroke));
     }
   }
   return tiger.paths.length;

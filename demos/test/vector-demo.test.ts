@@ -1,12 +1,13 @@
 // The tiger/strokes demo host code, validated headless: gezira's own kernels
 // (stroke.nl unmodified) + nl/vector.nl compiled by Umgeni, driven with flat
-// cubics from the SVG parser, composited by paintSpans.
+// cubics from the SVG parser, painted by PaintSpans (nl/spans.nl).
 
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { read } from '../src/sources.js';
 import { compileVectorPipeline } from '../src/vector/compile.js';
 import { collectSpans, strokeOutline } from '../src/vector/draw.js';
+import { paintSpans } from '../src/vector/spans.js';
 import { parseSvg, pathCubics, pathSubpaths } from '../src/vector/svg.js';
 import { drawTiger, fitView } from '../src/vector/tiger.js';
 
@@ -48,6 +49,14 @@ describe('the tiger demo, headless', () => {
     expect(colored).toBeGreaterThan(W * H * 0.3);
     // eslint-disable-next-line no-console
     console.log(`tiger ${W}x${H}: ${colored} colored px in ${ms.toFixed(0)} ms`);
+  });
+
+  it('paints spans as gezira does: one pixel per unit of length, none for 0', () => {
+    const img = { width: 4, height: 1, data: new Uint8ClampedArray(16).fill(255) };
+    // The rasterizer emits a zero-length span between two adjacent edge
+    // samples, carrying the interior's coverage; it must paint nothing.
+    paintSpans(img, program.registry, [[0.5, 0.5, 0.5, 1], [1.5, 0.5, 1, 0], [1.5, 0.5, 0.25, 2]], [0, 0, 0]);
+    expect([...img.data].filter((_, i) => i % 4 === 0)).toEqual([128, 191, 191, 255]);
   });
 
   // Every pixel, pinned: a refactor of any stage (SVG parsing included) must

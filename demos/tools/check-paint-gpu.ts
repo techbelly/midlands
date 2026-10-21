@@ -12,7 +12,8 @@ import { lowerFusedPipeline } from '../../umgeni/src/gpu/lower.js';
 import { lowerTexture } from '../../umgeni/src/gpu/texture.js';
 import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
 import { collectSpans } from '../src/vector/draw.js';
-import { PAINT_GLUE, paintPixels, paintShapes } from '../src/vector/paint.js';
+import { PAINT_GLUE, paintShapes } from '../src/vector/paint.js';
+import { writePixels } from '../src/vector/spans.js';
 import { PRESETS } from '../paint-presets.js';
 
 const library = ['types', 'bezier', 'stroke', 'rasterize', 'texture', 'compositor', 'gradient', 'filter']
@@ -36,7 +37,7 @@ for (const preset of PRESETS) {
 
   // CPU reference: the same beziers, rasterized and painted in JS.
   const cpu = { width: W, height: H, data: new Uint8ClampedArray(W * H * 4).fill(255) };
-  for (const bs of shapes) paintPixels(cpu, collectSpans(program.registry.get('PaintBeziers')!([0, 0, W, H]), bs));
+  for (const bs of shapes) writePixels(cpu, collectSpans(program.registry.get('PaintBeziers')!([0, 0, W, H]), bs));
 
   // GPU: Rasterize2 lowered from source, composite with the lowered paint().
   const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'Rasterize2');

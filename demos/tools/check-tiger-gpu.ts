@@ -83,7 +83,7 @@ for (const b of batches) {
   op.setEmit((t) => spans.push(t));
   for (let i = 0; i < b.n; i++) op.push([...b.beziers.slice(i * 6, i * 6 + 6)]);
   op.end();
-  paintSpans(refImg, spans, [b.color[0] * 255, b.color[1] * 255, b.color[2] * 255]);
+  paintSpans(refImg, vector.registry, spans, [b.color[0] * 255, b.color[1] * 255, b.color[2] * 255]);
 }
 
 // Test-only readback of the composited texture.
@@ -96,22 +96,22 @@ await readBuf.mapAsync(GPUMapMode.READ);
 const px = new Uint8Array(readBuf.getMappedRange().slice(0));
 readBuf.unmap();
 
-function compareTo(ref: Uint8ClampedArray): { mean: number; big: number; colored: number } {
-  let sumDiff = 0;
-  let big = 0;
+function compareTo(ref: Uint8ClampedArray): { colored: number; max: number; differ: number } {
   let colored = 0;
+  let max = 0;
+  let differ = 0;
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const gi = y * rowBytes + x * 4;
       const ci = (y * W + x) * 4;
       let d = 0;
       for (let k = 0; k < 3; k++) d = Math.max(d, Math.abs(px[gi + k] - ref[ci + k]));
-      sumDiff += d;
-      if (d > 48) big++;
+      max = Math.max(max, d);
+      if (d > 0) differ++;
       if (px[gi] !== 255 || px[gi + 1] !== 255 || px[gi + 2] !== 255) colored++;
     }
   }
-  return { mean: sumDiff / (W * H), big, colored };
+  return { colored, max, differ };
 }
 
 const likeForLike = compareTo(refImg.data);
@@ -122,12 +122,10 @@ console.log(
   `warm submit ${warmSubmitMs.toFixed(1)} / GPU ${warmGpuMs.toFixed(1)} ms · CPU end-to-end ${cpuMs.toFixed(0)} ms`,
 );
 console.log(
-  `like-for-like (same f32 geometry): mean channel diff ${likeForLike.mean.toFixed(2)}, ` +
-  `${likeForLike.big} px (${((100 * likeForLike.big) / (W * H)).toFixed(2)}%) >48 — edge pixels: ` +
-  `fixed-point+f32 coverage tolerance on hairline strokes, layered over ${batches.length} composites. ` +
-  `vs f64 CPU (informational): mean ${vsF64.mean.toFixed(2)}`,
+  `like-for-like (same f32 geometry): ${likeForLike.differ} px differ, max channel diff ${likeForLike.max} ` +
+  `(f32 vs f64 coverage arithmetic, over ${batches.length} composites) · ` +
+  `vs f64 CPU geometry (informational): ${vsF64.differ} px, max ${vsF64.max}`,
 );
 if (likeForLike.colored < W * H * 0.3) throw new Error('too few colored pixels — tiger missing?');
-if (likeForLike.mean > 5) throw new Error(`like-for-like mean diff too high: ${likeForLike.mean}`);
-if (likeForLike.big > W * H * 0.04) throw new Error(`too many strongly differing pixels: ${likeForLike.big}`);
+if (likeForLike.max > 8) throw new Error(`GPU and CPU disagree: max channel diff ${likeForLike.max} (${likeForLike.differ} px)`);
 console.log('tiger GPU ok');
