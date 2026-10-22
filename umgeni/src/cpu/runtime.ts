@@ -40,22 +40,84 @@ export function nameParams(
   for (const [process, sig] of Object.entries(signatures)) {
     const factory = R[process];
     if (!factory || sig.length === 0) continue;
-    R[process] = (P?: Params) => factory(P === undefined || Array.isArray(P) ? (P as number[] | undefined) : flattenParams(process, sig, P));
+    R[process] = (P?: Params) =>
+      factory(P === undefined || Array.isArray(P) ? (P as number[] | undefined) : flattenNamed(`${process} takes`, sig, P));
   }
 }
 
-function flattenParams(process: string, sig: { name: string; width: number }[], named: Exclude<Params, number[]>): number[] {
-  const expected = () => `${process} takes ${sig.map((p) => `${p.name} (${p.width})`).join(', ')}`;
-  for (const k of Object.keys(named)) {
-    if (!sig.some((p) => p.name === k)) throw new Error(`'${k}' is not a parameter: ${expected()}`);
-  }
-  return sig.flatMap((p) => {
-    if (!(p.name in named)) throw new Error(`missing parameter '${p.name}': ${expected()}`);
+// Named values, flattened in the order `fields` gives, each checked for size.
+// Hot when building tokens, so numbers and flat arrays are written directly;
+// only a nested array is flattened.
+function flattenNamed(what: string, fields: { name: string; width: number }[], named: Exclude<Params, number[]>): number[] {
+  const expected = () => `${what} ${fields.map((p) => `${p.name} (${p.width})`).join(', ')}`;
+  const out: number[] = [];
+  for (const p of fields) {
     const v = named[p.name];
-    const flat = typeof v === 'number' ? [v] : (v as unknown[]).flat(Infinity as 1) as number[];
-    if (flat.length !== p.width) throw new Error(`'${p.name}' needs ${p.width} number(s), got ${flat.length}: ${expected()}`);
-    return flat;
-  });
+    if (v === undefined) throw new Error(`missing '${p.name}': ${expected()}`);
+    const start = out.length;
+    if (typeof v === 'number') out.push(v);
+    else if (v.some(Array.isArray)) out.push(...((v as unknown[]).flat(Infinity as 1) as number[]));
+    else for (let i = 0; i < v.length; i++) out.push(v[i] as number);
+    if (out.length - start !== p.width) throw new Error(`'${p.name}' needs ${p.width} number(s), got ${out.length - start}: ${expected()}`);
+  }
+  for (const k in named) {
+    if (!fields.some((p) => p.name === k)) throw new Error(`unknown '${k}': ${expected()}`);
+  }
+  return out;
+}
+
+// --- tokens by field name ----------------------------------------------------
+
+export interface TokenLayout {
+  width: number;
+  fields: Record<string, { at: number; width: number }>;
+}
+
+// Where a registry keeps its program's token layouts (set by generated code).
+export const TYPES = Symbol.for('midlands.nile.types');
+
+export function describeTypes(R: object, types: Record<string, TokenLayout>): void {
+  Object.defineProperty(R, TYPES, { value: types });
+}
+
+// A named record type, for reading and building its tokens by field name.
+// Look offsets up once (at) and index tokens with them in hot loops; get and
+// make are for everywhere else.
+export interface TokenType {
+  name: string;
+  width: number;
+  /** A field's offset in the flattened token ('n', or dotted: 'C.r'). */
+  at(path: string): number;
+  /** A field's value: a number, or the slice of a record field. */
+  get(t: Token, path: string): number | number[];
+  /** A token from its top-level fields, each checked for size. */
+  make(fields: Exclude<Params, number[]>): Token;
+}
+
+export function tokenType(registry: object, name: string): TokenType {
+  const types = (registry as { [TYPES]?: Record<string, TokenLayout> })[TYPES];
+  if (!types) throw new Error('this registry carries no token types (compiled before they existed?)');
+  const layout = types[name];
+  if (!layout) throw new Error(`no record type named '${name}' (known: ${Object.keys(types).join(', ')})`);
+  const field = (path: string) => {
+    const f = layout.fields[path];
+    if (!f) throw new Error(`'${path}' is not a field of ${name}: ${Object.keys(layout.fields).join(', ')}`);
+    return f;
+  };
+  const top = Object.entries(layout.fields)
+    .filter(([path]) => !path.includes('.'))
+    .sort((a, b) => a[1].at - b[1].at)
+    .map(([path, f]) => ({ name: path, width: f.width }));
+  return {
+    name,
+    width: layout.width,
+    at: (path) => field(path).at,
+    get: (t, path) => {
+      const f = field(path);
+      return f.width === 1 ? t[f.at] : t.slice(f.at, f.at + f.width);
+    },
+    make: (fields) => flattenNamed(`${name} has`, top, fields),
+  };
 }
 
 // A buffering sort stage: collects every token, emits stably sorted by the

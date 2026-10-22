@@ -35,7 +35,7 @@ function frontHalf(text: string, params: TextSpansParams): Float32Array<ArrayBuf
   const op = program.registry.get('TextBeziers')!(params);
   const out: number[] = [];
   op.setEmit((t) => out.push(...t));
-  for (const t of textTokens(text)) op.push(t);
+  for (const t of textTokens(program.registry, text)) op.push(t);
   op.end();
   return new Float32Array(out);
 }

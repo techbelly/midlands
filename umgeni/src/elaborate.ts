@@ -8,12 +8,12 @@
 // arguments inlined as closures) and families (mid-stream ⇒, substitute.ts).
 
 import type * as A from './ast.js';
-import type { KernelIR, ModuleIR, ParamSig, PipelineIR, ProcessIR, ScalarExpr, StageIR } from './ir.js';
+import type { KernelIR, ModuleIR, ParamSig, PipelineIR, ProcessIR, ScalarExpr, StageIR, TokenLayout } from './ir.js';
 import { assembleFamily, SubstError, type Generator } from './substitute.js';
 import { desugar, SugarError } from './semantics/sugar.js';
 import { stageExpr, stageGenerator, stageKernel } from './semantics/staged.js';
 import type { Program } from './semantics/domain.js';
-import { ElabError, fieldInfo, fit, flatten, fromSlots, REAL, scalar, shapeWidth, type Shape, type Value } from './values.js';
+import { ElabError, fieldInfo, fit, flatten, fromSlots, REAL, scalar, shapeWidth, tokenLayout, type Shape, type Value } from './values.js';
 
 // --- operator tables -----------------------------------------------------------
 
@@ -67,9 +67,11 @@ class Elaborator {
   run(modules: A.Module[]): ElabResult {
     const decls = modules.flatMap((m) => m.decls);
     // Pass 1: types, operators, and process signatures, so later definitions
-    // can reference anything regardless of order.
+    // can reference anything regardless of order. Types first: signatures
+    // name them.
+    for (const d of decls) if (d.kind === 'typeDef') this.types.set(d.name, this.resolveType(d.type, d.name));
     for (const d of decls) {
-      if (d.kind === 'typeDef') this.types.set(d.name, this.resolveType(d.type, d.name));
+      if (d.kind === 'typeDef') continue;
       else if (d.kind === 'opDef') this.addOp(d);
       else if (d.kind === 'processTypeDef') this.streams.set(d.name, this.streamSig(d.type));
       else if (d.kind === 'kernel') {
@@ -118,7 +120,9 @@ class Elaborator {
       }
     }
     for (const name of Object.keys(signatures)) if (!compiled.has(name)) delete signatures[name];
-    return { ir: { processes: processes.filter((p) => compiled.has(p.name)), signatures }, unsupported, templates };
+    const types: Record<string, TokenLayout> = {};
+    for (const [name, shape] of this.types) if (shape.k === 'record') types[name] = tokenLayout(shape);
+    return { ir: { processes: processes.filter((p) => compiled.has(p.name)), signatures, types }, unsupported, templates };
   }
 
   contexts(modules: A.Module[], all = false) {

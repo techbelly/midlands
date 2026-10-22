@@ -21,6 +21,7 @@ import compositor from '../gezira/compositor.nl';
 import gradient from '../gezira/gradient.nl';
 import filter from '../gezira/filter.nl';
 import vector from './nl/vector.nl';
+import spans from './nl/spans.nl';
 import rasterize2 from '../umgeni/nl/rasterize2.nl';
 import { quoteNile } from './src/quote.js';
 
@@ -29,7 +30,7 @@ import { quoteNile } from './src/quote.js';
   ['PaintBeziers', 'Rasterize', 'ApplyTexture', 'ExpandSpans'],
 );
 
-const LIBRARY: string[] = [types, bezier, stroke, rasterize, texture, compositor, gradient, filter, vector, rasterize2];
+const LIBRARY: string[] = [types, bezier, stroke, rasterize, texture, compositor, gradient, filter, vector, spans, rasterize2];
 
 const editor = document.getElementById('src') as HTMLTextAreaElement;
 const presetEl = document.getElementById('preset') as HTMLSelectElement;
@@ -135,7 +136,7 @@ async function render(): Promise<void> {
   for (const bs of shapes) {
     const out = collectSpans(p.registry.get('PaintBeziers')!({ min: [0, 0], max: [W, H] }), bs);
     px += out.length;
-    writePixels(img, out);
+    writePixels(img, p.registry, out);
   }
   ctx.putImageData(img, 0, 0);
   statusEl.textContent = `${compileNote}  Painted ${px.toLocaleString()} pixels on the CPU in ` +

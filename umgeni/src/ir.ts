@@ -123,11 +123,21 @@ export interface ModuleIR {
   // Each process's parameters as its Nile signature names them, in order,
   // with their flattened widths: how a host can pass them by name.
   signatures: Record<string, ParamSig[]>;
+  // Every named record type's layout: how a host reads or builds tokens by
+  // field name.
+  types: Record<string, TokenLayout>;
 }
 
 export interface ParamSig {
   name: string;
   width: number;
+}
+
+// A named record type's token layout: every field, by path (dotted for
+// nested records: 'Z', 'Z.A', 'Z.A.x'), at its flattened offset and width.
+export interface TokenLayout {
+  width: number;
+  fields: Record<string, { at: number; width: number }>;
 }
 
 // --- folds: the IR is a tree; these are its traversals -------------------------

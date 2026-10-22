@@ -18,7 +18,7 @@ import { PRESETS } from '../paint-presets.js';
 
 const library = ['types', 'bezier', 'stroke', 'rasterize', 'texture', 'compositor', 'gradient', 'filter']
   .map((n) => read(`gezira/${n}.nl`))
-  .concat(read('demos/nl/vector.nl'), read('umgeni/nl/rasterize2.nl'));
+  .concat(read('demos/nl/vector.nl'), read('demos/nl/spans.nl'), read('umgeni/nl/rasterize2.nl'));
 
 const W = 480;
 const H = 360;
@@ -37,7 +37,7 @@ for (const preset of PRESETS) {
 
   // CPU reference: the same beziers, rasterized and painted in JS.
   const cpu = { width: W, height: H, data: new Uint8ClampedArray(W * H * 4).fill(255) };
-  for (const bs of shapes) writePixels(cpu, collectSpans(program.registry.get('PaintBeziers')!({ min: [0, 0], max: [W, H] }), bs));
+  for (const bs of shapes) writePixels(cpu, program.registry, collectSpans(program.registry.get('PaintBeziers')!({ min: [0, 0], max: [W, H] }), bs));
 
   // GPU: Rasterize2 lowered from source, composite with the lowered paint().
   const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'Rasterize2');

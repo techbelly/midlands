@@ -78,7 +78,7 @@ describe('the rasterizer in access-patterns Nile (nl/rasterize2.nl)', () => {
     const front = program.registry.get('TextBeziers')!(params);
     const beziers: number[][] = [];
     front.setEmit((t) => beziers.push(t));
-    for (const t of textTokens('QUICK BROWN FOX')) front.push(t);
+    for (const t of textTokens(program.registry, 'QUICK BROWN FOX')) front.push(t);
     front.end();
 
     const ref = dropArtifacts(runOp(program.registry.get('Rasterize')!(), beziers));

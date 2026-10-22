@@ -1,12 +1,12 @@
 // The paint page's host side, DOM-free (shared with the headless GPU check):
 // the sample shapes and their geometry through compiled Nile (pixels are
 // written by spans.ts writePixels). A paint program is gezira's library + nl/vector.nl +
-// nl/rasterize2.nl + the user's `Paint` + PAINT_GLUE.
+// nl/rasterize2.nl + nl/spans.nl + the user's `Paint` + PAINT_GLUE.
 
 import { collectSpans, get, strokeOutline, type Registry } from './draw.js';
 
 export const PAINT_GLUE = `
-PaintBeziers (min, max : Point) : Bezier >> (Color, CoveragePoint)
+PaintBeziers (min, max : Point) : Bezier >> PaintedPixel
     ⇒ ClipBeziers (min, max) → Rasterize → ApplyTexture (Paint)
 `;
 

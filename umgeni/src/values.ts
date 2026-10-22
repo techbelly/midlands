@@ -7,7 +7,7 @@
 // Everything here is pure.
 
 import type * as A from './ast.js';
-import type { ScalarExpr } from './ir.js';
+import type { ScalarExpr, TokenLayout } from './ir.js';
 
 // --- shapes ------------------------------------------------------------------
 
@@ -18,6 +18,24 @@ export interface RecordShape {
   fields: { name: string | null; shape: Shape }[];
 }
 export const REAL: Shape = { k: 'real' };
+
+// A record's token layout: each named field by path, at its flattened offset.
+export function tokenLayout(s: RecordShape): TokenLayout {
+  const fields: TokenLayout['fields'] = {};
+  const walk = (r: RecordShape, prefix: string, base: number) => {
+    let at = base;
+    for (const f of r.fields) {
+      const width = shapeWidth(f.shape);
+      if (f.name !== null) {
+        fields[prefix + f.name] = { at, width };
+        if (f.shape.k === 'record') walk(f.shape, `${prefix}${f.name}.`, at);
+      }
+      at += width;
+    }
+  };
+  walk(s, '', 0);
+  return { width: shapeWidth(s), fields };
+}
 
 export function shapeWidth(s: Shape): number {
   return s.k === 'real' ? 1 : s.fields.reduce((n, f) => n + shapeWidth(f.shape), 0);

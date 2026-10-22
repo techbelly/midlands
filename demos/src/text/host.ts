@@ -4,7 +4,8 @@
 // advance, line wrapping, transform, clip, rasterization) is compiled Nile —
 // see nl/text.nl.
 
-import { run, type Op, type Token } from '../../../umgeni/src/cpu/runtime.js';
+import { run, tokenType, type Op, type Token } from '../../../umgeni/src/cpu/runtime.js';
+import type { Registry } from '../vector/draw.js';
 import { glyphFor as stubGlyph, type Glyph, type Rgba } from './stubfont.js';
 
 /** Where glyph outlines come from: the stub font, or a TrueType font (ttf.ts). */
@@ -29,15 +30,14 @@ export function fallback(...fonts: FallbackFont[]): GlyphSource {
   };
 }
 
-// A GlyphBezier token: (Z : Bezier, adv, first, kind, rest), flattened to 10
-// slots. Every outline bezier of a glyph carries the glyph's advance; `first`
+// A GlyphBezier token (nl/text.nl): (Z : Bezier, adv, first, kind, rest). Every outline bezier of a glyph carries the glyph's advance; `first`
 // marks the token on which LayoutGlyphs advances the pen (and maybe wraps);
 // `kind` is 0 glyph / 1 space / 2 line break; `rest` is computed in Nile
 // (WordWidths). A space or break has no outline, so it travels as one
 // degenerate zero-area bezier — the rasterizer emits nothing for it, but the
 // layout kernel sees it.
-export const textTokens = (text: string, glyphFor: GlyphSource = stubGlyph): Token[] =>
-  glyphTokens(text, glyphFor).tokens;
+export const textTokens = (registry: Registry, text: string, glyphFor: GlyphSource = stubGlyph): Token[] =>
+  glyphTokens(registry, text, glyphFor).tokens;
 
 // Invisible in emoji text without shaping: zero-width joiner, variation
 // selectors (they select emoji presentation, which a colour font already has).
@@ -45,7 +45,19 @@ const IGNORABLE = /[\u200D\uFE0E\uFE0F]/u;
 
 // The tokens, plus each token's colour (colour glyphs: COLR layers; null =
 // the text's own colour).
-export function glyphTokens(text: string, glyphFor: GlyphSource = stubGlyph): { tokens: Token[]; colors: (Rgba | null)[] } {
+export function glyphTokens(registry: Registry, text: string, glyphFor: GlyphSource = stubGlyph): { tokens: Token[]; colors: (Rgba | null)[] } {
+  // A token per outline bezier, many per render: field offsets looked up once.
+  const GlyphBezier = tokenType(registry, 'GlyphBezier');
+  const [Z, ADV, FIRST, KIND, REST] = ['Z', 'adv', 'first', 'kind', 'rest'].map(GlyphBezier.at);
+  const token = (z: readonly number[], adv: number, first: number, kind: number): Token => {
+    const t: Token = new Array(GlyphBezier.width);
+    for (let i = 0; i < 6; i++) t[Z + i] = z[i];
+    t[ADV] = adv;
+    t[FIRST] = first;
+    t[KIND] = kind;
+    t[REST] = 0; // filled in by WordWidths
+    return t;
+  };
   const tokens: Token[] = [];
   const colors: (Rgba | null)[] = [];
   for (const ch of text) {
@@ -53,12 +65,12 @@ export function glyphTokens(text: string, glyphFor: GlyphSource = stubGlyph): { 
     const kind = ch === '\n' ? 2 : /\s/.test(ch) ? 1 : 0;
     const glyph = kind === 2 ? { advance: 0, beziers: [] } : glyphFor(ch);
     if (glyph.beziers.length === 0) {
-      tokens.push([0, 0, 0, 0, 0, 0, glyph.advance, 1, kind, 0]);
+      tokens.push(token([0, 0, 0, 0, 0, 0], glyph.advance, 1, kind));
       colors.push(null);
       continue;
     }
     glyph.beziers.forEach((b, i) => {
-      tokens.push([...b, glyph.advance, i === 0 ? 1 : 0, kind, 0]);
+      tokens.push(token(b, glyph.advance, i === 0 ? 1 : 0, kind));
       colors.push(glyph.colors?.[i] ?? null);
     });
   }
@@ -75,8 +87,8 @@ export interface ColorRun {
   beziers: Token[]; // laid out (em units), not yet transformed
 }
 
-export function colorRuns(layout: Op, text: string, glyphFor?: GlyphSource): ColorRun[] {
-  const { tokens, colors } = glyphTokens(text, glyphFor);
+export function colorRuns(registry: Registry, layout: Op, text: string, glyphFor?: GlyphSource): ColorRun[] {
+  const { tokens, colors } = glyphTokens(registry, text, glyphFor);
   const placed = run(layout, tokens);
   if (placed.length !== tokens.length) throw new Error('layout must place each token exactly once');
   const runs: ColorRun[] = [];
@@ -132,10 +144,10 @@ export interface Driven {
   rasterMs: number;
 }
 
-export function driveTextSpans(op: Op, text: string, glyphs?: GlyphSource): Driven {
+export function driveTextSpans(registry: Registry, op: Op, text: string, glyphs?: GlyphSource): Driven {
   const spans: number[][] = [];
   op.setEmit((t) => spans.push(t));
-  const tokens = textTokens(text, glyphs);
+  const tokens = textTokens(registry, text, glyphs);
   const t0 = performance.now();
   for (const t of tokens) op.push(t);
   op.end();

@@ -264,6 +264,8 @@ export function generate(mod: ModuleIR, opts: CodegenOptions = {}): string {
     ...defs,
     // Factories also take their parameters by name (rt.nameParams).
     `rt.nameParams(R, ${JSON.stringify(mod.signatures)});`,
+    // …and the token layouts of the program's named types (rt.tokenType).
+    `rt.describeTypes(R, ${JSON.stringify(mod.types)});`,
     ...(opts.countOps ? [`R.__ops = () => OPS;`] : []),
     `return R;`,
     `}`,

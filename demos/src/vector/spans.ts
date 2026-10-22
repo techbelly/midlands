@@ -3,6 +3,7 @@
 // host only writes the resulting pixels, since Nile has no random-access
 // memory. The paint page writes its textured pixels the same way.
 
+import { tokenType } from '../../../umgeni/src/cpu/runtime.js';
 import { collectSpans, get, type Registry } from './draw.js';
 
 export type RGB = readonly [number, number, number]; // 0..255
@@ -19,12 +20,15 @@ export interface ImgLike {
   data: Uint8ClampedArray | number[];
 }
 
-// Composite (Color, CoveragePoint) tokens — premultiplied (a, r, g, b) in
-// 0..1, then the pixel (centre n + 0.5, so it floors to n) and its coverage —
-// over the image.
-export function writePixels(img: ImgLike, tokens: number[][]): void {
+// Composite PaintedPixel tokens (nl/spans.nl) over the image: a colour,
+// premultiplied (a, r, g, b) in 0..1, and a pixel (its centre n + 0.5, so it
+// floors to n) with its coverage c. Field offsets are looked up once.
+export function writePixels(img: ImgLike, registry: Registry, tokens: number[][]): void {
   const { width, height, data } = img;
-  for (const [a, r, g, b, x, y, c] of tokens) {
+  const T = tokenType(registry, 'PaintedPixel');
+  const [A, R, G, B, X, Y, C] = ['C.a', 'C.r', 'C.g', 'C.b', 'P.x', 'P.y', 'P.c'].map(T.at);
+  for (const t of tokens) {
+    const a = t[A], r = t[R], g = t[G], b = t[B], x = t[X], y = t[Y], c = t[C];
     const xi = Math.floor(x);
     const yi = Math.floor(y);
     if (xi < 0 || yi < 0 || xi >= width || yi >= height) continue;
@@ -41,5 +45,5 @@ export function writePixels(img: ImgLike, tokens: number[][]): void {
 // in Nile, then written.
 export function paintSpans(img: ImgLike, registry: Registry, spans: number[][], color: RGB): void {
   const paint = get(registry, 'PaintSpans')({ C: [1, color[0] / 255, color[1] / 255, color[2] / 255] });
-  writePixels(img, collectSpans(paint, spans));
+  writePixels(img, registry, collectSpans(paint, spans));
 }

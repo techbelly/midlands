@@ -58,6 +58,7 @@ export function compileProgram(sources: string[], opts: CompileOptions = {}): Co
   const ops = (registryObj as Record<string, unknown>).__ops as (() => number) | undefined;
   delete (registryObj as Record<string, unknown>).__ops;
   const registry = new Map(Object.entries(registryObj));
+  rt.describeTypes(registry, (registryObj as { [rt.TYPES]?: Record<string, rt.TokenLayout> })[rt.TYPES]!);
   return { registry, source, unsupported: elaborated.unsupported, templates: elaborated.templates, ir, modules, ops };
 }
 

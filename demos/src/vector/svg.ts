@@ -5,6 +5,7 @@
 // commands are interpreted in Nile (nl/svg.nl), so parsing takes the
 // compiled vector registry.
 
+import { tokenType } from '../../../umgeni/src/cpu/runtime.js';
 import { collectSpans, get, type Registry } from './draw.js';
 
 export type Cubic = number[]; // 8 floats: A B C D as x,y pairs
@@ -40,7 +41,8 @@ const norm = (c: string | null): string | null => (c && c.toLowerCase() !== 'non
 const TOKENS = /([MmLlHhVvCcSsZz])|(-?(?:\d*\.\d+|\d+\.?)(?:[eE][+-]?\d+)?)/g;
 const ARITY: Record<string, number> = { M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Z: 0 };
 
-export function pathCommands(d: string): number[][] {
+export function pathCommands(registry: Registry, d: string): number[][] {
+  const PathCommand = tokenType(registry, 'PathCommand');
   const toks = d.match(TOKENS) ?? [];
   const out: number[][] = [];
   let prev = '';
@@ -52,21 +54,28 @@ export function pathCommands(d: string): number[][] {
     const op = cmd.toUpperCase();
     const args = toks.slice(i, i + ARITY[op]).map(Number);
     i += ARITY[op];
-    out.push(['MLHVCSZ'.indexOf(op) + 1, cmd === op ? 0 : 1, ...args, 0, 0, 0, 0, 0, 0].slice(0, 8));
+    const [a = 0, b = 0, c = 0, d = 0, e = 0, f = 0] = args;
+    out.push(PathCommand.make({ op: 'MLHVCSZ'.indexOf(op) + 1, rel: cmd === op ? 0 : 1, a, b, c, d, e, f }));
     prev = cmd;
   }
   return out;
 }
 
-// Every subpath closed: the fill geometry.
-export const pathCubics = (registry: Registry, d: string): Cubic[] =>
-  collectSpans(get(registry, 'PathCubics')({ closeAll: 1 }), pathCommands(d)).map((t) => t.slice(0, 8));
+// Every subpath closed: the fill geometry, each PathCubic's cubic Z.
+export function pathCubics(registry: Registry, d: string): Cubic[] {
+  const PathCubic = tokenType(registry, 'PathCubic');
+  return collectSpans(get(registry, 'PathCubics')({ closeAll: 1 }), pathCommands(registry, d))
+    .map((t) => PathCubic.get(t, 'Z') as Cubic);
+}
 
 // Subpaths as SVG strokes them: a closing segment only where `Z` says so.
+// Each PathCubic carries its subpath's number n.
 export function pathSubpaths(registry: Registry, d: string): Cubic[][] {
+  const PathCubic = tokenType(registry, 'PathCubic');
   const subpaths = new Map<number, Cubic[]>();
-  for (const t of collectSpans(get(registry, 'PathCubics')({ closeAll: 0 }), pathCommands(d))) {
-    subpaths.set(t[8], [...(subpaths.get(t[8]) ?? []), t.slice(0, 8)]);
+  for (const t of collectSpans(get(registry, 'PathCubics')({ closeAll: 0 }), pathCommands(registry, d))) {
+    const n = PathCubic.get(t, 'n') as number;
+    subpaths.set(n, [...(subpaths.get(n) ?? []), PathCubic.get(t, 'Z') as Cubic]);
   }
   return [...subpaths.values()];
 }

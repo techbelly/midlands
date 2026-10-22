@@ -32,6 +32,25 @@ Nile ─Ohm─▶ AST ─sugar.mooi─▶ core AST ─nile.mooi, staged─▶ sc
   - [src/gpu/](src/gpu/) lowers map kernels, scans, the Rasterize2 pipeline
     ([nl/rasterize2.nl](nl/rasterize2.nl)) and gezira's textures to WGSL.
 
+## The host interface
+
+A compiled program is a registry of process factories. A factory takes the
+process's parameters by the names its Nile signature gives them, checked for
+presence and size:
+
+```ts
+registry.SvgFill({ V: view, R: svg.matrix, min: [0, 0], max: [W, H] })
+```
+
+Tokens are flat arrays of numbers. Every named record type's layout comes
+with the registry, so the host reads and builds tokens by field name too:
+
+```ts
+const PathCubic = tokenType(registry, 'PathCubic');  // (Z : Cubic, n : Real)
+PathCubic.get(t, 'n');                                // the subpath number
+const X = tokenType(registry, 'PaintedPixel').at('P.x');  // an offset, for hot loops
+```
+
 ## Tests and oracles
 
 `npm test` from the root runs these checks:

@@ -112,7 +112,7 @@ function paint(buf: ArrayLike<number>): number {
 
 // Laid-out colour runs (Nile layout), each then transformed and clipped (Nile).
 function runs(text: string, { w, lh }: TextSpansParams): ColorRun[] {
-  return colorRuns(registry['TextLayout']({ w, lh }), text, currentFont().glyphs);
+  return colorRuns(registry, registry['TextLayout']({ w, lh }), text, currentFont().glyphs);
 }
 const rgb255 = (r: ColorRun) => (r.color ? [r.color[0] * 255, r.color[1] * 255, r.color[2] * 255] as const : TEXT_COLOR);
 function placed(run: ColorRun, { M, min, max }: TextSpansParams): number[][] {
@@ -124,7 +124,7 @@ function frontHalf(text: string, params: TextSpansParams): Float32Array<ArrayBuf
   const op = registry['TextBeziers'](params);
   const out: number[] = [];
   op.setEmit((t: number[]) => out.push(...t));
-  for (const t of textTokens(text, currentFont().glyphs)) op.push(t);
+  for (const t of textTokens(registry, text, currentFont().glyphs)) op.push(t);
   op.end();
   return new Float32Array(out);
 }

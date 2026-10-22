@@ -120,7 +120,7 @@ describe('CombineEdgeSamples ≡ SumByPixel → WindScanline → SpansOfPixels',
     const front = program.registry.get('TextBeziers')!(params);
     const beziers: number[][] = [];
     front.setEmit((t) => beziers.push(t));
-    for (const t of textTokens('HELLO WORLD')) front.push(t);
+    for (const t of textTokens(program.registry, 'HELLO WORLD')) front.push(t);
     front.end();
 
     const ref = runOp(program.registry.get('Rasterize')!(), beziers);

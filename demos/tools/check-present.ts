@@ -29,7 +29,7 @@ const params = textSpansParams({ size: 16, width: W, height: H, margin: 4 });
 const front = program.registry.get('TextBeziers')!(params);
 const bez: number[] = [];
 front.setEmit((t) => bez.push(...t));
-for (const t of textTokens('ZERO FENCES')) front.push(t);
+for (const t of textTokens(program.registry, 'ZERO FENCES')) front.push(t);
 front.end();
 const beziers = new Float32Array(bez);
 const n = beziers.length / 6;
@@ -89,7 +89,7 @@ console.log(
   const bez2: number[] = [];
   const front2 = program.registry.get('TextBeziers')!(params);
   front2.setEmit((t) => bez2.push(...t));
-  for (const t of textTokens('ZERO')) front2.push(t);
+  for (const t of textTokens(program.registry, 'ZERO')) front2.push(t);
   front2.end();
   const beziers2 = new Float32Array(bez2);
   presenter.frame([{ beziers: beziers2, n: beziers2.length / 6, color: black }], tex.createView());
@@ -120,7 +120,7 @@ console.log(
   const bez3: number[] = [];
   const front3 = program.registry.get('TextBeziers')!(small);
   front3.setEmit((t) => bez3.push(...t));
-  for (const t of textTokens('ZERO FENCES')) front3.push(t);
+  for (const t of textTokens(program.registry, 'ZERO FENCES')) front3.push(t);
   front3.end();
   const beziers3 = new Float32Array(bez3);
   let maxY = 0;

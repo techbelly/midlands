@@ -22,7 +22,7 @@ if (program.unsupported.length > 0) {
 // Smoke-test the exact artifact the demo will use.
 const registry = new Function('rt', `return (${program.source})(rt);`)(rt);
 const op = registry['TextSpans'](textSpansParams({ size: 14, width: 200, height: 40 }));
-const { spans } = driveTextSpans(op, 'HELLO WORLD');
+const { spans } = driveTextSpans(registry, op, 'HELLO WORLD');
 if (spans.length < 50) throw new Error(`smoke test produced only ${spans.length} spans`);
 
 const out = new URL('pipeline.gen.js', import.meta.url);

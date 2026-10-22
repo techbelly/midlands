@@ -6,7 +6,11 @@
 -- gezira would write ApplyTexture (UniformColor (C)), which samples any
 -- texture at each pixel through a DupZip; for one colour there is nothing to
 -- sample, and the plain map is 7× cheaper in umgeni today.
-PaintSpans (C : Color) : CoverageSpan >> (Color, CoveragePoint)
+-- A pixel to paint: its colour (premultiplied) and the pixel with its
+-- coverage. The paint page's textured pixels have the same shape.
+PaintedPixel <: (C : Color, P : CoveragePoint)
+
+PaintSpans (C : Color) : CoverageSpan >> PaintedPixel
     ⇒ ExpandSpans → ColorPoints (C)
 
 ColorPoints (C : Color) : CoveragePoint >> (Color, CoveragePoint)

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { gezira } from './sources.js';
 import { compileProgram, makeStreamer } from '../src/compile.js';
+import { tokenType } from '../src/cpu/runtime.js';
 
 
 describe('generated kernels', () => {
@@ -169,8 +170,34 @@ describe('named parameters', () => {
   });
 
   it('names what is wrong', () => {
-    expect(() => run({})).toThrow("missing parameter 'M': TransformBeziers takes M (6)");
-    expect(() => run({ M, N: 1 })).toThrow("'N' is not a parameter");
+    expect(() => run({})).toThrow("missing 'M': TransformBeziers takes M (6)");
+    expect(() => run({ M, N: 1 })).toThrow("unknown 'N'");
     expect(() => run({ M: [1, 2] })).toThrow("'M' needs 6 number(s), got 2");
+  });
+});
+
+describe('token types', () => {
+  const program = compileProgram([gezira('types.nl'), gezira('bezier.nl'), gezira('rasterize.nl')]);
+
+  it('records every named record type with its field layout', () => {
+    expect(program.ir.types.Point).toEqual({ width: 2, fields: { x: { at: 0, width: 1 }, y: { at: 1, width: 1 } } });
+    expect(program.ir.types.Bezier.width).toBe(6);
+    expect(program.ir.types.Bezier.fields['C.y']).toEqual({ at: 5, width: 1 });
+  });
+
+  it('reads and builds tokens by field name, from the registry', () => {
+    const Bezier = tokenType(program.registry, 'Bezier');
+    const t = Bezier.make({ A: [1, 2], B: [3, 4], C: [5, 6] });
+    expect(t).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(Bezier.get(t, 'B')).toEqual([3, 4]);
+    expect(Bezier.get(t, 'C.x')).toBe(5);
+    expect(t[Bezier.at('A.y')]).toBe(2);
+  });
+
+  it('names what is wrong', () => {
+    const Bezier = tokenType(program.registry, 'Bezier');
+    expect(() => Bezier.at('D')).toThrow("'D' is not a field of Bezier");
+    expect(() => Bezier.make({ A: [1, 2], B: [3, 4] })).toThrow("missing 'C': Bezier has A (2), B (2), C (2)");
+    expect(() => tokenType(program.registry, 'Beziers')).toThrow("no record type named 'Beziers'");
   });
 });
