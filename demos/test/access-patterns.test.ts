@@ -75,11 +75,7 @@ describe('the rasterizer in access-patterns Nile (nl/rasterize2.nl)', () => {
     const W = 220;
     const H = 60;
     const params = textSpansParams({ size: 14, width: W, height: H, margin: 4 });
-    const front = rt.pipeline([
-      program.registry.get('TextLayout')!([params[0], params[1]]),
-      program.registry.get('TransformBeziers')!(params.slice(2, 8)),
-      program.registry.get('ClipBeziers')!(params.slice(8, 12)),
-    ]);
+    const front = program.registry.get('TextBeziers')!(params);
     const beziers: number[][] = [];
     front.setEmit((t) => beziers.push(t));
     for (const t of textTokens('QUICK BROWN FOX')) front.push(t);

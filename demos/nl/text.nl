@@ -41,5 +41,13 @@ LayoutGlyphs (w, lh : Real) : GlyphBezier >> Bezier
 TextLayout (w, lh : Real) : GlyphBezier >> Bezier
     ⇒ Reverse → WordWidths → Reverse → LayoutGlyphs (w, lh)
 
+-- Laid-out beziers placed on the page: M maps em units to pixels, and
+-- min, max is the clip rectangle.
+PlaceBeziers (M : Matrix, min, max : Point) : Bezier >> Bezier
+    ⇒ TransformBeziers (M) → ClipBeziers (min, max)
+
+TextBeziers (w, lh : Real, M : Matrix, min, max : Point) : GlyphBezier >> Bezier
+    ⇒ TextLayout (w, lh) → PlaceBeziers (M, min, max)
+
 TextSpans (w, lh : Real, M : Matrix, min, max : Point) : GlyphBezier >> CoverageSpan
-    ⇒ TextLayout (w, lh) → TransformBeziers (M) → ClipBeziers (min, max) → Rasterize
+    ⇒ TextBeziers (w, lh, M, min, max) → Rasterize

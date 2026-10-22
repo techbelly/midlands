@@ -96,7 +96,7 @@ describe('the tiger demo, headless', () => {
     const outline = (join: number, cap: number) => strokeOutline(program.registry, I, 12, join, cap, [zig]);
     // Round joins/caps subdivide into more pieces than miter + butt.
     expect(outline(-1, -1).length).toBeGreaterThan(outline(4, 0).length);
-    const spans = collectSpans(program.registry.get('FillBeziers')!([0, 0, 200, 120]), outline(-1, -1));
+    const spans = collectSpans(program.registry.get('FillBeziers')!({ min: [0, 0], max: [200, 120] }), outline(-1, -1));
     expect(spans.length).toBeGreaterThan(50);
     // Coverage lands inside the canvas.
     for (const [x, y] of spans.slice(0, 20)) {

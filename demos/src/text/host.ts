@@ -103,17 +103,26 @@ export interface RenderOptions {
   glyphs?: GlyphSource;
 }
 
-// The flattened parameter vector of TextSpans (w, lh, M, min, max): layout is
-// in em units, the matrix maps em to pixels.
-export function textSpansParams(opts: RenderOptions): number[] {
+// TextSpans' parameters, by name (nl/text.nl): layout is in em units, the
+// matrix maps em to pixels, min and max are the clip rectangle.
+export type TextSpansParams = {
+  w: number; // wrap width, em
+  lh: number; // line height, em
+  M: number[];
+  min: number[];
+  max: number[];
+};
+
+export function textSpansParams(opts: RenderOptions): TextSpansParams {
   const margin = opts.margin ?? 4;
   const { size, width, height } = opts;
-  return [
-    (width - 2 * margin) / size, // wrap width, em
-    opts.lineHeight ?? 1.15, // line height, em
-    size, 0, 0, size, margin, margin, // matrix
-    0, 0, width, height, // clip bounds
-  ];
+  return {
+    w: (width - 2 * margin) / size,
+    lh: opts.lineHeight ?? 1.15,
+    M: [size, 0, 0, size, margin, margin],
+    min: [0, 0],
+    max: [width, height],
+  };
 }
 
 export interface Driven {

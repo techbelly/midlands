@@ -8,7 +8,7 @@
 // arguments inlined as closures) and families (mid-stream ⇒, substitute.ts).
 
 import type * as A from './ast.js';
-import type { KernelIR, ModuleIR, PipelineIR, ProcessIR, ScalarExpr, StageIR } from './ir.js';
+import type { KernelIR, ModuleIR, ParamSig, PipelineIR, ProcessIR, ScalarExpr, StageIR } from './ir.js';
 import { assembleFamily, SubstError, type Generator } from './substitute.js';
 import { desugar, SugarError } from './semantics/sugar.js';
 import { stageExpr, stageGenerator, stageKernel } from './semantics/staged.js';
@@ -80,6 +80,7 @@ class Elaborator {
     this.classifyGenerators();
     // Pass 2: kernels and pipelines.
     const processes: ProcessIR[] = [];
+    const signatures: Record<string, ParamSig[]> = {};
     const unsupported: { name: string; reason: string }[] = [];
     const templates: string[] = [];
     for (const d of decls) {
@@ -90,6 +91,10 @@ class Elaborator {
       }
       try {
         processes.push(...(usesSubstitution(d) ? this.elabFamily(d) : [this.elabProcess(d)]));
+        signatures[d.name] = (d.params ?? []).flatMap((g) => {
+          const width = shapeWidth(this.paramShape(g.type, d.name));
+          return g.names.map((name) => ({ name, width }));
+        });
       } catch (e) {
         if (e instanceof ElabError || e instanceof SubstError || e instanceof SugarError) {
           unsupported.push({ name: d.name, reason: e.message });
@@ -112,7 +117,8 @@ class Elaborator {
         changed = true;
       }
     }
-    return { ir: { processes: processes.filter((p) => compiled.has(p.name)) }, unsupported, templates };
+    for (const name of Object.keys(signatures)) if (!compiled.has(name)) delete signatures[name];
+    return { ir: { processes: processes.filter((p) => compiled.has(p.name)), signatures }, unsupported, templates };
   }
 
   contexts(modules: A.Module[], all = false) {

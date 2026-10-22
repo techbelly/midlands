@@ -60,12 +60,12 @@ export function pathCommands(d: string): number[][] {
 
 // Every subpath closed: the fill geometry.
 export const pathCubics = (registry: Registry, d: string): Cubic[] =>
-  collectSpans(get(registry, 'PathCubics')([1]), pathCommands(d)).map((t) => t.slice(0, 8));
+  collectSpans(get(registry, 'PathCubics')({ closeAll: 1 }), pathCommands(d)).map((t) => t.slice(0, 8));
 
 // Subpaths as SVG strokes them: a closing segment only where `Z` says so.
 export function pathSubpaths(registry: Registry, d: string): Cubic[][] {
   const subpaths = new Map<number, Cubic[]>();
-  for (const t of collectSpans(get(registry, 'PathCubics')([0]), pathCommands(d))) {
+  for (const t of collectSpans(get(registry, 'PathCubics')({ closeAll: 0 }), pathCommands(d))) {
     subpaths.set(t[8], [...(subpaths.get(t[8]) ?? []), t.slice(0, 8)]);
   }
   return [...subpaths.values()];

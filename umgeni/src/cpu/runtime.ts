@@ -11,6 +11,12 @@
 
 export type Token = number[];
 export type Emit = (t: Token) => void;
+
+// A process's parameters, flat in declaration order (as generated code
+// passes them), or named as its Nile signature names them: a Real is a
+// number, a record (Point, Matrix, Color…) its fields as an array.
+export type Params = number[] | { [name: string]: number | readonly NestedNumbers[] };
+type NestedNumbers = number | readonly NestedNumbers[];
 export type Feed = (t: Token) => void;
 
 export interface Op {
@@ -22,6 +28,34 @@ export interface Op {
   // (a wasm segment then loops inside wasm instead of crossing per token).
   pushAll?(ts: Token[]): void;
   setEmitAll?(e: (ts: Token[]) => void): void;
+}
+
+// Let each factory in a registry take its parameters by name too, checked
+// against the process's signature: every name present, no others, each the
+// right size. Flat arrays pass straight through.
+export function nameParams(
+  R: Record<string, (P?: number[]) => Op>,
+  signatures: Record<string, { name: string; width: number }[]>,
+): void {
+  for (const [process, sig] of Object.entries(signatures)) {
+    const factory = R[process];
+    if (!factory || sig.length === 0) continue;
+    R[process] = (P?: Params) => factory(P === undefined || Array.isArray(P) ? (P as number[] | undefined) : flattenParams(process, sig, P));
+  }
+}
+
+function flattenParams(process: string, sig: { name: string; width: number }[], named: Exclude<Params, number[]>): number[] {
+  const expected = () => `${process} takes ${sig.map((p) => `${p.name} (${p.width})`).join(', ')}`;
+  for (const k of Object.keys(named)) {
+    if (!sig.some((p) => p.name === k)) throw new Error(`'${k}' is not a parameter: ${expected()}`);
+  }
+  return sig.flatMap((p) => {
+    if (!(p.name in named)) throw new Error(`missing parameter '${p.name}': ${expected()}`);
+    const v = named[p.name];
+    const flat = typeof v === 'number' ? [v] : (v as unknown[]).flat(Infinity as 1) as number[];
+    if (flat.length !== p.width) throw new Error(`'${p.name}' needs ${p.width} number(s), got ${flat.length}: ${expected()}`);
+    return flat;
+  });
 }
 
 // A buffering sort stage: collects every token, emits stably sorted by the

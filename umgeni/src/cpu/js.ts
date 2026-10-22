@@ -262,6 +262,8 @@ export function generate(mod: ModuleIR, opts: CodegenOptions = {}): string {
     ...wasmModules,
     ...(opts.countOps ? [`let OPS = 0;`] : []),
     ...defs,
+    // Factories also take their parameters by name (rt.nameParams).
+    `rt.nameParams(R, ${JSON.stringify(mod.signatures)});`,
     ...(opts.countOps ? [`R.__ops = () => OPS;`] : []),
     `return R;`,
     `}`,

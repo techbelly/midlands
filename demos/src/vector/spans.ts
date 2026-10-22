@@ -40,6 +40,6 @@ export function writePixels(img: ImgLike, tokens: number[][]): void {
 // Coverage spans (flat [x, y, c, l]) painted in an opaque colour: PaintSpans
 // in Nile, then written.
 export function paintSpans(img: ImgLike, registry: Registry, spans: number[][], color: RGB): void {
-  const paint = get(registry, 'PaintSpans')([1, color[0] / 255, color[1] / 255, color[2] / 255]);
+  const paint = get(registry, 'PaintSpans')({ C: [1, color[0] / 255, color[1] / 255, color[2] / 255] });
   writePixels(img, collectSpans(paint, spans));
 }

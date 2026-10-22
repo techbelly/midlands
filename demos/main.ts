@@ -13,7 +13,7 @@
 //          submission to a WebGPU canvas: zero fences per frame.
 
 import * as rt from '../umgeni/src/cpu/runtime.js';
-import { colorRuns, fallback, paintCoverage, textSpansParams, textTokens, type ColorRun, type GlyphSource } from './src/text/host.js';
+import { colorRuns, fallback, paintCoverage, textSpansParams, textTokens, type ColorRun, type GlyphSource, type TextSpansParams } from './src/text/host.js';
 import { glyphFor as stubGlyph } from './src/text/stubfont.js';
 import { parseTrueType } from './src/text/ttf.js';
 import { collectSpans } from './src/vector/draw.js';
@@ -37,7 +37,7 @@ import rasterize2Nl from '../umgeni/nl/rasterize2.nl';
 
 (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
   [textNl, spansNl, rasterizeNl, rasterize2Nl],
-  ['TextSpans', 'TextLayout', 'WordWidths', 'LayoutGlyphs', 'Rasterize', 'Rasterize2', 'PaintSpans'],
+  ['TextSpans', 'TextBeziers', 'PlaceBeziers', 'TextLayout', 'WordWidths', 'LayoutGlyphs', 'Rasterize', 'Rasterize2', 'PaintSpans'],
 );
 
 const registry = makeRegistry(rt);
@@ -111,22 +111,17 @@ function paint(buf: ArrayLike<number>): number {
 }
 
 // Laid-out colour runs (Nile layout), each then transformed and clipped (Nile).
-function runs(text: string, params: number[]): ColorRun[] {
-  return colorRuns(registry['TextLayout']([params[0], params[1]]), text, currentFont().glyphs);
+function runs(text: string, { w, lh }: TextSpansParams): ColorRun[] {
+  return colorRuns(registry['TextLayout']({ w, lh }), text, currentFont().glyphs);
 }
 const rgb255 = (r: ColorRun) => (r.color ? [r.color[0] * 255, r.color[1] * 255, r.color[2] * 255] as const : TEXT_COLOR);
-function placed(run: ColorRun, params: number[]): number[][] {
-  const op = rt.pipeline([registry['TransformBeziers'](params.slice(2, 8)), registry['ClipBeziers'](params.slice(8, 12))]);
-  return collectSpans(op, run.beziers);
+function placed(run: ColorRun, { M, min, max }: TextSpansParams): number[][] {
+  return collectSpans(registry['PlaceBeziers']({ M, min, max }), run.beziers);
 }
 
 // CPU front half for the (single-colour) readback path.
-function frontHalf(text: string, params: number[]): Float32Array<ArrayBuffer> {
-  const op = rt.pipeline([
-    registry['TextLayout']([params[0], params[1]]),
-    registry['TransformBeziers'](params.slice(2, 8)),
-    registry['ClipBeziers'](params.slice(8, 12)),
-  ]);
+function frontHalf(text: string, params: TextSpansParams): Float32Array<ArrayBuffer> {
+  const op = registry['TextBeziers'](params);
   const out: number[] = [];
   op.setEmit((t: number[]) => out.push(...t));
   for (const t of textTokens(text, currentFont().glyphs)) op.push(t);

@@ -120,6 +120,14 @@ export type ProcessIR = KernelIR | PipelineIR | FusedIR;
 
 export interface ModuleIR {
   processes: ProcessIR[];
+  // Each process's parameters as its Nile signature names them, in order,
+  // with their flattened widths: how a host can pass them by name.
+  signatures: Record<string, ParamSig[]>;
+}
+
+export interface ParamSig {
+  name: string;
+  width: number;
 }
 
 // --- folds: the IR is a tree; these are its traversals -------------------------

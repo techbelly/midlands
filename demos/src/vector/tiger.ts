@@ -27,7 +27,7 @@ const SVG_CAP = 0;
 // subpath, the outlines filled together so overlaps aren't double-painted.
 function stroke(registry: Registry, tiger: Svg, view: number[], w: number, minStroke: number, subpaths: Cubic[][]) {
   const svgStroke = get(registry, 'SvgStroke');
-  return subpaths.flatMap((sub) => collectSpans(svgStroke([...view, ...tiger.matrix, w, minStroke, SVG_JOIN, SVG_CAP]), sub));
+  return subpaths.flatMap((sub) => collectSpans(svgStroke({ V: view, R: tiger.matrix, w, minw: minStroke, l: SVG_JOIN, c: SVG_CAP }), sub));
 }
 
 // The GPU front half: run each path's geometry (transform → flatten →
@@ -47,7 +47,7 @@ export function tigerBatches(
   clipH: number,
   minStroke = 0.75,
 ): PathBatch[] {
-  const clip = [0, 0, clipW, clipH];
+  const clip = { min: [0, 0], max: [clipW, clipH] };
   const fill = get(registry, 'SvgFillBeziers');
   const clipK = get(registry, 'ClipBeziers');
   const batches: PathBatch[] = [];
@@ -57,7 +57,7 @@ export function tigerBatches(
     batches.push({ beziers: new Float32Array(beziers.flat()), n: beziers.length, color: [r / 255, g / 255, b / 255] });
   };
   for (const path of tiger.paths) {
-    if (path.fill) push(collectSpans(fill([...view, ...tiger.matrix, ...clip]), path.cubics), path.fill);
+    if (path.fill) push(collectSpans(fill({ V: view, R: tiger.matrix, ...clip }), path.cubics), path.fill);
     if (path.stroke) {
       const outline = stroke(registry, tiger, view, path.strokeWidth, minStroke, path.subpaths);
       push(collectSpans(clipK(clip), outline), path.stroke);
@@ -76,12 +76,12 @@ export function drawTiger(
   registry: Registry,
   minStroke = 0.75,
 ): number {
-  const clip = [0, 0, img.width, img.height];
+  const clip = { min: [0, 0], max: [img.width, img.height] };
   const fill = get(registry, 'SvgFill');
   const fillBeziers = get(registry, 'FillBeziers');
   for (const path of tiger.paths) {
     if (path.fill) {
-      paintSpans(img, registry, collectSpans(fill([...view, ...tiger.matrix, ...clip]), path.cubics), hexRGB(path.fill));
+      paintSpans(img, registry, collectSpans(fill({ V: view, R: tiger.matrix, ...clip }), path.cubics), hexRGB(path.fill));
     }
     if (path.stroke) {
       const outline = stroke(registry, tiger, view, path.strokeWidth, minStroke, path.subpaths);

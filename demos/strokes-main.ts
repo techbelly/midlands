@@ -54,7 +54,7 @@ function draw(): void {
   const outlines = paths.map((p) => strokeOutline(registry, I, ui.w, join, ui.cap, [p]));
   let spans = 0;
   for (const outline of outlines) {
-    const s = collectSpans(fillBeziers([0, 0, W, H]), outline);
+    const s = collectSpans(fillBeziers({ min: [0, 0], max: [W, H] }), outline);
     spans += s.length;
     paintSpans(img, registry, s, hexRGB('#2b6cb0'));
   }

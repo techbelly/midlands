@@ -26,11 +26,7 @@ const program = compileProgram([
 const W = 320;
 const H = 48;
 const params = textSpansParams({ size: 16, width: W, height: H, margin: 4 });
-const front = rt.pipeline([
-  program.registry.get('TextLayout')!([params[0], params[1]]),
-  program.registry.get('TransformBeziers')!(params.slice(2, 8)),
-  program.registry.get('ClipBeziers')!(params.slice(8, 12)),
-]);
+const front = program.registry.get('TextBeziers')!(params);
 const bez: number[] = [];
 front.setEmit((t) => bez.push(...t));
 for (const t of textTokens('ZERO FENCES')) front.push(t);
@@ -91,11 +87,7 @@ console.log(
 // resolve accumulates into coverage, so the core must clear it per frame).
 {
   const bez2: number[] = [];
-  const front2 = rt.pipeline([
-    program.registry.get('TextLayout')!([params[0], params[1]]),
-    program.registry.get('TransformBeziers')!(params.slice(2, 8)),
-    program.registry.get('ClipBeziers')!(params.slice(8, 12)),
-  ]);
+  const front2 = program.registry.get('TextBeziers')!(params);
   front2.setEmit((t) => bez2.push(...t));
   for (const t of textTokens('ZERO')) front2.push(t);
   front2.end();
@@ -126,11 +118,7 @@ console.log(
 {
   const small = textSpansParams({ size: 8, width: W, height: H, margin: 4 });
   const bez3: number[] = [];
-  const front3 = rt.pipeline([
-    program.registry.get('TextLayout')!([small[0], small[1]]),
-    program.registry.get('TransformBeziers')!(small.slice(2, 8)),
-    program.registry.get('ClipBeziers')!(small.slice(8, 12)),
-  ]);
+  const front3 = program.registry.get('TextBeziers')!(small);
   front3.setEmit((t) => bez3.push(...t));
   for (const t of textTokens('ZERO FENCES')) front3.push(t);
   front3.end();

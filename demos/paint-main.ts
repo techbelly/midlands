@@ -133,7 +133,7 @@ async function render(): Promise<void> {
   img.data.fill(255);
   let px = 0;
   for (const bs of shapes) {
-    const out = collectSpans(p.registry.get('PaintBeziers')!([0, 0, W, H]), bs);
+    const out = collectSpans(p.registry.get('PaintBeziers')!({ min: [0, 0], max: [W, H] }), bs);
     px += out.length;
     writePixels(img, out);
   }

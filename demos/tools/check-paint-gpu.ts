@@ -37,7 +37,7 @@ for (const preset of PRESETS) {
 
   // CPU reference: the same beziers, rasterized and painted in JS.
   const cpu = { width: W, height: H, data: new Uint8ClampedArray(W * H * 4).fill(255) };
-  for (const bs of shapes) writePixels(cpu, collectSpans(program.registry.get('PaintBeziers')!([0, 0, W, H]), bs));
+  for (const bs of shapes) writePixels(cpu, collectSpans(program.registry.get('PaintBeziers')!({ min: [0, 0], max: [W, H] }), bs));
 
   // GPU: Rasterize2 lowered from source, composite with the lowered paint().
   const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'Rasterize2');

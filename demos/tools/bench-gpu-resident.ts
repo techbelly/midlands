@@ -14,7 +14,7 @@ import { createRasterHost } from '../../umgeni/src/gpu/raster.js';
 import { lowerFusedPipeline } from '../../umgeni/src/gpu/lower.js';
 import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
 import * as rt from '../../umgeni/src/cpu/runtime.js';
-import { paintCoverage, textSpansParams, textTokens } from '../src/text/host.js';
+import { paintCoverage, textSpansParams, textTokens, type TextSpansParams } from '../src/text/host.js';
 
 const program = compileProgram([
   read('gezira/types.nl'),
@@ -31,13 +31,8 @@ const PARA =
 const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 
 // CPU front half: laid-out, transformed, clipped beziers (shared by both sides).
-function frontHalf(text: string, params: number[]): Float32Array<ArrayBuffer> {
-  const [w, lh, ...rest] = params;
-  const op = rt.pipeline([
-    program.registry.get('TextLayout')!([w, lh]),
-    program.registry.get('TransformBeziers')!(rest.slice(0, 6)),
-    program.registry.get('ClipBeziers')!(rest.slice(6, 10)),
-  ]);
+function frontHalf(text: string, params: TextSpansParams): Float32Array<ArrayBuffer> {
+  const op = program.registry.get('TextBeziers')!(params);
   const out: number[] = [];
   op.setEmit((t) => out.push(...t));
   for (const t of textTokens(text)) op.push(t);

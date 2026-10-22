@@ -12,6 +12,7 @@ import { mapExpr, type FusedIR, type FusedSegment, type FusedStage, type ModuleI
 export function fuseModule(mod: ModuleIR): ModuleIR {
   const byName = new Map(mod.processes.map((p) => [p.name, p]));
   return {
+    ...mod,
     processes: mod.processes.map((p) => (p.k === 'pipeline' ? fusePipeline(p, byName) : p)),
   };
 }

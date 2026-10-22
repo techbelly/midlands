@@ -13,7 +13,7 @@ import { fuseModule } from './passes/fuse.js';
 import type { ModuleIR } from './ir.js';
 import * as rt from './cpu/runtime.js';
 
-export type ProcessFactory = (params?: number[]) => rt.Op;
+export type ProcessFactory = (params?: rt.Params) => rt.Op;
 
 // Both optimizations default on: measured on the paragraph benchmark
 // (tools/bench.ts) they cut executed IR ops ~8%, static IR ops ~21%, and
@@ -62,7 +62,7 @@ export function compileProgram(sources: string[], opts: CompileOptions = {}): Co
 }
 
 // Convenience: instantiate one process and drive it via a Streamer.
-export function makeStreamer(program: CompiledProgram, name: string, params: number[] = []): rt.Streamer {
+export function makeStreamer(program: CompiledProgram, name: string, params: rt.Params = []): rt.Streamer {
   const factory = program.registry.get(name);
   if (!factory) throw new Error(`no process named '${name}' (unsupported? ${program.unsupported.map((u) => u.name).join(', ') || 'none'})`);
   return rt.streamer(factory(params));

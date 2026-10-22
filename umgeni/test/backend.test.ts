@@ -150,3 +150,27 @@ describe('patterns', () => {
     expect(run(src, 'Run', [[1, 0], [4, 0], [9, 0]]).flat()).toEqual([3, 5]);
   });
 });
+
+describe('named parameters', () => {
+  const program = compileProgram([gezira('types.nl'), gezira('bezier.nl')]);
+  const run = (P: Parameters<typeof makeStreamer>[2]) => {
+    const s = makeStreamer(program, 'TransformBeziers', P);
+    return [...s.push([1, 2, 3, 4, 5, 6]), ...s.end()];
+  };
+  const M = [2, 0, 0, 3, 10, 20];
+
+  it('records each process signature in the IR', () => {
+    expect(program.ir.signatures.TransformBeziers).toEqual([{ name: 'M', width: 6 }]);
+  });
+
+  it('takes parameters by name, the same as flat', () => {
+    expect(run({ M })).toEqual(run(M));
+    expect(run({ M: [[2, 0], [0, 3], [10, 20]] })).toEqual(run(M)); // nested arrays flatten
+  });
+
+  it('names what is wrong', () => {
+    expect(() => run({})).toThrow("missing parameter 'M': TransformBeziers takes M (6)");
+    expect(() => run({ M, N: 1 })).toThrow("'N' is not a parameter");
+    expect(() => run({ M: [1, 2] })).toThrow("'M' needs 6 number(s), got 2");
+  });
+});

@@ -32,7 +32,7 @@ export function opCount(e: ScalarExpr): number {
 }
 
 export function cseModule(mod: ModuleIR): ModuleIR {
-  return { processes: mod.processes.map(cseProcess) };
+  return { ...mod, processes: mod.processes.map(cseProcess) };
 }
 
 function cseProcess(p: ProcessIR): ProcessIR {

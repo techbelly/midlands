@@ -1,10 +1,10 @@
 // Driving compiled Nile processes from the host: look one up in a registry,
 // push tokens through it, collect what it emits.
 
-import type { Op, Token } from '../../../umgeni/src/cpu/runtime.js';
+import type { Op, Params, Token } from '../../../umgeni/src/cpu/runtime.js';
 import type { Cubic } from './svg.js';
 
-export type ProcessFactory = (params?: number[]) => Op;
+export type ProcessFactory = (params?: Params) => Op;
 export type Registry = { [name: string]: ProcessFactory } | Map<string, ProcessFactory>;
 
 export const get = (r: Registry, name: string): ProcessFactory => {
@@ -28,5 +28,5 @@ export function strokeOutline(
   registry: Registry, m: number[], w: number, join: number, cap: number, subpaths: Cubic[][],
 ): number[][] {
   const outline = get(registry, 'StrokeOutline');
-  return subpaths.flatMap((sub) => collectSpans(outline([...m, w, join, cap]), sub));
+  return subpaths.flatMap((sub) => collectSpans(outline({ M: m, w, l: join, c: cap }), sub));
 }

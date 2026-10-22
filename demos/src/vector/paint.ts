@@ -3,7 +3,7 @@
 // written by spans.ts writePixels). A paint program is gezira's library + nl/vector.nl +
 // nl/rasterize2.nl + the user's `Paint` + PAINT_GLUE.
 
-import { collectSpans, strokeOutline, type Registry } from './draw.js';
+import { collectSpans, get, strokeOutline, type Registry } from './draw.js';
 
 export const PAINT_GLUE = `
 PaintBeziers (min, max : Point) : Bezier >> (Color, CoveragePoint)
@@ -37,9 +37,8 @@ const wave = [[40, 255, 120, 175, 200, 335, 280, 255], [280, 255, 330, 205, 370,
 // The shapes as clipped beziers (one batch per shape), all geometry in Nile:
 // a disc and a star flattened from cubics, and a thick round-capped stroke.
 export function paintShapes(registry: Registry, W: number, H: number): number[][][] {
-  const get = (n: string) => (registry instanceof Map ? registry.get(n) : registry[n])!;
-  const clip = (bs: number[][]) => collectSpans(get('ClipBeziers')([0, 0, W, H]), bs);
-  const flat = (cubics: number[][]) => clip(collectSpans(get('FlattenCubics')(), cubics));
+  const clip = (bs: number[][]) => collectSpans(get(registry, 'ClipBeziers')({ min: [0, 0], max: [W, H] }), bs);
+  const flat = (cubics: number[][]) => clip(collectSpans(get(registry, 'FlattenCubics')(), cubics));
   return [
     flat(disc(110, 115, 85)),
     flat(star(320, 120, 42, 100)),
