@@ -1,15 +1,14 @@
 // Builds the demos as a static site in demos/dist:
-//   1. bundle+run tools/gen-entry.ts (node) -> demos/gen/*.gen.js
+//   1. bundle tools/nile-plugin.ts (node), which compiles *.program imports
 //   2. bundle each page's main (browser, iife) -> demos/dist/*-app.js
 //   3. copy the pages alongside
 // Open demos/dist/index.html directly, or serve the folder (GitHub Pages).
 
 import { build } from 'esbuild';
-import { copyFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { copyFileSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 const demos = new URL('../', import.meta.url).pathname;
-const gen = join(demos, 'gen');
 const dist = join(demos, 'dist');
 
 // Every bundle embeds source text instead of reading it from disk: each
@@ -27,19 +26,22 @@ const embedSources = {
 };
 const loader = { '.svg': 'text', '.ohm': 'text', '.nl': 'text', '.mooi': 'text', '.ttf': 'binary' };
 
-mkdirSync(gen, { recursive: true });
-const tmp = join(gen, '.gen-entry.mjs');
+// The plugin runs umgeni's compiler, which is TypeScript: bundle it for node
+// first, then load it.
+const tmp = join(demos, 'tools/.nile-plugin.mjs');
 await build({
-  entryPoints: [join(demos, 'tools/gen-entry.ts')],
+  entryPoints: [join(demos, 'tools/nile-plugin.ts')],
   bundle: true,
   platform: 'node',
   format: 'esm',
+  packages: 'external',
   outfile: tmp,
   plugins: [embedSources],
   loader,
 });
+let nile;
 try {
-  await import(tmp);
+  nile = (await import(tmp)).nilePlugin(new URL('../../', import.meta.url));
 } finally {
   rmSync(tmp);
 }
@@ -51,7 +53,7 @@ const page = async (entry, outfile) =>
     bundle: true,
     format: 'iife',
     minify: true,
-    plugins: [embedSources],
+    plugins: [embedSources, nile],
     loader,
     outfile: join(dist, outfile),
   });

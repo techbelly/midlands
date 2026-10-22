@@ -9,5 +9,5 @@
     "types": ["node", "@webgpu/types"]
   },
   "include": ["mooi", "umgeni", "demos"],
-  "exclude": ["demos/dist", "demos/gen", "*/tools", "node_modules"]
+  "exclude": ["demos/dist", "*/tools", "node_modules"]
 }

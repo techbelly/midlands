@@ -8,7 +8,7 @@
 //
 // Run: npx tsx tools/bench.ts
 
-import { compileTextPipeline } from '../src/text/render.js';
+import { compileProgramFile } from '../src/sources.js';
 import { renderText } from '../src/text/render.js';
 import type { CompileOptions } from '../../umgeni/src/compile.js';
 import { opCount } from '../../umgeni/src/passes/cse.js';
@@ -58,7 +58,7 @@ console.log('------------|-------------|------------|-----------|---------------
 for (const v of VARIANTS) {
   // Instrumented build for the op counts (never timed).
   const wasm = v.opts.target === 'wasm';
-  const counted = compileTextPipeline(undefined, { ...v.opts, countOps: !wasm });
+  const counted = compileProgramFile('demos/nl/text.program', { ...v.opts, countOps: !wasm });
   const before = wasm ? 0 : counted.ops!();
   const { spans } = renderText(counted, TEXT, OPTS);
   const dynOps = wasm ? '—' : counted.ops!() - before;
@@ -69,7 +69,7 @@ for (const v of VARIANTS) {
   else if (sig !== referenceSpans) throw new Error(`variant '${v.name}' changed the output!`);
 
   // Clean build for size and time.
-  const program = compileTextPipeline(undefined, v.opts);
+  const program = compileProgramFile('demos/nl/text.program', v.opts);
   const stat = program.ir.processes.reduce((n, p) => n + (p.k === 'kernel' ? staticOps(p) : 0), 0);
   for (let i = 0; i < 5; i++) renderText(program, TEXT, OPTS); // warm-up
   const times = Array.from({ length: 15 }, () => renderText(program, TEXT, OPTS).rasterMs);

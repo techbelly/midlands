@@ -1,16 +1,13 @@
 // The tiger demo shell: zoom/pan state and canvas plumbing. Ported from
-// chari/web/tiger-main.ts; the pipeline is Umgeni-compiled (vector.gen.js).
+// chari/web/tiger-main.ts; the pipeline is Umgeni-compiled (nl/vector.program).
 
-import * as rt from '../umgeni/src/cpu/runtime.js';
 import { parseSvg } from './src/vector/svg.js';
 import { drawTiger, tigerBatches } from './src/vector/tiger.js';
 import { createTigerGpu, type TigerGpu } from '../umgeni/src/gpu/tiger.js';
 import { lowerFusedPipeline } from '../umgeni/src/gpu/lower.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
-// @ts-expect-error generated at build time, plain JS
-import { makeVectorRegistry } from './gen/vector.gen.js';
-// @ts-expect-error generated at build time, plain JS
-import { rasterize2IR } from './gen/pipeline.gen.js';
+import { nile } from './nl/vector.program';
+import { Rasterize2IR } from './nl/text.program';
 import svgSrc from './tiger.svg';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
@@ -25,7 +22,6 @@ import rasterizeNl from '../gezira/rasterize.nl';
   ['PathCubics', 'SvgFill', 'FillPath', 'FillBeziers', 'Rasterize', 'SvgStroke', 'StrokeOutline', 'StrokeBezierPath', 'PaintSpans'],
 );
 
-const nile = rt.api(makeVectorRegistry(rt));
 const tiger = parseSvg(svgSrc, nile);
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
@@ -54,7 +50,7 @@ async function ensureGpu(): Promise<GpuState | null> {
   const format = navigator.gpu.getPreferredCanvasFormat();
   context.configure({ device, format, alphaMode: 'opaque' });
   const size = { width: canvasGpu.width, height: canvasGpu.height };
-  const shaders = lowerFusedPipeline(rasterize2IR, size);
+  const shaders = lowerFusedPipeline(Rasterize2IR, size);
   gpuState = { gpu: createTigerGpu(device, shaders, { ...size, format }), context, device };
   return gpuState;
 }

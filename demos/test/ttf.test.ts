@@ -2,7 +2,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseTrueType } from '../src/text/ttf.js';
-import { compileTextPipeline, renderText } from '../src/text/render.js';
+import { compileProgramFile } from '../src/sources.js';
+import { renderText } from '../src/text/render.js';
 import { colorRuns, fallback, paintCoverage } from '../src/text/host.js';
 
 const font = parseTrueType(readFileSync(new URL('../fonts/SourceSerif4.ttf', import.meta.url)));
@@ -47,7 +48,7 @@ describe('TrueType reader', () => {
   it('renders through the compiled text pipeline', () => {
     const W = 60;
     const H = 30;
-    const program = compileTextPipeline();
+    const program = compileProgramFile('demos/nl/text.program');
     const { spans } = renderText(program, 'Oo', { size: 24, width: W, height: H, margin: 2, lineHeight: font.lineHeight, glyphs: font.glyphFor });
     const cov = paintCoverage(spans, W, H);
     // The capital O's counter is empty, its sides inked, along the mid row.
@@ -78,7 +79,7 @@ describe('colour emoji (COLR/CPAL, Twemoji)', () => {
   });
 
   it('lays out into colour runs, one per colour change, in painting order', () => {
-    const program = compileTextPipeline();
+    const program = compileProgramFile('demos/nl/text.program');
     const glyphs = fallback(font, emoji);
     const runs = colorRuns(program.api, program.api.TextLayout({ w: 20, lh: font.lineHeight }), 'ab 😀 cd', glyphs);
     expect(runs[0].color).toBeNull(); // 'ab ' in the text colour

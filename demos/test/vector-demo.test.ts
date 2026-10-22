@@ -4,15 +4,14 @@
 
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { read } from '../src/sources.js';
-import { compileVectorPipeline } from '../src/vector/compile.js';
+import { compileProgramFile, read } from '../src/sources.js';
 import { strokeOutline } from '../src/vector/draw.js';
 import { paintSpans } from '../src/vector/spans.js';
 import { parseSvg, pathCubics, pathSubpaths } from '../src/vector/svg.js';
 import { drawTiger, fitView } from '../src/vector/tiger.js';
 
 
-const program = compileVectorPipeline();
+const program = compileProgramFile('demos/nl/vector.program');
 const tiger = parseSvg(read('demos/tiger.svg'), program.api);
 
 describe('the tiger demo, headless', () => {

@@ -1,11 +1,9 @@
 // Stroke demo: gezira's own stroke.nl — unmodified, higher-order (mid-stream
 // ⇒, recursive generators, DupCat, Reverse) — compiled by Umgeni.
 
-import * as rt from '../umgeni/src/cpu/runtime.js';
 import { strokeOutline } from './src/vector/draw.js';
 import { hexRGB, paintSpans } from './src/vector/spans.js';
-// @ts-expect-error generated at build time, plain JS
-import { makeVectorRegistry } from './gen/vector.gen.js';
+import { nile } from './nl/vector.program';
 import { quoteNile } from './src/quote.js';
 import vectorNl from './nl/vector.nl';
 import spansNl from './nl/spans.nl';
@@ -17,7 +15,6 @@ import rasterizeNl from '../gezira/rasterize.nl';
   ['StrokeOutline', 'StrokeBezierPath', 'FillBeziers', 'Rasterize', 'PaintSpans'],
 );
 
-const nile = rt.api(makeVectorRegistry(rt));
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;

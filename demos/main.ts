@@ -1,6 +1,6 @@
 // The web demo shell: DOM in, pixels out. The pipeline itself is
-// pipeline.gen.js — the Umgeni compiler's generated JS plus Rasterize2 as
-// fused IR (plain data), produced at build time by tools/build-demo.mjs.
+// nl/text.program — compiled by Umgeni at bundle time (tools/nile-plugin.ts)
+// into generated JS plus Rasterize2 as fused IR (plain data).
 //
 // Three rendering paths over the same Nile source:
 //   cpu  — the compiled JS pipeline: layout, then each colour run (colour
@@ -12,7 +12,6 @@
 //   gpu0 — the colour runs rasterized and composited on the GPU in one
 //          submission to a WebGPU canvas: zero fences per frame.
 
-import * as rt from '../umgeni/src/cpu/runtime.js';
 import { colorRuns, fallback, paintCoverage, textSpansParams, textTokens, type ColorRun, type GlyphSource, type TextSpansParams } from './src/text/host.js';
 import { glyphFor as stubGlyph } from './src/text/stubfont.js';
 import { parseTrueType } from './src/text/ttf.js';
@@ -25,8 +24,7 @@ import { createRasterHost, type GpuRasterizer } from '../umgeni/src/gpu/raster.j
 import { createTigerGpu, type TigerGpu } from '../umgeni/src/gpu/tiger.js';
 import { lowerFusedPipeline, type LoweredShaders } from '../umgeni/src/gpu/lower.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
-// @ts-expect-error generated at build time, plain JS
-import { compileMs, makeRegistry, rasterize2IR } from './gen/pipeline.gen.js';
+import { compileMs, nile, Rasterize2IR } from './nl/text.program';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
 import textNl from './nl/text.nl';
@@ -39,7 +37,6 @@ import rasterize2Nl from '../umgeni/nl/rasterize2.nl';
   ['TextSpans', 'TextBeziers', 'PlaceBeziers', 'TextLayout', 'WordWidths', 'LayoutGlyphs', 'Rasterize', 'Rasterize2', 'PaintSpans'],
 );
 
-const nile = rt.api(makeRegistry(rt));
 
 const canvas2d = document.getElementById('canvas') as HTMLCanvasElement;
 const canvasGpu = document.getElementById('canvasgpu') as HTMLCanvasElement;
@@ -83,7 +80,7 @@ async function ensureGpu(): Promise<GpuState | null> {
   }
   const format = navigator.gpu.getPreferredCanvasFormat();
   context.configure({ device, format, alphaMode: 'opaque' });
-  const shaders = lowerFusedPipeline(rasterize2IR, SIZE); // WGSL from IR, in-browser
+  const shaders = lowerFusedPipeline(Rasterize2IR, SIZE); // WGSL from IR, in-browser
   gpuState = {
     device,
     shaders,

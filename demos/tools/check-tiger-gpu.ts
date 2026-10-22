@@ -6,18 +6,17 @@
 // Run: deno run --allow-read --unstable-sloppy-imports tools/check-tiger-gpu.ts [size] [zoom]
 // (zoom > 1 magnifies about the centre, as the demo's double-click does)
 
-import { read } from '../src/sources.js';
+import { compileProgramFile, read } from '../src/sources.js';
 import { compileProgram } from '../../umgeni/src/compile.js';
 import { createTigerGpu } from '../../umgeni/src/gpu/tiger.js';
 import { lowerFusedPipeline } from '../../umgeni/src/gpu/lower.js';
 import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
 import * as rt from '../../umgeni/src/cpu/runtime.js';
-import { compileVectorPipeline } from '../src/vector/compile.js';
 import { parseSvg } from '../src/vector/svg.js';
 import { drawTiger, fitView, tigerBatches } from '../src/vector/tiger.js';
 
 
-const vector = compileVectorPipeline();
+const vector = compileProgramFile('demos/nl/vector.program');
 const raster = compileProgram([
   read('gezira/types.nl'),
   read('gezira/bezier.nl'),

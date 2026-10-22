@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { compileTextPipeline, renderText } from '../src/text/render.js';
+import { compileProgramFile } from '../src/sources.js';
+import { renderText } from '../src/text/render.js';
 import { asciiArt, paintCoverage, textTokens } from '../src/text/host.js';
 import { run, streamer } from '../../umgeni/src/cpu/runtime.js';
 
-const program = compileTextPipeline();
+const program = compileProgramFile('demos/nl/text.program');
 
 function coverage(text: string, size: number, width: number, height: number, margin = 2) {
   const { spans } = renderText(program, text, { size, width, height, margin });
@@ -123,7 +124,7 @@ describe('the text pipeline (nl/text.nl)', () => {
   });
 
   it('renders identically with kernel fusion (incl. the nested Rasterize splice)', () => {
-    const fused = compileTextPipeline(undefined, { fuse: true });
+    const fused = compileProgramFile('demos/nl/text.program', { fuse: true });
     expect(fused.source).toContain('// segment: LayoutGlyphs → TransformBeziers → ClipBeziers → DecomposeBeziers');
     const W = 76;
     const H = 14;
