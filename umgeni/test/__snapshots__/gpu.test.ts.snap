@@ -28,8 +28,10 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
 exports[`pipeline lowering (gpu/lower.ts) > lowers Rasterize2 to both shaders from IR alone (golden) 1`] = `
 "// pass B generated from 'WindScan' (scan by key 1) and
 // 'SpansOf' (window), lowered per major-key segment.
-// rowBase lets a caller dispatch only a band of segments (0 = whole frame).
-struct Meta { n : u32, width : u32, height : u32, rowBase : u32 }
+// A caller dispatches a band of rows (rowBase up to height) and walks only
+// the columns colBase up to colEnd: outside a closed path's bounding box there
+// are no samples and the winding is zero, so nothing there is painted.
+struct Meta { n : u32, width : u32, height : u32, rowBase : u32, colBase : u32, colEnd : u32 }
 @group(0) @binding(0) var<uniform> META : Meta;
 @group(0) @binding(1) var<storage, read> GA : array<i32>;
 @group(0) @binding(2) var<storage, read> GH : array<i32>;
@@ -48,7 +50,7 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   S2[2] = 0.0;
   S2[3] = 0.0;
   S2[4] = 0.0;
-  for (var xi = 0u; xi < META.width; xi += 1u) {
+  for (var xi = META.colBase; xi < META.colEnd; xi += 1u) {
     let gi = y * META.width + xi;
     var T1 : array<f32, 4>;
     T1[0] = f32(xi) + 0.5;

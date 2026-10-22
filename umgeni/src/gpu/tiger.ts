@@ -8,9 +8,10 @@
 // shaders run unmodified; only this compositor is new, and it is
 // presentation scaffolding, not kernel logic.
 //
-// Known inefficiency, accepted for v1 and measured honestly: every path pays
-// full-frame grid clears and a full-frame resolve. Bounding those to the
-// path's bbox is the obvious next optimization.
+// Each path's clears and draw are bounded to its rows, and its resolve to
+// its bounding box. Paths still run one after another (they share the grids),
+// so a frame costs roughly a fixed amount per path; rasterizing all paths in
+// one batch is the next step.
 
 import type { LoweredShaders } from './lower.js';
 import { WORKGROUP_SIZE } from './wgsl.js';
@@ -171,7 +172,7 @@ export function createTigerGpu(
     bindA = device.createBindGroup({
       layout: layoutA,
       entries: [
-        { binding: 0, resource: { buffer: metaBuf, size: 16 } },
+        { binding: 0, resource: { buffer: metaBuf, size: 32 } },
         { binding: 1, resource: { buffer: inBuf, size: maxPathBytes } },
         { binding: 2, resource: { buffer: gridA } },
         { binding: 3, resource: { buffer: gridH } },
@@ -181,7 +182,7 @@ export function createTigerGpu(
     bindB = device.createBindGroup({
       layout: layoutB,
       entries: [
-        { binding: 0, resource: { buffer: metaBuf, size: 16 } },
+        { binding: 0, resource: { buffer: metaBuf, size: 32 } },
         { binding: 1, resource: { buffer: gridA } },
         { binding: 2, resource: { buffer: gridH } },
         { binding: 3, resource: { buffer: cov } },
@@ -202,26 +203,37 @@ export function createTigerGpu(
       const drawable = paths.filter((p) => p.n > 0);
       ensure(drawable);
       // Upload per-path meta, colors, and beziers at aligned offsets; bound
-      // each path to its row band so clears/resolve don't pay full-frame.
+      // each path to its bounding box: rows for the clears and the draw,
+      // rows and columns for the resolve.
       const inOffsets: number[] = [];
       const bands: [number, number][] = [];
+      const cols: [number, number][] = [];
       let at = 0;
       for (let i = 0; i < drawable.length; i++) {
         const p = drawable[i];
         inOffsets.push(at);
+        let x0 = Infinity;
+        let x1 = -Infinity;
         let y0 = Infinity;
         let y1 = -Infinity;
         for (let j = 0; j < p.n * 6; j += 2) {
+          const x = p.beziers[j];
           const y = p.beziers[j + 1];
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
           if (y < y0) y0 = y;
           if (y > y1) y1 = y;
         }
+        const c0 = opts.disableBands ? 0 : Math.max(0, Math.floor(x0) - 1);
+        const c1 = opts.disableBands ? width : Math.min(width, Math.ceil(x1) + 2);
+        cols.push([c0, Math.max(c0, c1)]);
         const r0 = opts.disableBands ? 0 : Math.max(0, Math.floor(y0) - 1);
         const r1 = opts.disableBands ? height : Math.min(height, Math.ceil(y1) + 2);
         bands.push([r0, Math.max(r0, r1)]);
         // height slot = band end: bounds pass A's grid writes and pass B's
-        // rows to exactly this path's band (workgroup rounding stays inside).
-        device.queue.writeBuffer(metaBuf!, i * uStride, new Uint32Array([p.n, width, Math.max(r0, r1), r0]));
+        // rows to exactly this path's band (workgroup rounding stays inside);
+        // the last two slots bound pass B's columns to the path's box.
+        device.queue.writeBuffer(metaBuf!, i * uStride, new Uint32Array([p.n, width, Math.max(r0, r1), r0, c0, Math.max(c0, c1)]));
         device.queue.writeBuffer(colorBuf!, i * uStride, new Float32Array([...p.color, 1]));
         device.queue.writeBuffer(inBuf!, at, p.beziers, 0, p.n * 6);
         at += Math.ceil((p.n * 24) / sAlign) * sAlign;
@@ -258,7 +270,9 @@ export function createTigerGpu(
         const rp = enc.beginRenderPass({ colorAttachments: [{ view: target, loadOp: 'load', storeOp: 'store' }] });
         rp.setPipeline(pipeC);
         rp.setBindGroup(0, bindC!, [i * uStride]);
-        rp.setScissorRect(0, r0, width, rows);
+        const [c0, c1] = cols[i];
+        if (c1 === c0) { rp.end(); continue; }
+        rp.setScissorRect(c0, r0, c1 - c0, rows);
         rp.draw(3);
         rp.end();
       }

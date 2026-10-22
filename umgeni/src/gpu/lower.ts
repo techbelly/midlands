@@ -130,8 +130,8 @@ export function genLoweredResolve(r: Recognized, width: number): string {
   const lines: string[] = [];
   lines.push(`// pass B generated from '${scanKernel.name}' (scan by key ${layout.majorKey}) and`);
   lines.push(`// '${windowKernel.name}' (window), lowered per major-key segment.`);
-  lines.push(`// rowBase lets a caller dispatch only a band of segments (0 = whole frame).`);
-  lines.push(`struct Meta { n : u32, width : u32, height : u32, rowBase : u32 }`);
+  lines.push(`// A caller dispatches a band of rows (rowBase up to height) and walks only\n// the columns colBase up to colEnd: outside a closed path's bounding box there\n// are no samples and the winding is zero, so nothing there is painted.`);
+  lines.push(`struct Meta { n : u32, width : u32, height : u32, rowBase : u32, colBase : u32, colEnd : u32 }`);
   lines.push(`@group(0) @binding(0) var<uniform> META : Meta;`);
   lines.push(`@group(0) @binding(1) var<storage, read> GA : array<i32>;`);
   lines.push(`@group(0) @binding(2) var<storage, read> GH : array<i32>;`);
@@ -191,7 +191,7 @@ export function genLoweredResolve(r: Recognized, width: number): string {
 
   // Walk the minor axis, reconstructing the reduced token from the grids:
   // keys as bucket + 0.5 (pixel centres), reduced fields from fixed point.
-  lines.push(`  for (var xi = 0u; xi < META.width; xi += 1u) {`);
+  lines.push(`  for (var xi = META.colBase; xi < META.colEnd; xi += 1u) {`);
   lines.push(`    let gi = y * META.width + xi;`);
   lines.push(`    var T1 : array<f32, ${scanKernel.inputWidth}>;`);
   lines.push(`    T1[${layout.minorKey}] = f32(xi) + 0.5;`);

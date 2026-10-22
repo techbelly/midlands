@@ -62,7 +62,7 @@ export function createRasterCore(
   });
 
   const gridBytes = width * height * 4;
-  const meta = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const meta = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const gridA = device.createBuffer({ size: gridBytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
   const gridH = device.createBuffer({ size: gridBytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
   const cov = device.createBuffer({
@@ -111,7 +111,7 @@ export function createRasterCore(
     overflowBuffer: overflow,
     prepare(beziers, n) {
       ensure(n);
-      device.queue.writeBuffer(meta, 0, new Uint32Array([n, width, height]));
+      device.queue.writeBuffer(meta, 0, new Uint32Array([n, width, height, 0, 0, width])); // the whole frame
       device.queue.writeBuffer(inBuf!, 0, beziers, 0, n * 6);
     },
     encode(enc, n) {
