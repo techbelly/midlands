@@ -201,3 +201,15 @@ describe('token types', () => {
     expect(() => tokenType(program.registry, 'Beziers')).toThrow("no record type named 'Beziers'");
   });
 });
+
+describe('the program API', () => {
+  const nile = compileProgram([gezira('types.nl'), gezira('bezier.nl')]).api;
+
+  it('runs a process by name, parameters by name', () => {
+    expect(nile.TransformBeziers({ M: [2, 0, 0, 3, 10, 20] }).run([[1, 2, 3, 4, 5, 6]])).toEqual([[12, 26, 16, 32, 20, 38]]);
+  });
+
+  it('carries the token types', () => {
+    expect(nile.types.Bezier.make({ A: [1, 2], B: [3, 4], C: [5, 6] })).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+});

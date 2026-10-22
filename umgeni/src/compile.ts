@@ -33,6 +33,8 @@ export interface CompileOptions extends CodegenOptions {
 export interface CompiledProgram {
   /** Instantiate a process by name with its flattened parameter vector. */
   registry: Map<string, ProcessFactory>;
+  /** The program as a host uses it: nile.SvgFill({ … }).run(tokens), nile.types.Point. */
+  api: rt.Api;
   /** The generated JS source (inspectable). */
   source: string;
   /** Processes with process-typed parameters: instantiated at each use. */
@@ -59,7 +61,7 @@ export function compileProgram(sources: string[], opts: CompileOptions = {}): Co
   delete (registryObj as Record<string, unknown>).__ops;
   const registry = new Map(Object.entries(registryObj));
   rt.describeTypes(registry, (registryObj as { [rt.TYPES]?: Record<string, rt.TokenLayout> })[rt.TYPES]!);
-  return { registry, source, unsupported: elaborated.unsupported, templates: elaborated.templates, ir, modules, ops };
+  return { registry, api: rt.api(registry), source, unsupported: elaborated.unsupported, templates: elaborated.templates, ir, modules, ops };
 }
 
 // Convenience: instantiate one process and drive it via a Streamer.

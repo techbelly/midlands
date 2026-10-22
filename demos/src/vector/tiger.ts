@@ -7,7 +7,7 @@
 // chooses the view, and composites spans (spans.ts). DOM-free: shared by the
 // browser demo and tests.
 
-import { collectSpans, get, type Registry } from './draw.js';
+import type { Api } from './draw.js';
 import { hexRGB, paintSpans, type ImgLike } from './spans.js';
 import type { Cubic, Svg } from './svg.js';
 
@@ -25,9 +25,8 @@ const SVG_CAP = 0;
 
 // A path's stroke outline under the view: SvgStroke (nl/svg.nl) once per
 // subpath, the outlines filled together so overlaps aren't double-painted.
-function stroke(registry: Registry, tiger: Svg, view: number[], w: number, minStroke: number, subpaths: Cubic[][]) {
-  const svgStroke = get(registry, 'SvgStroke');
-  return subpaths.flatMap((sub) => collectSpans(svgStroke({ V: view, R: tiger.matrix, w, minw: minStroke, l: SVG_JOIN, c: SVG_CAP }), sub));
+function stroke(nile: Api, tiger: Svg, view: number[], w: number, minStroke: number, subpaths: Cubic[][]) {
+  return subpaths.flatMap((sub) => nile.SvgStroke({ V: view, R: tiger.matrix, w, minw: minStroke, l: SVG_JOIN, c: SVG_CAP }).run(sub));
 }
 
 // The GPU front half: run each path's geometry (transform → flatten →
@@ -42,14 +41,12 @@ export interface PathBatch {
 export function tigerBatches(
   tiger: Svg,
   view: number[],
-  registry: Registry,
+  nile: Api,
   clipW: number,
   clipH: number,
   minStroke = 0.75,
 ): PathBatch[] {
   const clip = { min: [0, 0], max: [clipW, clipH] };
-  const fill = get(registry, 'SvgFillBeziers');
-  const clipK = get(registry, 'ClipBeziers');
   const batches: PathBatch[] = [];
   const push = (beziers: number[][], hex: string) => {
     if (beziers.length === 0) return;
@@ -57,10 +54,10 @@ export function tigerBatches(
     batches.push({ beziers: new Float32Array(beziers.flat()), n: beziers.length, color: [r / 255, g / 255, b / 255] });
   };
   for (const path of tiger.paths) {
-    if (path.fill) push(collectSpans(fill({ V: view, R: tiger.matrix, ...clip }), path.cubics), path.fill);
+    if (path.fill) push(nile.SvgFillBeziers({ V: view, R: tiger.matrix, ...clip }).run(path.cubics), path.fill);
     if (path.stroke) {
-      const outline = stroke(registry, tiger, view, path.strokeWidth, minStroke, path.subpaths);
-      push(collectSpans(clipK(clip), outline), path.stroke);
+      const outline = stroke(nile, tiger, view, path.strokeWidth, minStroke, path.subpaths);
+      push(nile.ClipBeziers(clip).run(outline), path.stroke);
     }
   }
   return batches;
@@ -73,19 +70,17 @@ export function drawTiger(
   img: ImgLike,
   tiger: Svg,
   view: number[],
-  registry: Registry,
+  nile: Api,
   minStroke = 0.75,
 ): number {
   const clip = { min: [0, 0], max: [img.width, img.height] };
-  const fill = get(registry, 'SvgFill');
-  const fillBeziers = get(registry, 'FillBeziers');
   for (const path of tiger.paths) {
     if (path.fill) {
-      paintSpans(img, registry, collectSpans(fill({ V: view, R: tiger.matrix, ...clip }), path.cubics), hexRGB(path.fill));
+      paintSpans(img, nile, nile.SvgFill({ V: view, R: tiger.matrix, ...clip }).run(path.cubics), hexRGB(path.fill));
     }
     if (path.stroke) {
-      const outline = stroke(registry, tiger, view, path.strokeWidth, minStroke, path.subpaths);
-      paintSpans(img, registry, collectSpans(fillBeziers(clip), outline), hexRGB(path.stroke));
+      const outline = stroke(nile, tiger, view, path.strokeWidth, minStroke, path.subpaths);
+      paintSpans(img, nile, nile.FillBeziers(clip).run(outline), hexRGB(path.stroke));
     }
   }
   return tiger.paths.length;

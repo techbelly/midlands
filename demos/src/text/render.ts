@@ -11,7 +11,7 @@ export function compileTextPipeline(root: URL = ROOT, opts: CompileOptions = {})
 }
 
 export function renderText(program: CompiledProgram, text: string, opts: RenderOptions): Driven {
-  const factory = program.registry.get('TextSpans');
-  if (!factory) throw new Error('TextSpans did not compile');
-  return driveTextSpans(program.registry, factory(textSpansParams(opts)), text, opts.glyphs);
+  const nile = program.api;
+  if (!nile.TextSpans) throw new Error('TextSpans did not compile');
+  return driveTextSpans(nile, nile.TextSpans(textSpansParams(opts)), text, opts.glyphs);
 }

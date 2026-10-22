@@ -120,6 +120,41 @@ export function tokenType(registry: object, name: string): TokenType {
   };
 }
 
+// --- a program's API --------------------------------------------------------
+
+// An Op that can also simply run: push every token, end, return what it emitted.
+export interface RunnableOp extends Op {
+  run(tokens: Token[]): Token[];
+}
+export type ProcessFn = (params?: Params) => RunnableOp;
+
+// A compiled program as the host sees it: each process by name, taking its
+// parameters by name, and each named record type for reading and building
+// tokens. (Nile process and type names start with a capital, so `types`
+// cannot collide.)
+export type Api = { readonly [process: string]: ProcessFn } & { readonly types: { readonly [name: string]: TokenType } };
+
+export function api(registry: Map<string, (P?: Params) => Op> | Record<string, (P?: Params) => Op>): Api {
+  const entries = registry instanceof Map ? [...registry] : Object.entries(registry);
+  const out: Record<string, unknown> = {};
+  for (const [name, factory] of entries) {
+    out[name] = (P?: Params) => {
+      const op = factory(P) as RunnableOp;
+      op.run = (tokens) => {
+        const emitted: Token[] = [];
+        op.setEmit((t) => emitted.push(t));
+        for (const t of tokens) op.push(t);
+        op.end();
+        return emitted;
+      };
+      return op;
+    };
+  }
+  const layouts = (registry as { [TYPES]?: Record<string, TokenLayout> })[TYPES] ?? {};
+  out.types = Object.fromEntries(Object.keys(layouts).map((name) => [name, tokenType(registry, name)]));
+  return out as Api;
+}
+
 // A buffering sort stage: collects every token, emits stably sorted by the
 // given flattened field offset on end(). It stalls the streaming overlap but
 // composes through the same end() propagation as any other op.

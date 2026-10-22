@@ -80,11 +80,11 @@ describe('colour emoji (COLR/CPAL, Twemoji)', () => {
   it('lays out into colour runs, one per colour change, in painting order', () => {
     const program = compileTextPipeline();
     const glyphs = fallback(font, emoji);
-    const runs = colorRuns(program.registry, program.registry.get('TextLayout')!([20, font.lineHeight]), 'ab 😀 cd', glyphs);
+    const runs = colorRuns(program.api, program.api.TextLayout({ w: 20, lh: font.lineHeight }), 'ab 😀 cd', glyphs);
     expect(runs[0].color).toBeNull(); // 'ab ' in the text colour
     expect(runs.at(-1)!.color).toBeNull(); // ' cd'
     expect(runs.slice(1, -1).every((r) => r.color !== null)).toBe(true); // the emoji's layers
     // Variation selectors and joiners are invisible, not .notdef boxes.
-    expect(colorRuns(program.registry, program.registry.get('TextLayout')!([20, 1]), '❤️', glyphs).every((r) => r.color !== null)).toBe(true);
+    expect(colorRuns(program.api, program.api.TextLayout({ w: 20, lh: 1 }), '❤️', glyphs).every((r) => r.color !== null)).toBe(true);
   });
 });

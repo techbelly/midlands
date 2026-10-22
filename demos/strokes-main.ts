@@ -2,7 +2,7 @@
 // ⇒, recursive generators, DupCat, Reverse) — compiled by Umgeni.
 
 import * as rt from '../umgeni/src/cpu/runtime.js';
-import { collectSpans, strokeOutline } from './src/vector/draw.js';
+import { strokeOutline } from './src/vector/draw.js';
 import { hexRGB, paintSpans } from './src/vector/spans.js';
 // @ts-expect-error generated at build time, plain JS
 import { makeVectorRegistry } from './gen/vector.gen.js';
@@ -17,8 +17,7 @@ import rasterizeNl from '../gezira/rasterize.nl';
   ['StrokeOutline', 'StrokeBezierPath', 'FillBeziers', 'Rasterize', 'PaintSpans'],
 );
 
-const registry = makeVectorRegistry(rt);
-const fillBeziers = registry['FillBeziers'];
+const nile = rt.api(makeVectorRegistry(rt));
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
@@ -51,12 +50,12 @@ function draw(): void {
   img.data.fill(255);
   const t0 = performance.now();
   const join = ui.join === 'round' ? -1 : ui.join === 'bevel' ? 1 : ui.limit;
-  const outlines = paths.map((p) => strokeOutline(registry, I, ui.w, join, ui.cap, [p]));
+  const outlines = paths.map((p) => strokeOutline(nile, I, ui.w, join, ui.cap, [p]));
   let spans = 0;
   for (const outline of outlines) {
-    const s = collectSpans(fillBeziers({ min: [0, 0], max: [W, H] }), outline);
+    const s = nile.FillBeziers({ min: [0, 0], max: [W, H] }).run(outline);
     spans += s.length;
-    paintSpans(img, registry, s, hexRGB('#2b6cb0'));
+    paintSpans(img, nile, s, hexRGB('#2b6cb0'));
   }
   const ms = performance.now() - t0;
   ctx.putImageData(img, 0, 0);

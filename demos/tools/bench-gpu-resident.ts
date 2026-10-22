@@ -32,10 +32,10 @@ const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.len
 
 // CPU front half: laid-out, transformed, clipped beziers (shared by both sides).
 function frontHalf(text: string, params: TextSpansParams): Float32Array<ArrayBuffer> {
-  const op = program.registry.get('TextBeziers')!(params);
+  const op = program.api.TextBeziers(params);
   const out: number[] = [];
   op.setEmit((t) => out.push(...t));
-  for (const t of textTokens(program.registry, text)) op.push(t);
+  for (const t of textTokens(program.api, text)) op.push(t);
   op.end();
   return new Float32Array(out);
 }

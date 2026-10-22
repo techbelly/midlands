@@ -20,9 +20,9 @@ if (program.unsupported.length > 0) {
 }
 
 // Smoke-test the exact artifact the demo will use.
-const registry = new Function('rt', `return (${program.source})(rt);`)(rt);
-const op = registry['TextSpans'](textSpansParams({ size: 14, width: 200, height: 40 }));
-const { spans } = driveTextSpans(registry, op, 'HELLO WORLD');
+const nile = rt.api(new Function('rt', `return (${program.source})(rt);`)(rt));
+const op = nile.TextSpans(textSpansParams({ size: 14, width: 200, height: 40 }));
+const { spans } = driveTextSpans(nile, op, 'HELLO WORLD');
 if (spans.length < 50) throw new Error(`smoke test produced only ${spans.length} spans`);
 
 const out = new URL('pipeline.gen.js', import.meta.url);
@@ -43,7 +43,7 @@ writeFileSync(
 console.log(`pipeline.gen.js written (compiled in ${compileMs.toFixed(1)} ms, smoke: ${spans.length} spans)`);
 
 // The vector demos (tiger, strokes): gezira's own kernels (stroke.nl
-// unmodified) + demos/nl/vector.nl + svg.nl, compiled into their own registry module.
+// unmodified) + demos/nl/vector.nl + svg.nl, compiled into their own module.
 const vector = compileVectorPipeline(root);
 if (vector.unsupported.length > 0) {
   throw new Error(`vector kernels unsupported: ${JSON.stringify(vector.unsupported)}`);

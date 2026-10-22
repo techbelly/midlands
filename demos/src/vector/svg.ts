@@ -3,10 +3,9 @@
 // stroke-width; path commands M L H V C S Z, absolute and relative).
 // Regex-based, DOM-free: runs in the browser and in tests. The path
 // commands are interpreted in Nile (nl/svg.nl), so parsing takes the
-// compiled vector registry.
+// compiled vector program.
 
-import { tokenType } from '../../../umgeni/src/cpu/runtime.js';
-import { collectSpans, get, type Registry } from './draw.js';
+import type { Api } from './draw.js';
 
 export type Cubic = number[]; // 8 floats: A B C D as x,y pairs
 
@@ -41,8 +40,8 @@ const norm = (c: string | null): string | null => (c && c.toLowerCase() !== 'non
 const TOKENS = /([MmLlHhVvCcSsZz])|(-?(?:\d*\.\d+|\d+\.?)(?:[eE][+-]?\d+)?)/g;
 const ARITY: Record<string, number> = { M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Z: 0 };
 
-export function pathCommands(registry: Registry, d: string): number[][] {
-  const PathCommand = tokenType(registry, 'PathCommand');
+export function pathCommands(nile: Api, d: string): number[][] {
+  const { PathCommand } = nile.types;
   const toks = d.match(TOKENS) ?? [];
   const out: number[][] = [];
   let prev = '';
@@ -62,25 +61,24 @@ export function pathCommands(registry: Registry, d: string): number[][] {
 }
 
 // Every subpath closed: the fill geometry, each PathCubic's cubic Z.
-export function pathCubics(registry: Registry, d: string): Cubic[] {
-  const PathCubic = tokenType(registry, 'PathCubic');
-  return collectSpans(get(registry, 'PathCubics')({ closeAll: 1 }), pathCommands(registry, d))
-    .map((t) => PathCubic.get(t, 'Z') as Cubic);
+export function pathCubics(nile: Api, d: string): Cubic[] {
+  const { PathCubic } = nile.types;
+  return nile.PathCubics({ closeAll: 1 }).run(pathCommands(nile, d)).map((t) => PathCubic.get(t, 'Z') as Cubic);
 }
 
 // Subpaths as SVG strokes them: a closing segment only where `Z` says so.
 // Each PathCubic carries its subpath's number n.
-export function pathSubpaths(registry: Registry, d: string): Cubic[][] {
-  const PathCubic = tokenType(registry, 'PathCubic');
+export function pathSubpaths(nile: Api, d: string): Cubic[][] {
+  const { PathCubic } = nile.types;
   const subpaths = new Map<number, Cubic[]>();
-  for (const t of collectSpans(get(registry, 'PathCubics')({ closeAll: 0 }), pathCommands(registry, d))) {
+  for (const t of nile.PathCubics({ closeAll: 0 }).run(pathCommands(nile, d))) {
     const n = PathCubic.get(t, 'n') as number;
     subpaths.set(n, [...(subpaths.get(n) ?? []), PathCubic.get(t, 'Z') as Cubic]);
   }
   return [...subpaths.values()];
 }
 
-export function parseSvg(svg: string, registry: Registry): Svg {
+export function parseSvg(svg: string, nile: Api): Svg {
   const matrix = parseMatrix(svg.match(/<g\b[^>]*\btransform\s*=\s*"([^"]*)"/)?.[1] ?? null);
   const paths: SvgPath[] = [];
   const re = /<g\b([^>]*)>\s*<path\b([^>]*?)\/>\s*<\/g>/gs;
@@ -93,8 +91,8 @@ export function parseSvg(svg: string, registry: Registry): Svg {
       fill: norm(attr(p, 'fill') ?? attr(g, 'fill')),
       stroke: norm(attr(p, 'stroke') ?? attr(g, 'stroke')),
       strokeWidth: Number(attr(p, 'stroke-width') ?? attr(g, 'stroke-width') ?? '1'),
-      cubics: pathCubics(registry, d),
-      subpaths: pathSubpaths(registry, d),
+      cubics: pathCubics(nile, d),
+      subpaths: pathSubpaths(nile, d),
     });
   }
   return { matrix, paths };

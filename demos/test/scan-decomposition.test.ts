@@ -117,10 +117,10 @@ describe('CombineEdgeSamples ≡ SumByPixel → WindScanline → SpansOfPixels',
 
   it('RasterizeScan matches Rasterize on real text geometry', () => {
     const params = textSpansParams({ size: 14, width: 200, height: 60, margin: 4 });
-    const front = program.registry.get('TextBeziers')!(params);
+    const front = program.api.TextBeziers(params);
     const beziers: number[][] = [];
     front.setEmit((t) => beziers.push(t));
-    for (const t of textTokens(program.registry, 'HELLO WORLD')) front.push(t);
+    for (const t of textTokens(program.api, 'HELLO WORLD')) front.push(t);
     front.end();
 
     const ref = runOp(program.registry.get('Rasterize')!(), beziers);

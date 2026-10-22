@@ -11,7 +11,6 @@ import { createTigerGpu } from '../../umgeni/src/gpu/tiger.js';
 import { lowerFusedPipeline } from '../../umgeni/src/gpu/lower.js';
 import { lowerTexture } from '../../umgeni/src/gpu/texture.js';
 import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
-import { collectSpans } from '../src/vector/draw.js';
 import { PAINT_GLUE, paintShapes } from '../src/vector/paint.js';
 import { writePixels } from '../src/vector/spans.js';
 import { PRESETS } from '../paint-presets.js';
@@ -33,11 +32,11 @@ for (const preset of PRESETS) {
     console.log(`${preset.name}: CPU only — ${tex.reason}`);
     continue;
   }
-  const shapes = paintShapes(program.registry, W, H);
+  const shapes = paintShapes(program.api, W, H);
 
   // CPU reference: the same beziers, rasterized and painted in JS.
   const cpu = { width: W, height: H, data: new Uint8ClampedArray(W * H * 4).fill(255) };
-  for (const bs of shapes) writePixels(cpu, program.registry, collectSpans(program.registry.get('PaintBeziers')!({ min: [0, 0], max: [W, H] }), bs));
+  for (const bs of shapes) writePixels(cpu, program.api, program.api.PaintBeziers({ min: [0, 0], max: [W, H] }).run(bs));
 
   // GPU: Rasterize2 lowered from source, composite with the lowered paint().
   const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'Rasterize2');

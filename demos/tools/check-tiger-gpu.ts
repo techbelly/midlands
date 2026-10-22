@@ -25,7 +25,7 @@ const raster = compileProgram([
   read('demos/nl/text.nl'),
   read('umgeni/nl/rasterize2.nl'),
 ]);
-const tiger = parseSvg(read('demos/tiger.svg'), vector.registry);
+const tiger = parseSvg(read('demos/tiger.svg'), vector.api);
 
 const W = Number(Deno.args[0] ?? 512);
 const H = W;
@@ -36,7 +36,7 @@ const view = fit.map((v, i) => (i < 4 ? v * zoom : v * zoom + (1 - zoom) * (i ==
 // CPU end-to-end image (f64 throughout) — the informational comparison.
 const cpuImg = { width: W, height: H, data: new Uint8ClampedArray(W * H * 4).fill(255) };
 let t0 = performance.now();
-drawTiger(cpuImg, tiger, view, vector.registry);
+drawTiger(cpuImg, tiger, view, vector.api);
 const cpuMs = performance.now() - t0;
 
 // GPU: front half on CPU, then one zero-fence submission.
@@ -52,7 +52,7 @@ const tex = device.createTexture({
 });
 
 t0 = performance.now();
-const batches = tigerBatches(tiger, view, vector.registry, W, H);
+const batches = tigerBatches(tiger, view, vector.api, W, H);
 const frontMs = performance.now() - t0;
 device.pushErrorScope('validation');
 t0 = performance.now();
@@ -83,7 +83,7 @@ for (const b of batches) {
   op.setEmit((t) => spans.push(t));
   for (let i = 0; i < b.n; i++) op.push([...b.beziers.slice(i * 6, i * 6 + 6)]);
   op.end();
-  paintSpans(refImg, vector.registry, spans, [b.color[0] * 255, b.color[1] * 255, b.color[2] * 255]);
+  paintSpans(refImg, vector.api, spans, [b.color[0] * 255, b.color[1] * 255, b.color[2] * 255]);
 }
 
 // Test-only readback of the composited texture.

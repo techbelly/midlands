@@ -8,7 +8,6 @@ import { createTigerGpu, type TigerGpu } from '../umgeni/src/gpu/tiger.js';
 import { lowerFusedPipeline } from '../umgeni/src/gpu/lower.js';
 import { lowerTexture } from '../umgeni/src/gpu/texture.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
-import { collectSpans } from './src/vector/draw.js';
 import { PAINT_GLUE, paintShapes } from './src/vector/paint.js';
 import { writePixels } from './src/vector/spans.js';
 import { PRESETS } from './paint-presets.js';
@@ -100,7 +99,7 @@ async function render(): Promise<void> {
   if (!program) return;
   const p = program;
   const t0 = performance.now();
-  const shapes = paintShapes(p.registry, W, H);
+  const shapes = paintShapes(p.api, W, H);
   const geomMs = performance.now() - t0;
   const tex = lowerTexture(p.ir, 'Paint');
   shaderEl.textContent = tex.ok ? tex.wgsl : `// Not lowered to the GPU: ${tex.reason}\n// (filters take several samples per point; they paint on the CPU)`;
@@ -134,9 +133,9 @@ async function render(): Promise<void> {
   img.data.fill(255);
   let px = 0;
   for (const bs of shapes) {
-    const out = collectSpans(p.registry.get('PaintBeziers')!({ min: [0, 0], max: [W, H] }), bs);
+    const out = p.api.PaintBeziers({ min: [0, 0], max: [W, H] }).run(bs);
     px += out.length;
-    writePixels(img, p.registry, out);
+    writePixels(img, p.api, out);
   }
   ctx.putImageData(img, 0, 0);
   statusEl.textContent = `${compileNote}  Painted ${px.toLocaleString()} pixels on the CPU in ` +

@@ -34,21 +34,24 @@ Nile ─Ohm─▶ AST ─sugar.mooi─▶ core AST ─nile.mooi, staged─▶ sc
 
 ## The host interface
 
-A compiled program is a registry of process factories. A factory takes the
-process's parameters by the names its Nile signature gives them, checked for
-presence and size:
+A compiled program is used through its API: `program.api`, or
+`api(registry)` for a registry generated at build time. Each process is a
+function taking its parameters by the names its Nile signature gives them,
+checked for presence and size; `.run(tokens)` streams tokens through and
+returns what it emits:
 
 ```ts
-registry.SvgFill({ V: view, R: svg.matrix, min: [0, 0], max: [W, H] })
+const nile = program.api;
+const spans = nile.SvgFill({ V: view, R: svg.matrix, min: [0, 0], max: [W, H] }).run(cubics);
 ```
 
-Tokens are flat arrays of numbers. Every named record type's layout comes
-with the registry, so the host reads and builds tokens by field name too:
+Tokens are flat arrays of numbers, and every named record type comes with
+its layout, so the host reads and builds tokens by field name too:
 
 ```ts
-const PathCubic = tokenType(registry, 'PathCubic');  // (Z : Cubic, n : Real)
-PathCubic.get(t, 'n');                                // the subpath number
-const X = tokenType(registry, 'PaintedPixel').at('P.x');  // an offset, for hot loops
+const { PathCubic, PaintedPixel } = nile.types;
+PathCubic.get(t, 'n');              // a field
+const X = PaintedPixel.at('P.x');   // an offset, for hot loops
 ```
 
 ## Tests and oracles

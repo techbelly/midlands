@@ -3,7 +3,7 @@
 // written by spans.ts writePixels). A paint program is gezira's library + nl/vector.nl +
 // nl/rasterize2.nl + nl/spans.nl + the user's `Paint` + PAINT_GLUE.
 
-import { collectSpans, get, strokeOutline, type Registry } from './draw.js';
+import { strokeOutline, type Api } from './draw.js';
 
 export const PAINT_GLUE = `
 PaintBeziers (min, max : Point) : Bezier >> PaintedPixel
@@ -36,12 +36,12 @@ const wave = [[40, 255, 120, 175, 200, 335, 280, 255], [280, 255, 330, 205, 370,
 
 // The shapes as clipped beziers (one batch per shape), all geometry in Nile:
 // a disc and a star flattened from cubics, and a thick round-capped stroke.
-export function paintShapes(registry: Registry, W: number, H: number): number[][][] {
-  const clip = (bs: number[][]) => collectSpans(get(registry, 'ClipBeziers')({ min: [0, 0], max: [W, H] }), bs);
-  const flat = (cubics: number[][]) => clip(collectSpans(get(registry, 'FlattenCubics')(), cubics));
+export function paintShapes(nile: Api, W: number, H: number): number[][][] {
+  const clip = (bs: number[][]) => nile.ClipBeziers({ min: [0, 0], max: [W, H] }).run(bs);
+  const flat = (cubics: number[][]) => clip(nile.FlattenCubics().run(cubics));
   return [
     flat(disc(110, 115, 85)),
     flat(star(320, 120, 42, 100)),
-    clip(strokeOutline(registry, [1, 0, 0, 1, 0, 0], 34, -1, -1, [wave])),
+    clip(strokeOutline(nile, [1, 0, 0, 1, 0, 0], 34, -1, -1, [wave])),
   ];
 }

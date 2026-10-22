@@ -108,7 +108,7 @@ describe('the text pipeline (nl/text.nl)', () => {
   });
 
   it('space and unknown glyphs still produce well-formed tokens', () => {
-    const tokens = textTokens(program.registry, 'A ~');
+    const tokens = textTokens(program.api, 'A ~');
     for (const t of tokens) expect(t).toHaveLength(10);
     // The space is a single degenerate bezier carrying its advance.
     const spaceToken = tokens.find((t) => t.slice(0, 6).every((v) => v === 0));

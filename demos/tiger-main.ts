@@ -25,8 +25,8 @@ import rasterizeNl from '../gezira/rasterize.nl';
   ['PathCubics', 'SvgFill', 'FillPath', 'FillBeziers', 'Rasterize', 'SvgStroke', 'StrokeOutline', 'StrokeBezierPath', 'PaintSpans'],
 );
 
-const registry = makeVectorRegistry(rt);
-const tiger = parseSvg(svgSrc, registry);
+const nile = rt.api(makeVectorRegistry(rt));
+const tiger = parseSvg(svgSrc, nile);
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const canvasGpu = document.getElementById('viewgpu') as HTMLCanvasElement;
@@ -84,7 +84,7 @@ async function draw(): Promise<void> {
       return draw();
     }
     let t0 = performance.now();
-    const batches = tigerBatches(tiger, viewMatrix(), registry, canvasGpu.width, canvasGpu.height);
+    const batches = tigerBatches(tiger, viewMatrix(), nile, canvasGpu.width, canvasGpu.height);
     const frontMs = performance.now() - t0;
     t0 = performance.now();
     state.gpu.frame(batches, state.context.getCurrentTexture().createView());
@@ -104,7 +104,7 @@ async function draw(): Promise<void> {
   const img = ctx.createImageData(canvas.width, canvas.height);
   img.data.fill(255);
   const t0 = performance.now();
-  const paths = drawTiger(img, tiger, viewMatrix(), registry);
+  const paths = drawTiger(img, tiger, viewMatrix(), nile);
   ctx.putImageData(img, 0, 0);
   statsEl.textContent =
     `${paths} paths · ${segs.toLocaleString()} cubic segments · ${z.toFixed(1)}× · ` +

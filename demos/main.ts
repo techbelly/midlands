@@ -16,7 +16,6 @@ import * as rt from '../umgeni/src/cpu/runtime.js';
 import { colorRuns, fallback, paintCoverage, textSpansParams, textTokens, type ColorRun, type GlyphSource, type TextSpansParams } from './src/text/host.js';
 import { glyphFor as stubGlyph } from './src/text/stubfont.js';
 import { parseTrueType } from './src/text/ttf.js';
-import { collectSpans } from './src/vector/draw.js';
 import { paintSpans } from './src/vector/spans.js';
 // Source Serif 4: SIL OFL 1.1 (fonts/OFL.txt)
 import sourceSerif from './fonts/SourceSerif4.ttf';
@@ -40,7 +39,7 @@ import rasterize2Nl from '../umgeni/nl/rasterize2.nl';
   ['TextSpans', 'TextBeziers', 'PlaceBeziers', 'TextLayout', 'WordWidths', 'LayoutGlyphs', 'Rasterize', 'Rasterize2', 'PaintSpans'],
 );
 
-const registry = makeRegistry(rt);
+const nile = rt.api(makeRegistry(rt));
 
 const canvas2d = document.getElementById('canvas') as HTMLCanvasElement;
 const canvasGpu = document.getElementById('canvasgpu') as HTMLCanvasElement;
@@ -112,19 +111,19 @@ function paint(buf: ArrayLike<number>): number {
 
 // Laid-out colour runs (Nile layout), each then transformed and clipped (Nile).
 function runs(text: string, { w, lh }: TextSpansParams): ColorRun[] {
-  return colorRuns(registry, registry['TextLayout']({ w, lh }), text, currentFont().glyphs);
+  return colorRuns(nile, nile.TextLayout({ w, lh }), text, currentFont().glyphs);
 }
 const rgb255 = (r: ColorRun) => (r.color ? [r.color[0] * 255, r.color[1] * 255, r.color[2] * 255] as const : TEXT_COLOR);
 function placed(run: ColorRun, { M, min, max }: TextSpansParams): number[][] {
-  return collectSpans(registry['PlaceBeziers']({ M, min, max }), run.beziers);
+  return nile.PlaceBeziers({ M, min, max }).run(run.beziers);
 }
 
 // CPU front half for the (single-colour) readback path.
 function frontHalf(text: string, params: TextSpansParams): Float32Array<ArrayBuffer> {
-  const op = registry['TextBeziers'](params);
+  const op = nile.TextBeziers(params);
   const out: number[] = [];
   op.setEmit((t: number[]) => out.push(...t));
-  for (const t of textTokens(registry, text, currentFont().glyphs)) op.push(t);
+  for (const t of textTokens(nile, text, currentFont().glyphs)) op.push(t);
   op.end();
   return new Float32Array(out);
 }
@@ -186,9 +185,9 @@ async function render(): Promise<void> {
   let spans = 0;
   const colourRuns = runs(text, params);
   for (const r of colourRuns) {
-    const s = collectSpans(registry['Rasterize'](), placed(r, params));
+    const s = nile.Rasterize().run(placed(r, params));
     spans += s.length;
-    paintSpans(img, registry, s, rgb255(r));
+    paintSpans(img, nile, s, rgb255(r));
   }
   ctx2d.putImageData(img, 0, 0);
   stats.textContent =

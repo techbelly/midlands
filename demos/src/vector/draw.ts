@@ -1,32 +1,15 @@
-// Driving compiled Nile processes from the host: look one up in a registry,
-// push tokens through it, collect what it emits.
+// Drawing with a compiled Nile program (nile = api(registry), or
+// program.api): each process by name, its parameters by name, and
+// .run(tokens) to push a stream through it and collect what it emits.
 
-import type { Op, Params, Token } from '../../../umgeni/src/cpu/runtime.js';
+import type { Api } from '../../../umgeni/src/cpu/runtime.js';
 import type { Cubic } from './svg.js';
 
-export type ProcessFactory = (params?: Params) => Op;
-export type Registry = { [name: string]: ProcessFactory } | Map<string, ProcessFactory>;
-
-export const get = (r: Registry, name: string): ProcessFactory => {
-  const f = r instanceof Map ? r.get(name) : r[name];
-  if (!f) throw new Error(`registry has no '${name}'`);
-  return f;
-};
-
-export function collectSpans(op: Op, tokens: Token[]): number[][] {
-  const spans: number[][] = [];
-  op.setEmit((t) => spans.push(t));
-  for (const t of tokens) op.push(t);
-  op.end();
-  return spans;
-}
+export type { Api } from '../../../umgeni/src/cpu/runtime.js';
 
 // A stroke's outline: gezira's StrokeBezierPath, unmodified, run once per
 // subpath (its end of stream is where it caps or closes the path). The
 // result is flat beziers, filled together so overlaps aren't double-painted.
-export function strokeOutline(
-  registry: Registry, m: number[], w: number, join: number, cap: number, subpaths: Cubic[][],
-): number[][] {
-  const outline = get(registry, 'StrokeOutline');
-  return subpaths.flatMap((sub) => collectSpans(outline({ M: m, w, l: join, c: cap }), sub));
+export function strokeOutline(nile: Api, m: number[], w: number, join: number, cap: number, subpaths: Cubic[][]): number[][] {
+  return subpaths.flatMap((sub) => nile.StrokeOutline({ M: m, w, l: join, c: cap }).run(sub));
 }
