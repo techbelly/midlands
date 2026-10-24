@@ -6,5 +6,5 @@ import { agree } from '../../umgeni/test/agree.js';
 import { programSources, read } from '../src/sources.js';
 
 const library = ['types', 'bezier', 'stroke', 'rasterize', 'texture', 'compositor', 'gradient', 'filter'].map((n) => read(`gezira/${n}.nl`));
-describe('interpreter ≡ compiler, kernel by kernel: text + Rasterize2', () => agree(programSources('demos/nl/text.program').map((p) => read(p))));
+describe('interpreter ≡ compiler, kernel by kernel: text + RasterizeParallel', () => agree(programSources('demos/nl/text.program').map((p) => read(p))));
 describe('interpreter ≡ compiler, kernel by kernel: vector', () => agree([...library, read('demos/nl/vector.nl'), read('demos/nl/svg.nl')]));

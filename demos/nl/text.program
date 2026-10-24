@@ -7,4 +7,4 @@
 ../../gezira/texture.nl
 text.nl
 spans.nl
-../../umgeni/nl/rasterize2.nl
+../../umgeni/nl/rasterize-parallel.nl

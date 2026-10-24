@@ -29,8 +29,8 @@ Nile ─Ohm─▶ AST ─sugar.mooi─▶ core AST ─nile.mooi, staged─▶ sc
     reference; [wasm.ts](src/cpu/wasm.ts) emits WebAssembly binary directly for
     fused segments, bit-identical to the JS; [runtime.ts](src/cpu/runtime.ts)
     streams tokens through both.
-  - [src/gpu/](src/gpu/) lowers map kernels, scans, the Rasterize2 pipeline
-    ([nl/rasterize2.nl](nl/rasterize2.nl)) and gezira's textures to WGSL.
+  - [src/gpu/](src/gpu/) lowers map kernels, scans, the RasterizeParallel pipeline
+    ([nl/rasterize-parallel.nl](nl/rasterize-parallel.nl)) and gezira's textures to WGSL.
 
 ## The host interface
 

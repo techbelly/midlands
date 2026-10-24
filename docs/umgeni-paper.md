@@ -165,7 +165,7 @@ For the first GPU version, the honest thing was done: that one shader was writte
 The repayment was to *extend the language* — carefully, with three small constructs. Watch what each one declares:
 
 ```
-Rasterize2 : Bezier >> CoverageSpan
+RasterizeParallel : Bezier >> CoverageSpan
     ⇒ DecomposeBeziers
       → GroupBy (@y, @x)
       → ReduceBy (@y, @x; a ⊕ +, h ⊕ +)

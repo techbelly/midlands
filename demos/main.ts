@@ -1,6 +1,6 @@
 // The web demo shell: DOM in, pixels out. The pipeline itself is
 // nl/text.program — compiled by Umgeni at bundle time (tools/nile-plugin.ts)
-// into generated JS plus Rasterize2 as fused IR (plain data).
+// into generated JS plus RasterizeParallel as fused IR (plain data).
 //
 // Three rendering paths over the same Nile source:
 //   cpu  — the compiled JS pipeline: layout, then each colour run (colour
@@ -24,17 +24,17 @@ import { createRasterHost, type GpuRasterizer } from '../umgeni/src/gpu/raster.j
 import { createTigerGpu, type TigerGpu } from '../umgeni/src/gpu/tiger.js';
 import { lowerFusedPipeline, type LoweredShaders } from '../umgeni/src/gpu/lower.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
-import { compileMs, nile, Rasterize2IR } from './nl/text.program';
+import { compileMs, nile, RasterizeParallelIR } from './nl/text.program';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
 import textNl from './nl/text.nl';
 import spansNl from './nl/spans.nl';
 import rasterizeNl from '../gezira/rasterize.nl';
-import rasterize2Nl from '../umgeni/nl/rasterize2.nl';
+import rasterizeParallelNl from '../umgeni/nl/rasterize-parallel.nl';
 
 (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
-  [textNl, spansNl, rasterizeNl, rasterize2Nl],
-  ['TextSpans', 'TextBeziers', 'PlaceBeziers', 'TextLayout', 'WordWidths', 'LayoutGlyphs', 'Rasterize', 'Rasterize2', 'PaintSpans'],
+  [textNl, spansNl, rasterizeNl, rasterizeParallelNl],
+  ['TextSpans', 'TextBeziers', 'PlaceBeziers', 'TextLayout', 'WordWidths', 'LayoutGlyphs', 'Rasterize', 'RasterizeParallel', 'PaintSpans'],
 );
 
 
@@ -80,7 +80,7 @@ async function ensureGpu(): Promise<GpuState | null> {
   }
   const format = navigator.gpu.getPreferredCanvasFormat();
   context.configure({ device, format, alphaMode: 'opaque' });
-  const shaders = lowerFusedPipeline(Rasterize2IR, SIZE); // WGSL from IR, in-browser
+  const shaders = lowerFusedPipeline(RasterizeParallelIR, SIZE); // WGSL from IR, in-browser
   gpuState = {
     device,
     shaders,

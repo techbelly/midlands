@@ -7,7 +7,7 @@ import { createTigerGpu, type TigerGpu } from '../umgeni/src/gpu/tiger.js';
 import { lowerFusedPipeline } from '../umgeni/src/gpu/lower.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
 import { nile } from './nl/vector.program';
-import { Rasterize2IR } from './nl/text.program';
+import { RasterizeParallelIR } from './nl/text.program';
 import svgSrc from './tiger.svg';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
@@ -50,7 +50,7 @@ async function ensureGpu(): Promise<GpuState | null> {
   const format = navigator.gpu.getPreferredCanvasFormat();
   context.configure({ device, format, alphaMode: 'opaque' });
   const size = { width: canvasGpu.width, height: canvasGpu.height };
-  const shaders = lowerFusedPipeline(Rasterize2IR, size);
+  const shaders = lowerFusedPipeline(RasterizeParallelIR, size);
   gpuState = { gpu: createTigerGpu(device, shaders, { ...size, format }), context, device };
   return gpuState;
 }

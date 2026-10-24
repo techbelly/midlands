@@ -22,7 +22,7 @@ const raster = compileProgram([
   read('gezira/bezier.nl'),
   read('gezira/rasterize.nl'),
   read('demos/nl/text.nl'),
-  read('umgeni/nl/rasterize2.nl'),
+  read('umgeni/nl/rasterize-parallel.nl'),
 ]);
 const tiger = parseSvg(read('demos/tiger.svg'), vector.api);
 
@@ -40,8 +40,8 @@ const cpuMs = performance.now() - t0;
 
 // GPU: front half on CPU, then one zero-fence submission.
 const device = (await requestDevice())!;
-const fused = raster.ir.processes.find((p) => p.k === 'fused' && p.name === 'Rasterize2');
-if (!fused || fused.k !== 'fused') throw new Error('Rasterize2 not fused');
+const fused = raster.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizeParallel');
+if (!fused || fused.k !== 'fused') throw new Error('RasterizeParallel not fused');
 const shaders = lowerFusedPipeline(fused, { width: W, height: H });
 const gpu = createTigerGpu(device, shaders, { width: W, height: H, format: 'rgba8unorm' });
 const tex = device.createTexture({

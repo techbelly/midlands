@@ -2,7 +2,7 @@
 
 Status: IMPLEMENTED 2026-07-05 (CPU/reference backend; the GPU lowering of
 these constructs is the remaining repayment step). Spec reviewed and
-approved. See [nl/rasterize2.nl](../umgeni/nl/rasterize2.nl) for the rasterizer in
+approved. See [nl/rasterize-parallel.nl](../umgeni/nl/rasterize-parallel.nl) for the rasterizer in
 this syntax and [test/access-patterns.test.ts](../demos/test/access-patterns.test.ts)
 for the validation, including the stability discipline. Successor to
 [scan-design.md](scan-design.md).

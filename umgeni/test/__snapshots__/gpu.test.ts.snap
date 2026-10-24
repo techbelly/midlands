@@ -25,7 +25,7 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
 "
 `;
 
-exports[`pipeline lowering (gpu/lower.ts) > lowers Rasterize2 to both shaders from IR alone (golden) 1`] = `
+exports[`pipeline lowering (gpu/lower.ts) > lowers RasterizeParallel to both shaders from IR alone (golden) 1`] = `
 "// pass B generated from 'WindScan' (scan by key 1) and
 // 'SpansOf' (window), lowered per major-key segment.
 // A caller dispatches a band of rows (rowBase up to height) and walks only

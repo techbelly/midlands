@@ -80,13 +80,13 @@ describe('resident rasterizer shaders', () => {
 });
 
 describe('pipeline lowering (gpu/lower.ts)', () => {
-  const rasterize2Sources = ['types.nl', 'bezier.nl', 'rasterize.nl'].map(gezira);
-  const nlSrc = nl('rasterize2.nl');
+  const rasterizeParallelSources = ['types.nl', 'bezier.nl', 'rasterize.nl'].map(gezira);
+  const nlSrc = nl('rasterize-parallel.nl');
 
-  it('lowers Rasterize2 to both shaders from IR alone (golden)', async () => {
+  it('lowers RasterizeParallel to both shaders from IR alone (golden)', async () => {
     const { lowerFusedPipeline } = await import('../src/gpu/lower.js');
-    const program = compileProgram([...rasterize2Sources, nlSrc]);
-    const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'Rasterize2');
+    const program = compileProgram([...rasterizeParallelSources, nlSrc]);
+    const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizeParallel');
     expect(fused?.k).toBe('fused');
     const shaders = lowerFusedPipeline(fused as never, { width: 880, height: 360 });
     // Kernel logic in both passes is generated; scaffolding is the backend.
@@ -98,10 +98,10 @@ describe('pipeline lowering (gpu/lower.ts)', () => {
   it('refuses shapes the lowering cannot honour, with reasons', async () => {
     const { recognize, LowerError } = await import('../src/gpu/lower.js');
     const stable = compileProgram([
-      ...rasterize2Sources,
+      ...rasterizeParallelSources,
       nlSrc.replace('GroupBy (@y, @x)', 'GroupBy stable (@y, @x)'),
     ]);
-    const fused = stable.ir.processes.find((p) => p.k === 'fused' && p.name === 'Rasterize2');
+    const fused = stable.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizeParallel');
     expect(() => recognize(fused as never)).toThrow(LowerError);
     expect(() => recognize(fused as never)).toThrow(/stable cannot lower to atomic grids/);
   });

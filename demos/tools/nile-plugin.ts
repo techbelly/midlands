@@ -7,7 +7,7 @@
 //   nile         the program API — nile.SvgFill({ … }).run(tokens), nile.types
 //   compileMs    how long the compile took (at build time)
 //   <Name>IR     each fused process's IR as plain data, for the browser's GPU
-//                lowering (e.g. Rasterize2IR)
+//                lowering (e.g. RasterizeParallelIR)
 // Every export is side-effect free, so a page pays only for what it imports.
 
 import type { Plugin } from 'esbuild';

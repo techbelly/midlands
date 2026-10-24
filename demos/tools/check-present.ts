@@ -20,7 +20,7 @@ const program = compileProgram([
   read('gezira/bezier.nl'),
   read('gezira/rasterize.nl'),
   read('demos/nl/text.nl'),
-  read('umgeni/nl/rasterize2.nl'),
+  read('umgeni/nl/rasterize-parallel.nl'),
 ]);
 
 const W = 320;
@@ -35,8 +35,8 @@ const beziers = new Float32Array(bez);
 const n = beziers.length / 6;
 
 const device = (await requestDevice())!;
-const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'Rasterize2');
-if (!fused || fused.k !== 'fused') throw new Error('Rasterize2 not fused');
+const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizeParallel');
+if (!fused || fused.k !== 'fused') throw new Error('RasterizeParallel not fused');
 const shaders = lowerFusedPipeline(fused, { width: W, height: H });
 
 // Reference: compute-only coverage (one fence).

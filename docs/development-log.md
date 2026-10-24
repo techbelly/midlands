@@ -168,12 +168,12 @@ Frankish:
   is a *compile error*; `ReduceBy (@y, @x; a ⊕ +, h ⊕ +)` (commutativity
   checked against ordering); `with H = +[ h ] by @y` exclusive-scan clauses;
   `p ∷ q` / `p ∷ ∅` window arms. The rasterizer rewritten in this syntax
-  ([nl/rasterize2.nl](../umgeni/nl/rasterize2.nl)) matches the classic pipeline
+  ([nl/rasterize-parallel.nl](../umgeni/nl/rasterize-parallel.nl)) matches the classic pipeline
   structure-exactly (coverage within 1e-12; the reference's phantom
   initial-pixel spans are gone by construction — see the one-ulp validation
   in [test/scan-decomposition.test.ts](../demos/test/scan-decomposition.test.ts)).
 - **The debt repaid: GPU lowering from source**
-  ([src/gpu/lower.ts](../umgeni/src/gpu/lower.ts)). `Rasterize2`'s fused IR lowers to
+  ([src/gpu/lower.ts](../umgeni/src/gpu/lower.ts)). `Rasterize2`'s (since renamed `RasterizeParallel`) fused IR lowers to
   both GPU passes with *no hand-written kernel logic*: GroupBy+ReduceBy
   (commutative, unstable — licensed by the declarations) become the
   fixed-point atomic grids; the scan's `by @y` declares row independence, so

@@ -17,7 +17,7 @@ import { PRESETS } from '../paint-presets.js';
 
 const library = ['types', 'bezier', 'stroke', 'rasterize', 'texture', 'compositor', 'gradient', 'filter']
   .map((n) => read(`gezira/${n}.nl`))
-  .concat(read('demos/nl/vector.nl'), read('demos/nl/spans.nl'), read('umgeni/nl/rasterize2.nl'));
+  .concat(read('demos/nl/vector.nl'), read('demos/nl/spans.nl'), read('umgeni/nl/rasterize-parallel.nl'));
 
 const W = 480;
 const H = 360;
@@ -38,9 +38,9 @@ for (const preset of PRESETS) {
   const cpu = { width: W, height: H, data: new Uint8ClampedArray(W * H * 4).fill(255) };
   for (const bs of shapes) writePixels(cpu, program.api, program.api.PaintBeziers({ min: [0, 0], max: [W, H] }).run(bs));
 
-  // GPU: Rasterize2 lowered from source, composite with the lowered paint().
-  const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'Rasterize2');
-  if (!fused || fused.k !== 'fused') throw new Error('Rasterize2 not fused');
+  // GPU: RasterizeParallel lowered from source, composite with the lowered paint().
+  const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizeParallel');
+  if (!fused || fused.k !== 'fused') throw new Error('RasterizeParallel not fused');
   const gpu = createTigerGpu(device, lowerFusedPipeline(fused, { width: W, height: H }), {
     width: W, height: H, format: 'rgba8unorm', paint: tex.wgsl,
   });

@@ -87,7 +87,7 @@ hoc; staging restructures, it does not by itself compress.
 
 **2. The same semantics on numbers is an interpreter.** `src/meta/concrete.ts`
 (78 lines) is the number domain. For every plain kernel in every program —
-all 66 gezira kernels, the paint scenes, text, `Rasterize2`, the vector
+all 66 gezira kernels, the paint scenes, text, `RasterizeParallel`, the vector
 kernels, chari's — random parameters and streams through interpreter and
 compiled code agree **bit for bit** (`Object.is`, 155 tests).
 

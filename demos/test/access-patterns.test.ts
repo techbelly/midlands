@@ -1,5 +1,5 @@
 // The access-patterns constructs (docs/access-patterns.md), end to end:
-// nl/rasterize2.nl expresses the rasterizer with GroupBy / ReduceBy / a scan
+// nl/rasterize-parallel.nl expresses the rasterizer with GroupBy / ReduceBy / a scan
 // clause / ∷ windows — and must reproduce the classic Rasterize pipeline.
 //
 // Expected differences, by design:
@@ -20,7 +20,7 @@ const SOURCES = [
   read('gezira/bezier.nl'),
   read('gezira/rasterize.nl'),
   read('demos/nl/text.nl'),
-  read('umgeni/nl/rasterize2.nl'),
+  read('umgeni/nl/rasterize-parallel.nl'),
 ];
 const program = compileProgram(SOURCES);
 
@@ -40,10 +40,10 @@ function dropArtifacts(spans: number[][]): number[][] {
   return spans.slice(i);
 }
 
-describe('the rasterizer in access-patterns Nile (nl/rasterize2.nl)', () => {
+describe('the rasterizer in access-patterns Nile (nl/rasterize-parallel.nl)', () => {
   it('compiles: GroupBy, ReduceBy, scan clause, windows', () => {
     expect(program.unsupported).toEqual([]);
-    expect(program.registry.has('Rasterize2')).toBe(true);
+    expect(program.registry.has('RasterizeParallel')).toBe(true);
     // The declared structure is recorded in the IR for parallel backends.
     const wind = program.ir.processes.find((p) => p.name === 'WindScan');
     expect(wind?.k === 'kernel' && wind.access?.scan).toMatchObject({ key: 1, op: '+', identity: 0 });
@@ -82,7 +82,7 @@ describe('the rasterizer in access-patterns Nile (nl/rasterize2.nl)', () => {
     front.end();
 
     const ref = dropArtifacts(runOp(program.registry.get('Rasterize')!(), beziers));
-    const neu = runOp(program.registry.get('Rasterize2')!(), beziers);
+    const neu = runOp(program.registry.get('RasterizeParallel')!(), beziers);
     expect(neu.length).toBe(ref.length);
     let maxDiff = 0;
     for (let i = 0; i < ref.length; i++) {

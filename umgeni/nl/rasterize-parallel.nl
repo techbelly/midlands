@@ -11,5 +11,5 @@ SpansOf : WindPix >> CoverageSpan
     ∀ p ∷ ∅
         >> (p.x, p.y, |p.c| ◁ 1, 1)
 
-Rasterize2 : Bezier >> CoverageSpan
+RasterizeParallel : Bezier >> CoverageSpan
     ⇒ DecomposeBeziers → GroupBy (@y, @x) → ReduceBy (@y, @x; a ⊕ +, h ⊕ +) → WindScan → SpansOf

@@ -21,7 +21,7 @@ import gradient from '../gezira/gradient.nl';
 import filter from '../gezira/filter.nl';
 import vector from './nl/vector.nl';
 import spans from './nl/spans.nl';
-import rasterize2 from '../umgeni/nl/rasterize2.nl';
+import rasterizeParallel from '../umgeni/nl/rasterize-parallel.nl';
 import { quoteNile } from './src/quote.js';
 
 (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
@@ -29,7 +29,7 @@ import { quoteNile } from './src/quote.js';
   ['PaintBeziers', 'Rasterize', 'ApplyTexture', 'ExpandSpans'],
 );
 
-const LIBRARY: string[] = [types, bezier, stroke, rasterize, texture, compositor, gradient, filter, vector, spans, rasterize2];
+const LIBRARY: string[] = [types, bezier, stroke, rasterize, texture, compositor, gradient, filter, vector, spans, rasterizeParallel];
 
 const editor = document.getElementById('src') as HTMLTextAreaElement;
 const presetEl = document.getElementById('preset') as HTMLSelectElement;
@@ -71,7 +71,7 @@ function compile(): boolean {
   }
 }
 
-// --- GPU: Rasterize2 lowered from source; paint() lowered from your Nile ---
+// --- GPU: RasterizeParallel lowered from source; paint() lowered from your Nile ---
 
 let device: GPUDevice | null | undefined;
 let gpuContext: GPUCanvasContext | null = null;
@@ -86,7 +86,7 @@ async function gpuRenderer(p: CompiledProgram, paint: string): Promise<TigerGpu 
   if (!device || !gpuContext) return null;
   if (gpu?.paint !== paint) {
     gpu?.renderer.dispose();
-    const fused = p.ir.processes.find((x) => x.k === 'fused' && x.name === 'Rasterize2');
+    const fused = p.ir.processes.find((x) => x.k === 'fused' && x.name === 'RasterizeParallel');
     if (!fused || fused.k !== 'fused') return null;
     const shaders = lowerFusedPipeline(fused, { width: W, height: H });
     const format = navigator.gpu.getPreferredCanvasFormat();

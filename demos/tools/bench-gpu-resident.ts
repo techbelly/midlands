@@ -3,7 +3,7 @@
 // Both sides share the CPU front half (layout → transform → clip, compiled
 // from Nile). The back half — decompose → sort → combine → paint on CPU;
 // decompose → grid → resolve on GPU, both shaders generated from
-// Rasterize2's IR — is what's compared: max pixel difference (tolerance:
+// RasterizeParallel's IR — is what's compared: max pixel difference (tolerance:
 // fixed-point atomics + f32) and wall time with a single fence per frame.
 //
 // Run: npm run bench:gpu:resident   (Deno; panics at exit — wgpu teardown bug)
@@ -21,7 +21,7 @@ const program = compileProgram([
   read('gezira/bezier.nl'),
   read('gezira/rasterize.nl'),
   read('demos/nl/text.nl'),
-  read('umgeni/nl/rasterize2.nl'),
+  read('umgeni/nl/rasterize-parallel.nl'),
 ]);
 
 const PARA =
@@ -59,8 +59,8 @@ if (!device) {
   console.error('No WebGPU device.');
   Deno.exit(1);
 }
-const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'Rasterize2');
-if (!fused || fused.k !== 'fused') throw new Error('Rasterize2 not fused');
+const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizeParallel');
+if (!fused || fused.k !== 'fused') throw new Error('RasterizeParallel not fused');
 
 interface Case {
   name: string;
