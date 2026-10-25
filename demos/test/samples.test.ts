@@ -1,6 +1,7 @@
 // The Cairo samples' Nile (nl/evenodd.nl, …), checked headless.
 import { describe, expect, it } from 'vitest';
-import { compileLibraryFile } from '../src/sources.js';
+import { compileLibraryFile, librarySources, read } from '../src/sources.js';
+import { compileLibrary } from '../../umgeni/src/compile.js';
 import type { Api } from '../src/vector/draw.js';
 import { lowerPipeline } from '../../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../../umgeni/src/gpu/execute.js';
@@ -97,5 +98,35 @@ describe('dashes (nl/dash.nl)', () => {
     expect(coverageAt(spans, 5, 9)).toBeCloseTo(1, 9);
     expect(coverageAt(spans, 12, 9)).toBeCloseTo(0, 9);
     expect(coverageAt(spans, 20, 9)).toBeCloseTo(1, 9);
+  });
+});
+
+const pixelAt = (pts: number[][], x: number, y: number): number | null => {
+  const t = pts.find((p) => Math.floor(p[0]) === x && Math.floor(p[1]) === y);
+  return t ? t[2] : null;
+};
+
+describe('clipping and masking (nl/clip.nl)', () => {
+  it('keeps the pixels both the shape and the clip cover, with the product of their coverages', () => {
+    const shape = nile.RasterizeParallel().run(square(0, 0, 10, 10));
+    const clip = nile.RasterizeParallel().run(square(5, 5, 15, 15));
+    const pts = nile.Intersect().run([...shape, ...clip]);
+    expect(pixelAt(pts, 7, 7)).toBeCloseTo(1, 9); // in both
+    expect(pixelAt(pts, 2, 2)).toBeNull(); // shape only
+    expect(pixelAt(pts, 12, 12)).toBeNull(); // clip only
+    expect(pts.length).toBe(25);
+    // A half-covered clip edge halves the shape's coverage.
+    const half = nile.RasterizeParallel().run(square(5, 5, 15, 9.5));
+    const edge = nile.Intersect().run([...shape, ...half]);
+    expect(pixelAt(edge, 7, 9)).toBeCloseTo(0.5, 9);
+  });
+  it('masks coverage by a texture alpha', () => {
+    // MaskSpans takes a texture, so it is instantiated where it is used.
+    const fade = 'Fade : CoverageSpan >> CoveragePoint\n    ⇒ MaskSpans (UniformColor ((0.5, 1, 1, 1)))\n';
+    const lib = compileLibrary([...librarySources('demos/nl/vector.nl-lib').map((f) => read(f)), fade]);
+    expect(lib.unsupported).toEqual([]);
+    const pts = lib.api.Fade().run(nile.RasterizeParallel().run(square(0, 0, 4, 4)));
+    expect(pts.length).toBe(16);
+    for (const q of pts) expect(q[2]).toBeCloseTo(0.5, 9);
   });
 });
