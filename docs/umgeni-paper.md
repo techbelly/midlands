@@ -2,6 +2,10 @@
 
 *A deep-dive into the Umgeni project, written for students of computer science.*
 
+*Written in July 2026, when the compiler was a day old. The sizes, the gaps
+listed in section 8 and some of the mechanisms have moved on since: the
+README and `npm run sizes` are current; this is the story of how it began.*
+
 ---
 
 ## 1. A question that sounds too simple

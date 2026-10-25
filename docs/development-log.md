@@ -271,20 +271,20 @@ Frankish:
 ## Compiler map
 
 Source → tokens → pixels, each stage plain data, one idea per module (line
-counts as of October 2026):
+counts from `npm run sizes --files`, 2026-10-25):
 
 | stage | module | lines | the idea |
 |---|---|---|---|
 | grammar | [nile.ohm](../umgeni/src/grammar/nile.ohm), [preprocess](../umgeni/src/preprocess.ts), [ops](../umgeni/src/ops.ts), [parser](../umgeni/src/parser.ts) | 161 + 107 + 48 + 369 | grammar as data; indentation and user operators kept out of it |
-| sugar | [sugar.ts](../umgeni/src/semantics/sugar.mooi) | 131 | scans and windows are core Nile, by translation |
-| values | [values.ts](../umgeni/src/values.ts) | 157 | rank polymorphism: a scalar broadcasts, records zip, guards are lifted `select` |
-| elaboration | [elaborate.ts](../umgeni/src/elaborate.ts) | 822 | typed AST → scalar IR; templates inline process arguments as closures |
+| meaning | [values.mooi](../umgeni/src/semantics/values.mooi), [nile.mooi](../umgeni/src/semantics/nile.mooi), [sugar.mooi](../umgeni/src/semantics/sugar.mooi), [pipelines.mooi](../umgeni/src/semantics/pipelines.mooi) | 64 + 113 + 76 + 108 | values are trees of numbers; kernels as equations, run on numbers or staged; scans and windows by translation; pipelines and their ordering discipline |
+| values | [values.ts](../umgeni/src/values.ts) | 177 | the value algebra's host side: shapes, layouts, fitting |
+| elaboration | [elaborate.ts](../umgeni/src/elaborate.ts), [staged.ts](../umgeni/src/semantics/staged.ts), [nile.ts](../umgeni/src/semantics/nile.ts), [pipelines.ts](../umgeni/src/semantics/pipelines.ts) | 413 + 114 + 76 + 51 | tables and signatures; the Mooi files bound to a domain and the program |
 | higher-order | [substitute.ts](../umgeni/src/substitute.ts) | 205 | mid-stream `⇒` is a state machine plus feedback over frames |
-| IR | [ir.ts](../umgeni/src/ir.ts), [scalar.ts](../umgeni/src/scalar.ts) | 151 + 107 | one tree, two folds; every scalar operator defined once |
+| IR | [ir.ts](../umgeni/src/ir.ts), [scalar.ts](../umgeni/src/scalar.ts) | 184 + 107 | one tree, two folds; every scalar operator defined once |
 | passes | [fuse](../umgeni/src/passes/fuse.ts), [cse](../umgeni/src/passes/cse.ts), [tail](../umgeni/src/passes/tail.ts) | 91 + 226 + 46 | stages call each other directly, adjacent sorts merge; value numbering without SSA; a tail `<<` is the loop's next turn |
-| JS | [codegen.ts](../umgeni/src/cpu/js.ts), [runtime.ts](../umgeni/src/cpu/runtime.ts) | 269 + 313 | every kernel is a segment; barriers are functions on finite streams |
-| wasm | [wasm.ts](../umgeni/src/cpu/wasm.ts) | 341 | the same segments, in the binary format, bit-identical |
-| GPU | [wgsl](../umgeni/src/gpu/wgsl.ts), [lower](../umgeni/src/gpu/lower.ts), [texture](../umgeni/src/gpu/texture.ts), [classify](../umgeni/src/gpu/classify.ts) | 143 + 310 + 113 + 21 | declarations license parallel lowering; textures become one `paint()` |
+| JS | [js.ts](../umgeni/src/cpu/js.ts), [runtime.ts](../umgeni/src/cpu/runtime.ts) | 315 + 521 | every kernel is a segment; barriers are functions on finite streams |
+| wasm | [wasm.ts](../umgeni/src/cpu/wasm.ts) | 615 | the same segments and the barriers, in the binary format, bit-identical |
+| GPU | [wgsl](../umgeni/src/gpu/wgsl.ts), [lower](../umgeni/src/gpu/lower.ts), [execute](../umgeni/src/gpu/execute.ts), [present](../umgeni/src/gpu/present.ts), [texture](../umgeni/src/gpu/texture.ts) | 143 + 393 + 147 + 232 + 113 | declarations license parallel lowering; plans run and present; textures become one `paint()` |
 
 ## Design notes (parser)
 

@@ -9,15 +9,15 @@ The stages, left to right:
 
 ```
 Nile ─Ohm─▶ syntax tree ─sugar.mooi─▶ core Nile ─nile.mooi, staged─▶ scalar IR ─▶ fuse, CSE ─▶ JS
-                                                                                     ├──▶ wasm
-                                                                                     └──▶ WGSL
+                        └─pipelines.mooi─▶ stage IR ─────────────────────────┘           ├──▶ wasm
+                                                                                          └──▶ WGSL
 ```
 
 - **Grammar**: [src/grammar/nile.ohm](src/grammar/nile.ohm) describes Nile's
   syntax as data, and the [Ohm](https://ohmjs.org) library parses with it.
   Indentation-as-structure (the offside rule) is handled first, in
   [src/preprocess.ts](src/preprocess.ts).
-- **Meaning**: [src/semantics/](src/semantics/) holds three Mooi files, which
+- **Meaning**: [src/semantics/](src/semantics/) holds four Mooi files, which
   together are the only definition of what Nile means.
   - [sugar.mooi](src/semantics/sugar.mooi) rewrites the extensions into plain
     Nile (state, primed updates, `if`s), remembering what was declared.
@@ -27,6 +27,13 @@ Nile ─Ohm─▶ syntax tree ─sugar.mooi─▶ core Nile ─nile.mooi, staged
   - [nile.mooi](src/semantics/nile.mooi) says what each expression and
     statement does. An operator's value is of its declared result type, so
     `(◐ Z).D` names a field of the cubic an operator returns.
+  - [pipelines.mooi](src/semantics/pipelines.mooi) says what a pipeline
+    means: each stage over the stream the one before it leaves, and the
+    discipline that GroupBy promises key order only, so until a ReduceBy by
+    commutative operators has made each key one token, nothing that reads
+    tokens in arrival order may follow. Templates (processes with
+    process-typed parameters) are instantiated here, their arguments
+    closures over the caller's scope.
 
   The meaning is written in terms of eleven basic operations on numbers
   ([domain.ts](src/semantics/domain.ts)): make a number, add, compare,
