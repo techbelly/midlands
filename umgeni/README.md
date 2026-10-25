@@ -129,4 +129,6 @@ nile.provide('ReadImage', (P) => readImageOp(images[P[0]]));
   which lowers three pipelines the GPU code was not written against (a
   self-feeding kernel after the window, a parameterised transform ahead of
   the rasterizer, a kernel on its own with its output appended) and compares
-  them with the CPU.
+  them with the CPU; `npm run check:samples` does the same for the Cairo
+  samples' pipelines (the even-odd rule, a join by + alone, a Coons patch
+  with 49-field tokens).
