@@ -11,15 +11,12 @@ import type * as A from './ast.js';
 import type { HostProcess, KernelIR, ModuleIR, ParamSig, PipelineIR, ProcessIR, ScalarExpr, StageIR, TokenLayout } from './ir.js';
 import { assembleFamily, SubstError, type Generator } from './substitute.js';
 import { desugar, SugarError } from './semantics/sugar.js';
+import { elabPipelineStages, type PipelineProgram } from './semantics/pipelines.js';
 import { stageExpr, stageGenerator, stageKernel } from './semantics/staged.js';
 import type { Program } from './semantics/domain.js';
-import { ElabError, fieldInfo, fit, flatten, fromSlots, REAL, scalar, shapeWidth, tokenLayout, type Shape, type Value } from './values.js';
+import { ElabError, fieldInfo, fit, fromSlots, REAL, scalar, shapeWidth, tokenLayout, type Shape, type Value } from './values.js';
 
 // --- operator tables -----------------------------------------------------------
-
-// Operators known commutative: a ReduceBy using only these needs no stable
-// grouping (within-group arrival order cannot affect the result).
-const KNOWN_COMMUTATIVE = new Set(['+', '×', '◁', '▷', '∧', '∨']);
 
 interface OpEntry {
   params: { name: string; shape: Shape }[];
@@ -351,11 +348,28 @@ class Elaborator {
     paramWidth: number,
     sig: StreamSig,
   ): PipelineIR {
-    const { stages } = this.elabStages(d, elems, env, sig.input);
+    const { stages } = elabPipelineStages(this.pipelineProgram, d.name, elems, env, new Map(), sig.input);
     return { k: 'pipeline', name: d.name, paramWidth, stages };
   }
 
-  // A pipeline's stages over an input stream shape; returns the output shape.
+  // What the pipeline semantics (semantics/pipelines.mooi) asks of the program.
+  private get pipelineProgram(): PipelineProgram {
+    return {
+      field: (shape, name) => fieldInfo(shape, name),
+      expr: (e, env) => stageExpr(this.program, e, env),
+      fit,
+      type: (t) => this.resolveType(t),
+      local: (name) => scalar({ k: 'local', name }),
+      stream: (name) => this.streams.get(name) ?? null,
+      known: (name) => this.streams.has(name),
+      template: (name) => {
+        const k = this.kernels.get(name);
+        return k && this.isTemplate(k) ? k : null;
+      },
+      isStream: (t) => t.kind === 'namedType' && this.streams.has(t.name),
+    };
+  }
+
   // --- templates: process-typed parameters ---
   //
   // A process argument is always written out where the pipeline is built, so
@@ -367,171 +381,8 @@ class Elaborator {
     return (k.params ?? []).some((g) => g.type.kind === 'namedType' && this.streams.has(g.type.name));
   }
 
-  private pipelineOf(a: A.KernelArg, where: string): A.PipelineElem[] {
-    if ('kind' in a && a.kind === 'pipelineArg') return a.elements;
-    if ('kind' in a && a.kind === 'kernelApp') return [a];
-    if ('kind' in a && (a.kind as string) === 'identityPipeline') return [a as unknown as A.IdentityPipeline];
-    if ('kind' in a && a.kind === 'var') return [{ kind: 'kernelRef', name: a.name }];
-    throw new ElabError(`${where} expects a process here`);
-  }
-
-  private instantiate(k: A.Kernel, args: A.KernelArg[], env: Env, procs: ProcEnv, input: Shape): { stages: StageIR[]; output: Shape } {
-    const body = k.prologue[0];
-    if (k.forAlls.length > 0 || k.prologue.length !== 1 || body.kind !== 'forward') {
-      throw new ElabError(`'${k.name}' takes a process parameter, so it must be a pipeline definition (⇒ …)`);
-    }
-    const calleeEnv: Env = new Map();
-    const calleeProcs: ProcEnv = new Map();
-    const names = (k.params ?? []).flatMap((g) => g.names.map((n) => ({ n, type: g.type })));
-    if (args.length !== names.length) throw new ElabError(`'${k.name}' takes ${names.length} arguments, given ${args.length}`);
-    names.forEach(({ n, type }, i) => {
-      if (type.kind === 'namedType' && this.streams.has(type.name)) {
-        calleeProcs.set(n, { elems: this.pipelineOf(args[i], `'${k.name}'`), env, procs });
-      } else {
-        const v = fit(this.expr(args[i] as A.Expr, env), this.resolveType(type));
-        if (!v) throw new ElabError(`argument '${n}' of '${k.name}' does not fit its parameter`);
-        calleeEnv.set(n, v);
-      }
-    });
-    return this.elabStages(k, body.pipeline, calleeEnv, input, calleeProcs);
-  }
-
-  private elabStages(
-    d: A.Kernel, elems: A.PipelineElem[], env: Env, input: Shape, procs: ProcEnv = new Map(),
-  ): { stages: StageIR[]; output: Shape } {
-    let stream = input;
-    const stages: StageIR[] = [];
-    // Ordering discipline: after a plain GroupBy, within-group arrival order
-    // is unspecified, so only order-insensitive consumers may follow until a
-    // ReduceBy makes keys unique (which restores determinism).
-    let unorderedGroups = false;
-    const requireOrder = (name: string) => {
-      if (unorderedGroups) {
-        throw new ElabError(
-          `'${name}' in '${d.name}' consumes tokens in arrival order after a non-stable GroupBy; ` +
-          `use 'GroupBy stable (…)' or reduce the groups first`,
-        );
-      }
-    };
-    for (const el of elems) {
-      if (el.kind === 'identityPipeline') {
-        stages.push({ k: 'identity' });
-        continue;
-      }
-      if (el.kind === 'groupBy') {
-        const keyIndexes = el.keys.map((k) => {
-          const f = fieldInfo(stream, k);
-          if (f.shape.k !== 'real') throw new ElabError(`GroupBy key '@${k}' must be a Real field`);
-          return f.offset;
-        });
-        stages.push({ k: 'groupBy', keyIndexes, stable: el.stable });
-        unorderedGroups = !el.stable;
-        continue;
-      }
-      if (el.kind === 'reduceBy') {
-        const keyIndexes = el.keys.map((k) => fieldInfo(stream, k).offset);
-        const fields = el.fields.map((f) => {
-          if (unorderedGroups && !KNOWN_COMMUTATIVE.has(f.op)) {
-            throw new ElabError(
-              `ReduceBy in '${d.name}' uses '${f.op}', not known to be commutative, on unordered groups; ` +
-              `use 'GroupBy stable (…)'`,
-            );
-          }
-          const scope: Env = new Map([
-            ['#ra', scalar({ k: 'local', name: '#ra' })],
-            ['#rb', scalar({ k: 'local', name: '#rb' })],
-          ]);
-          const op = this.expr(
-            { kind: 'binOp', op: f.op, left: { kind: 'var', name: '#ra' }, right: { kind: 'var', name: '#rb' } }, scope);
-          if (op.k !== 'scalar') throw new ElabError(`ReduceBy operator '${f.op}' must combine Reals`);
-          const info = fieldInfo(stream, f.name);
-          if (info.shape.k !== 'real') throw new ElabError(`ReduceBy field '${f.name}' must be a Real field`);
-          return { index: info.offset, op: op.expr };
-        });
-        stages.push({ k: 'reduceBy', width: shapeWidth(stream), keyIndexes, fields });
-        unorderedGroups = false; // keys are unique now; order is determined
-        continue;
-      }
-      const { name } = el;
-      if (name === 'SortBy') {
-        if (el.kind !== 'kernelApp' || el.args.length !== 1) {
-          throw new ElabError(`SortBy in '${d.name}' expects a single @field key`);
-        }
-        const key = el.args[0];
-        if (typeof key !== 'object' || !('kind' in key) || key.kind !== 'offset') {
-          throw new ElabError(`SortBy in '${d.name}' expects an @field key`);
-        }
-        stages.push({ k: 'sortBy', keyIndexes: [fieldInfo(stream, key.field).offset] });
-        continue;
-      }
-      if (name === 'Reverse') {
-        requireOrder(name);
-        stages.push({ k: 'reverse' });
-        continue;
-      }
-      if (name === 'DupCat' || name === 'DupZip') {
-        requireOrder(name);
-        const args = el.kind === 'kernelApp' ? el.args : [];
-        const branches = args.map((a) => this.elabStages(d, this.pipelineOf(a, name), env, stream, procs));
-        if (branches.length !== 2) throw new ElabError(`${name} in '${d.name}' takes two pipelines`);
-        const pair: [StageIR[], StageIR[]] = [branches[0].stages, branches[1].stages];
-        if (name === 'DupCat') {
-          if (shapeWidth(branches[0].output) !== shapeWidth(branches[1].output)) {
-            throw new ElabError(`DupCat in '${d.name}' takes two pipelines with the same output type`);
-          }
-          stages.push({ k: 'dupCat', branches: pair });
-          stream = branches[0].output;
-        } else {
-          // DupZip pairs the branches' outputs: (β, γ).
-          stages.push({ k: 'dupZip', branches: pair });
-          stream = { k: 'record', name: null, fields: branches.map((b) => ({ name: null, shape: b.output })) };
-        }
-        continue;
-      }
-      // A process parameter: splice in the caller's pipeline, in its scope.
-      const closure = procs.get(name);
-      if (closure) {
-        if (el.kind === 'kernelApp' && el.args.length > 0) throw new ElabError(`process parameter '${name}' takes no arguments`);
-        requireOrder(name);
-        const sub = this.elabStages(d, closure.elems, closure.env, stream, closure.procs);
-        stages.push(...sub.stages);
-        stream = sub.output;
-        continue;
-      }
-      const template = this.kernels.get(name);
-      if (template && this.isTemplate(template)) {
-        requireOrder(name);
-        const sub = this.instantiate(template, el.kind === 'kernelApp' ? el.args : [], env, procs, stream);
-        stages.push(...sub.stages);
-        stream = sub.output;
-        continue;
-      }
-      const stageSig = this.streams.get(name);
-      if (stageSig === undefined) throw new ElabError(`pipeline '${d.name}' references unknown process '${name}'`);
-      if (stageSig === null) throw new ElabError(`pipeline stage '${name}' is not a plain stream`);
-      requireOrder(name);
-      const args: ScalarExpr[][] = [];
-      if (el.kind === 'kernelApp') {
-        for (const a of el.args) {
-          if ('kind' in a && (a.kind === 'pipelineArg' || a.kind === 'kernelApp')) {
-            throw new ElabError(`'${d.name}' passes a pipeline to '${name}'; higher-order arguments are not yet supported`);
-          }
-          args.push(flatten(this.expr(a as A.Expr, env)));
-        }
-      }
-      stages.push({ k: 'stage', name, args });
-      stream = stageSig.output;
-    }
-    return { stages, output: stream };
-  }
 }
 
-interface Closure {
-  elems: A.PipelineElem[];
-  env: Env;
-  procs: ProcEnv;
-}
-type ProcEnv = Map<string, Closure>;
 
 function stageNames(stages: StageIR[]): string[] {
   return stages.flatMap((s) =>

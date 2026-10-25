@@ -1,0 +1,51 @@
+// A pipeline's meaning: pipelines.mooi, bound to the program. The stages
+// come out as IR; the discipline (what may follow an unordered GroupBy,
+// what a template's arguments must be) is the equations'.
+
+import type * as A from '../ast.js';
+import type { StageIR } from '../ir.js';
+import { ElabError, flatten, shapeWidth, type Shape, type Value } from '../values.js';
+import { load } from '../../../mooi/src/mooi.js';
+import { prelude } from '../../../mooi/src/prelude.js';
+import { pipelinesSource } from './source.js';
+
+// What the equations ask of the program.
+export interface PipelineProgram {
+  field(shape: Shape, name: string): { offset: number; shape: Shape };
+  expr(e: A.Expr, env: Map<string, Value>): Value;
+  fit(v: Value, shape: Shape): Value | null;
+  type(t: A.Type): Shape;
+  local(name: string): Value;
+  stream(name: string): { input: Shape; output: Shape } | null;
+  known(name: string): boolean;
+  template(name: string): A.Kernel | null;
+  isStream(t: A.Type): boolean;
+}
+
+// A process-typed parameter's argument: a pipeline, in the scope it was written in.
+export interface Closure {
+  elems: A.PipelineElem[];
+  env: Map<string, Value>;
+  procs: Map<string, Closure>;
+}
+
+const fail = (msg: string): never => {
+  throw new ElabError(msg);
+};
+
+export function elabPipelineStages(
+  P: PipelineProgram, who: string, elems: A.PipelineElem[], env: Map<string, Value>, procs: Map<string, Closure>, input: Shape,
+): { stages: StageIR[]; output: Shape } {
+  const m = load(pipelinesSource, {
+    ...prelude(fail),
+    P,
+    width: shapeWidth,
+    leaves: flatten,
+    empty: new Map(),
+    bind: (e: Map<string, Value>, n: string, v: Value) => new Map(e).set(n, v),
+    noProcs: new Map(),
+    bindProc: (p: Map<string, Closure>, n: string, c: Closure) => new Map(p).set(n, c),
+    lookupProc: (p: Map<string, Closure>, n: string) => p.get(n) ?? null,
+  }) as { pipeline: (who: string, elems: A.PipelineElem[], env: Map<string, Value>, procs: Map<string, Closure>, input: Shape) => { stages: StageIR[]; output: Shape } };
+  return m.pipeline(who, elems, env, procs, input);
+}

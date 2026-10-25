@@ -1,0 +1,108 @@
+-- The meaning of a pipeline: its stages, each over the stream the one
+-- before it leaves. A stream between stages is its shape, and whether its
+-- order is known: GroupBy promises key order only, so after it, until a
+-- ReduceBy has made each key one token, only a stage that does not read
+-- tokens in arrival order may follow (a ReduceBy by commutative operators).
+-- That is what licenses a parallel back end to accumulate in any order.
+--
+-- A stage is a kernel, a builtin that needs the whole stream (SortBy,
+-- Reverse, DupCat, DupZip), a process-typed parameter (spliced in from the
+-- closure its argument made), or a template (a process with process-typed
+-- parameters, instantiated here: no process is a value at run time).
+--
+-- The host supplies: P.field (a field's offset and shape in a shape),
+-- width, P.expr (an argument, staged), P.fit, P.type, P.local, P.stream (a
+-- process's stream types, or null; P.known says whether the name exists),
+-- P.template (a template's kernel, or null), P.isStream (a type names a
+-- process type), and the environments: empty, bind, lookupProc, bindProc.
+
+-- A context: the pipeline being defined (for messages), the values its
+-- parameters are bound to, and its process-typed parameters' closures.
+pipeline who elems ρ procs input = stages {who: who, env: ρ, procs: procs} elems {shape: input, unordered: false}
+
+stages c [] s             = {stages: [], output: s.shape}
+stages c [el, ...rest] s  = let r = stage c el s, more = stages c rest r.stream
+                            in {stages: r.stages ++ more.stages, output: more.output}
+
+stage c identityPipeline{} s   = {stages: [{k: "identity"}], stream: s}
+stage c groupBy{keys, stable} s = {stages: [{k: "groupBy", keyIndexes: map (\k -> real s.shape k "GroupBy key") keys, stable: stable}],
+                                   stream: {shape: s.shape, unordered: not stable}}
+stage c reduceBy{keys, fields} s =
+  {stages: [{k: "reduceBy", width: width s.shape, keyIndexes: map (\k -> (P.field s.shape k).offset) keys, fields: map (reduction c s) fields}],
+   stream: {shape: s.shape, unordered: false}}
+stage c kernelRef{name} s        = named c name [] s
+stage c kernelApp{name, args} s  = named c name args s
+
+-- A reduced field: combined by its operator, a scalar expression over the
+-- two values being combined (#ra, #rb).
+reduction c s f | s.unordered && not (commutative f.op) =
+  fail ("ReduceBy in '" ++ c.who ++ "' uses '" ++ f.op ++ "', not known to be commutative, on unordered groups; use 'GroupBy stable (…)'")
+reduction c s f =
+  let op = P.expr binOp{op: f.op, left: var{name: "#ra"}, right: var{name: "#rb"}} (bind (bind empty "#ra" (P.local "#ra")) "#rb" (P.local "#rb"))
+  in if op.k != "scalar" then fail ("ReduceBy operator '" ++ f.op ++ "' must combine Reals")
+     else {index: real s.shape f.name "ReduceBy field", op: op.expr}
+
+commutative op = member op ["+", "×", "◁", "▷", "∧", "∨"]
+
+-- A field that must be a Real: its offset in the token.
+real sh name what = let f = P.field sh name
+                    in if f.shape.k != "real" then fail (what ++ " '@" ++ name ++ "' must be a Real field") else f.offset
+
+-- A stage that reads tokens in arrival order may not follow unordered groups.
+ordered c what s | s.unordered = fail ("'" ++ what ++ "' in '" ++ c.who ++ "' consumes tokens in arrival order after a non-stable GroupBy; use 'GroupBy stable (…)' or reduce the groups first")
+ordered c what s = unit
+
+-- The builtins that need the whole stream.
+named c "SortBy" [key] s | key.kind == "offset" = {stages: [{k: "sortBy", keyIndexes: [(P.field s.shape key.field).offset]}], stream: s}
+named c "SortBy" args s  = fail ("SortBy in '" ++ c.who ++ "' expects a single @field key")
+named c "Reverse" args s = ordered c "Reverse" s; {stages: [{k: "reverse"}], stream: s}
+named c "DupCat" args s  = ordered c "DupCat" s;
+                           (let [a, b] = branches c "DupCat" args s
+                            in if width a.output != width b.output then fail ("DupCat in '" ++ c.who ++ "' takes two pipelines with the same output type")
+                               else {stages: [{k: "dupCat", branches: [a.stages, b.stages]}], stream: {shape: a.output, unordered: false}})
+named c "DupZip" args s  = ordered c "DupZip" s;
+                           (let [a, b] = branches c "DupZip" args s
+                            in {stages: [{k: "dupZip", branches: [a.stages, b.stages]}],
+                                stream: {shape: {k: "record", name: null, fields: [{name: null, shape: a.output}, {name: null, shape: b.output}]}, unordered: false}})
+-- A process-typed parameter: its argument's pipeline, in the scope it was written in.
+named c name args s | lookupProc c.procs name != null =
+  if length args > 0 then fail ("process parameter '" ++ name ++ "' takes no arguments")
+  else ordered c name s;
+       (let cl = lookupProc c.procs name in spliced (stages {who: c.who, env: cl.env, procs: cl.procs} cl.elems s))
+-- A template: instantiated with these arguments, in place.
+named c name args s | P.template name != null = ordered c name s; spliced (instantiate c (P.template name) args s)
+-- A plain process, its arguments staged and flattened.
+named c name args s | not (P.known name) = fail ("pipeline '" ++ c.who ++ "' references unknown process '" ++ name ++ "'")
+named c name args s | P.stream name == null = fail ("pipeline stage '" ++ name ++ "' is not a plain stream")
+named c name args s = ordered c name s;
+                      {stages: [{k: "stage", name: name, args: map (argument c name) args}], stream: {shape: (P.stream name).output, unordered: false}}
+
+argument c name a | a.kind == "pipelineArg" || a.kind == "kernelApp" = fail ("'" ++ c.who ++ "' passes a pipeline to '" ++ name ++ "'; higher-order arguments are not yet supported")
+argument c name a = leaves (P.expr a c.env)
+
+-- A pipeline spliced in as stages: it leaves its output, in order.
+spliced r = {stages: r.stages, stream: {shape: r.output, unordered: false}}
+
+-- Two pipeline arguments, each elaborated over the same input.
+branches c what args s | length args != 2 = fail (what ++ " in '" ++ c.who ++ "' takes two pipelines")
+branches c what args s = map (\a -> stages c (pipelineOf a what) s) args
+
+-- An argument as a pipeline: written out, a single application, or a name.
+pipelineOf a w | a.kind == "pipelineArg"      = a.elements
+pipelineOf a w | a.kind == "kernelApp"        = [a]
+pipelineOf a w | a.kind == "identityPipeline" = [a]
+pipelineOf a w | a.kind == "var"              = [kernelRef{name: a.name}]
+pipelineOf a w                                = fail (w ++ " expects a process here")
+
+-- A template's body is a pipeline; its parameters are bound to the
+-- arguments, a process argument as a closure over the caller's scope, a
+-- value argument fitted to its type.
+instantiate c k args s | length k.forAlls > 0 || length k.prologue != 1 || (head k.prologue).kind != "forward" =
+  fail ("'" ++ k.name ++ "' takes a process parameter, so it must be a pipeline definition (⇒ …)")
+instantiate c k args s =
+  let names = concat (map (\g -> map (\n -> {name: n, type: g.type}) g.names) (k.params ?? []))
+  in if length args != length names then fail ("'" ++ k.name ++ "' takes " ++ str (length names) ++ " arguments, given " ++ str (length args))
+     else let callee = foldl (bindArg c k) {env: empty, procs: noProcs} (zipWith (\p a -> [p, a]) names args)
+          in stages {who: c.who, env: callee.env, procs: callee.procs} (head k.prologue).pipeline s
+bindArg c k acc [p, a] | P.isStream p.type = {...acc, procs: bindProc acc.procs p.name {elems: pipelineOf a ("'" ++ k.name ++ "'"), env: c.env, procs: c.procs}}
+bindArg c k acc [p, a] = {...acc, env: bind acc.env p.name (must (P.fit (P.expr a c.env) (P.type p.type)) ("argument '" ++ p.name ++ "' of '" ++ k.name ++ "' does not fit its parameter"))}
