@@ -1,36 +1,72 @@
 # umgeni
 
-A compiler for Nile, plus extensions (scans, windows and group-by declared as
-access patterns, rather than written as hand-rolled state).
+A compiler for Nile, plus a few extensions: running sums, adjacent-pair
+windows and grouping are declared in the source (as *access patterns*)
+rather than written out as hand-kept state, so a parallel back end can see
+what it is allowed to do.
+
+The stages, left to right:
 
 ```
-Nile ─Ohm─▶ AST ─sugar.mooi─▶ core AST ─nile.mooi, staged─▶ scalar IR ─▶ fuse, CSE ─▶ JS
-                                                                              ├──▶ wasm
-                                                                              └──▶ WGSL
+Nile ─Ohm─▶ syntax tree ─sugar.mooi─▶ core Nile ─nile.mooi, staged─▶ scalar IR ─▶ fuse, CSE ─▶ JS
+                                                                                     ├──▶ wasm
+                                                                                     └──▶ WGSL
 ```
 
-- **Grammar**: [src/grammar/nile.ohm](src/grammar/nile.ohm), the Nile grammar
-  as data. The offside rule lives in [src/preprocess.ts](src/preprocess.ts).
-- **Meaning**: [src/semantics/](src/semantics/) holds three Mooi files.
-  - [sugar.mooi](src/semantics/sugar.mooi) rewrites extended Nile into core Nile.
-  - [values.mooi](src/semantics/values.mooi) is the value algebra (records,
-    lifting operators over them).
-  - [nile.mooi](src/semantics/nile.mooi) is the semantics.
+- **Grammar**: [src/grammar/nile.ohm](src/grammar/nile.ohm) describes Nile's
+  syntax as data, and the [Ohm](https://ohmjs.org) library parses with it.
+  Indentation-as-structure (the offside rule) is handled first, in
+  [src/preprocess.ts](src/preprocess.ts).
+- **Meaning**: [src/semantics/](src/semantics/) holds three Mooi files, which
+  together are the only definition of what Nile means.
+  - [sugar.mooi](src/semantics/sugar.mooi) rewrites the extensions into plain
+    Nile (state, primed updates, `if`s), remembering what was declared.
+  - [values.mooi](src/semantics/values.mooi) says what a value is: a tree of
+    numbers, so that `+` on two Points means `+` on each coordinate (the
+    value algebra: records, operators lifted over them).
+  - [nile.mooi](src/semantics/nile.mooi) says what each expression and
+    statement does.
 
-  The semantics is written over a domain of eleven primitives
-  ([domain.ts](src/semantics/domain.ts)). In the symbolic domain
-  ([staged.ts](src/semantics/staged.ts)) every primitive records IR, so
-  running the semantics compiles. In the numeric domain
-  ([concrete.ts](src/semantics/concrete.ts)) it interprets.
-- **Higher order**: mid-stream `⇒` (a process becoming a pipeline), DupCat,
-  DupZip and Reverse are defunctionalised in [src/substitute.ts](src/substitute.ts).
-- **Backends**:
-  - [src/cpu/](src/cpu/): [js.ts](src/cpu/js.ts) emits JavaScript, the
-    reference; [wasm.ts](src/cpu/wasm.ts) emits WebAssembly binary directly for
-    fused segments, bit-identical to the JS; [runtime.ts](src/cpu/runtime.ts)
-    streams tokens through both.
-  - [src/gpu/](src/gpu/) lowers map kernels, scans, the RasterizeParallel pipeline
-    ([nl/rasterize-parallel.nl](nl/rasterize-parallel.nl)) and gezira's textures to WGSL.
+  The meaning is written in terms of eleven basic operations on numbers
+  ([domain.ts](src/semantics/domain.ts)): make a number, add, compare,
+  remember a value, emit a token, and so on. Hand it real numbers
+  ([concrete.ts](src/semantics/concrete.ts)) and running the definition
+  runs the program: an interpreter. Hand it placeholders that write down
+  each operation instead of doing it ([staged.ts](src/semantics/staged.ts))
+  and what it writes down is the compiled program (the *scalar IR*, an
+  intermediate form in which every record has been flattened to plain
+  numbers). The same equations do both jobs.
+- **Processes as values**: a Nile process may say, mid-stream, `⇒ A → B`:
+  from here on I am that pipeline. The compiler turns this into ordinary
+  data ([src/substitute.ts](src/substitute.ts)): each process that can be
+  switched to gets a number, and one kernel dispatches on it. No process is
+  created at run time (*defunctionalisation*). DupCat, DupZip and Reverse
+  take pipelines as arguments; those are expanded in place at compile time,
+  and the runtime implements the three as stages that buffer tokens.
+- **Back ends**:
+  - [src/cpu/](src/cpu/): [js.ts](src/cpu/js.ts) writes JavaScript, the
+    reference; [wasm.ts](src/cpu/wasm.ts) writes WebAssembly bytes directly for
+    runs of kernels, and its output is bit for bit the same as the
+    JavaScript's; [runtime.ts](src/cpu/runtime.ts) streams tokens through both.
+  - [src/gpu/](src/gpu/): [lower.ts](src/gpu/lower.ts) turns a pipeline into
+    a plan of GPU compute passes, applying one rule per declaration in the
+    source. A run of kernels becomes one pass, with a thread per token or a
+    thread per row of a grid. An unordered `GroupBy → ReduceBy` with `+`
+    becomes a grid that threads add into concurrently (atomics). A kernel
+    that keeps state from one token to the next must declare its running
+    sum or window by the grid's key, which is what makes the rows
+    independent. Anything else is refused, naming the declaration that
+    would allow it. [execute.ts](src/gpu/execute.ts) runs a plan and holds
+    the two destinations for a pipeline's output (a coverage image, or
+    tokens appended to a buffer); [present.ts](src/gpu/present.ts) draws
+    many paths in one submission without waiting on the GPU;
+    [texture.ts](src/gpu/texture.ts) turns gezira's textures into a shader
+    `paint()` function.
+
+Before code is written, two passes tidy the intermediate form: consecutive
+kernels are joined so tokens pass between them as function arguments rather
+than arrays (*fusion*), and repeated calculations are done once (*common
+subexpression elimination*, CSE).
 
 ## The host interface
 
@@ -63,9 +99,13 @@ const X = PaintedPixel.at('P.x');   // an offset, for hot loops
   `test/fixtures/{stroke,paint}-oracle.json`; to rebuild,
   `sh tools/oracle/build.sh` (fetches nile and gezira at pinned commits;
   x86_64, so Rosetta on Apple Silicon), then `npx tsx tools/oracle/gen-*-fixtures.ts`.
-- **chari**: an earlier closure compiler for Nile; its outputs on
+- **chari**: an earlier compiler for Nile; its outputs on
   `test/fixtures/chari-kernels.nl` are recorded and must match bit for bit.
-- **Interpreter ≡ compiler**: every kernel, random inputs, `Object.is` on every
-  output ([test/agree.ts](test/agree.ts)).
-- **wasm ≡ JS**, bit for bit; **WGSL** text snapshots. On-GPU checks run under
-  Deno (`npm run check:present`, `bench:gpu`).
+- **Interpreter ≡ compiler**: every kernel, random inputs, every output
+  number identical ([test/agree.ts](test/agree.ts)).
+- **wasm ≡ JS**, bit for bit; **WGSL** text snapshots. Checks that run on a
+  real GPU use Deno: `npm run check:present`, and `npm run check:lowering`,
+  which lowers three pipelines the GPU code was not written against (a
+  self-feeding kernel after the window, a parameterised transform ahead of
+  the rasterizer, a kernel on its own with its output appended) and compares
+  them with the CPU.
