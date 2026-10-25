@@ -115,6 +115,14 @@ export class Sheet {
     writePixels(this.img, this.nile, pixels);
   }
 
+  /** A mesh gradient: Coons patches (nl/patch.nl), each four cubic sides
+   *  (top, bottom, left, right, as 8 numbers each) and four corner colours. */
+  paintMesh(patches: { T: number[]; B: number[]; L: number[]; R: number[]; colors: [Rgba, Rgba, Rgba, Rgba] }[]): void {
+    const { Patch } = this.nile.types;
+    const tokens = patches.map((p) => Patch.make({ T: p.T, B: p.B, L: p.L, R: p.R, C00: nileColor(p.colors[0]), C10: nileColor(p.colors[1]), C01: nileColor(p.colors[2]), C11: nileColor(p.colors[3]), d: 0 }));
+    writePixels(this.img, this.nile, this.nile.MeshPixels().run(tokens));
+  }
+
   private flatten(cubics: number[][]): number[][] {
     return this.nile.FlattenCubics().run(cubics);
   }

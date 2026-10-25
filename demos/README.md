@@ -29,8 +29,10 @@ root builds `dist/` and serves it; `npm run demo:build` just builds.
   Nile written for these pages beyond gezira: the even-odd fill rule
   ([nl/evenodd.nl](nl/evenodd.nl)), dashes and a stroker that caps each
   piece ([nl/dash.nl](nl/dash.nl)), clipping to a shape and masking
-  ([nl/clip.nl](nl/clip.nl)), and the samples' gradients and image painting
-  ([nl/samples.nl](nl/samples.nl)).
+  ([nl/clip.nl](nl/clip.nl)), the samples' gradients and image painting
+  ([nl/samples.nl](nl/samples.nl)), and a twentieth card, a mesh gradient:
+  a Coons patch cut into pieces and summed per pixel ([nl/patch.nl](nl/patch.nl)),
+  exact but slow (a 200-pixel patch takes over a second on the CPU).
 
 A page imports a Nile library as `import { nile } from './nl/vector.nl-lib'`.
 The `.nl-lib` file lists the `.nl` sources, and the bundler plugin

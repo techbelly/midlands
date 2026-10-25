@@ -37,6 +37,9 @@ function fillStyle(dy: number): Path {
 }
 const chevron = (y: number) => path().moveTo(76.8, y).relLineTo(51.2, -51.2).relLineTo(51.2, 51.2).build();
 
+// Cairo's examples index also lists "Bezier gradients": patches of colour
+// with curved sides (PDF's type 6 shading, cairo_pattern_create_mesh). A
+// twentieth card, in Cairo's own API, since the samples page has none.
 export const SCENES: Scene[] = [
   {
     id: 'arc', title: 'arc', nile: STROKE,
@@ -603,6 +606,39 @@ cairo_stroke (cr);`,
       s.fill(textPath(font, 'cairo', 100, x, y), BLACK);
       s.fill(circle(x, y, 10), HELP);
       s.stroke(path().moveTo(x, y).relLineTo(0, -e.height).relLineTo(e.width, 0).relLineTo(e.xBearing, -e.yBearing).build(), HELP, { width: 6 });
+    },
+  },
+  {
+    id: 'mesh', title: 'mesh gradient (Bezier gradients)', nile: ['MeshPixels', 'SplitPatches', 'PiecePixels'],
+    cairo: `cairo_pattern_t *pat = cairo_pattern_create_mesh ();
+
+/* one Coons patch: four curved sides, a colour at each corner */
+cairo_mesh_pattern_begin_patch (pat);
+cairo_mesh_pattern_move_to (pat, 25.6, 25.6);
+cairo_mesh_pattern_curve_to (pat, 93.6, -34.4, 162.4, 85.6, 230.4, 25.6);
+cairo_mesh_pattern_curve_to (pat, 290.4, 93.6, 170.4, 162.4, 230.4, 230.4);
+cairo_mesh_pattern_curve_to (pat, 162.4, 290.4, 93.6, 170.4, 25.6, 230.4);
+cairo_mesh_pattern_curve_to (pat, -34.4, 162.4, 85.6, 93.6, 25.6, 25.6);
+cairo_mesh_pattern_set_corner_color_rgb (pat, 0, 1, 0, 0);
+cairo_mesh_pattern_set_corner_color_rgb (pat, 1, 0, 1, 0);
+cairo_mesh_pattern_set_corner_color_rgb (pat, 2, 1, 1, 0);
+cairo_mesh_pattern_set_corner_color_rgb (pat, 3, 0, 0, 1);
+cairo_mesh_pattern_end_patch (pat);
+
+cairo_set_source (cr, pat);
+cairo_paint (cr);
+cairo_pattern_destroy (pat);`,
+    draw(s) {
+      // The same patch as its four sides: top and bottom left to right,
+      // left and right top to bottom (Cairo's walks round the corners).
+      const x0 = 25.6, x1 = 230.4, y0 = 25.6, y1 = 230.4, k = 60, m = 68;
+      s.paintMesh([{
+        T: [x0, y0, x0 + m, y0 - k, x1 - m, y0 + k, x1, y0],
+        B: [x0, y1, x0 + m, y1 + k, x1 - m, y1 - k, x1, y1],
+        L: [x0, y0, x0 - k, y0 + m, x0 + k, y1 - m, x0, y1],
+        R: [x1, y0, x1 + k, y0 + m, x1 - k, y1 - m, x1, y1],
+        colors: [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1], [1, 1, 0, 1]],
+      }]);
     },
   },
 ];

@@ -31,6 +31,6 @@ export interface Domain<S> {
 // What the program declares (types, user operators, process parameters).
 export interface Program {
   type(t: A.Type): Shape;
-  op(key: string): { params: { name: string; shape: Shape }[]; body: A.Expr } | undefined;
+  op(key: string): { params: { name: string; shape: Shape }[]; result: Shape; body: A.Expr } | undefined;
   params(process: string): Shape[] | undefined;
 }

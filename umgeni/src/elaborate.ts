@@ -23,6 +23,7 @@ const KNOWN_COMMUTATIVE = new Set(['+', '×', '◁', '▷', '∧', '∨']);
 
 interface OpEntry {
   params: { name: string; shape: Shape }[];
+  result: Shape;
   body: A.Expr;
 }
 
@@ -197,6 +198,7 @@ class Elaborator {
       : `${d.op}_${d.closeOp}`;
     this.ops.set(key, {
       params: d.params.map((p) => ({ name: p.name, shape: this.resolveType(p.type) })),
+      result: this.resolveType(d.resultType),
       body: d.body,
     });
   }

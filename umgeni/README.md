@@ -25,7 +25,8 @@ Nile ─Ohm─▶ syntax tree ─sugar.mooi─▶ core Nile ─nile.mooi, staged
     numbers, so that `+` on two Points means `+` on each coordinate (the
     value algebra: records, operators lifted over them).
   - [nile.mooi](src/semantics/nile.mooi) says what each expression and
-    statement does.
+    statement does. An operator's value is of its declared result type, so
+    `(◐ Z).D` names a field of the cubic an operator returns.
 
   The meaning is written in terms of eleven basic operations on numbers
   ([domain.ts](src/semantics/domain.ts)): make a number, add, compare,

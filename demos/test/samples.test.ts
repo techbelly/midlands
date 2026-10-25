@@ -178,7 +178,7 @@ describe('the Cairo samples, drawn by Nile', () => {
       for (let i = 0; i < 256 * 256; i++) if (img.data[i * 4] !== 255 || img.data[i * 4 + 1] !== 255 || img.data[i * 4 + 2] !== 255) inked++;
       expect(inked, scene.id).toBeGreaterThan(200);
     }
-    expect(SCENES.length).toBe(19);
+    expect(SCENES.length).toBe(20);
   });
   it('image: the tiger, turned 45°, through a process the host supplies', () => {
     const img = render('image');
@@ -226,5 +226,31 @@ describe('the Cairo samples, drawn by Nile', () => {
     expect(at(8)).toEqual([0, 0, 0]);
     expect(at(25)).toEqual(WHITE);
     expect(at(70)).toEqual([0, 0, 0]);
+  });
+});
+
+describe('mesh gradients (nl/patch.nl)', () => {
+  it('fills a straight-sided patch pixel for pixel, blending the corner colours', () => {
+    const img = page();
+    const line = (x0: number, y0: number, x1: number, y1: number) => [x0, y0, x0 + (x1 - x0) / 3, y0 + (y1 - y0) / 3, x0 + (2 * (x1 - x0)) / 3, y0 + (2 * (y1 - y0)) / 3, x1, y1];
+    new Sheet(samples.api, img).paintMesh([{ T: line(10, 10, 20, 10), B: line(10, 20, 20, 20), L: line(10, 10, 10, 20), R: line(20, 10, 20, 20), colors: [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1], [1, 1, 1, 1]] }]);
+    expect(px(img, 9, 9)).toEqual(WHITE);
+    expect(px(img, 20, 15)).toEqual(WHITE);
+    const tl = px(img, 10, 10), tr = px(img, 19, 10), bl = px(img, 10, 19);
+    expect(tl[0]).toBeGreaterThan(200); expect(tl[1]).toBeLessThan(60); // red corner
+    expect(tr[1]).toBeGreaterThan(200); expect(tr[0]).toBeLessThan(60); // green
+    expect(bl[2]).toBeGreaterThan(200); // blue
+    const mid = px(img, 15, 15); // a blend, not white
+    expect(mid[0] + mid[1] + mid[2]).toBeLessThan(700);
+    // Every pixel of the square is fully covered: no seams between pieces.
+    for (let y = 10; y < 20; y++) for (let x = 10; x < 20; x++) expect(px(img, x, y), `${x},${y}`).not.toEqual(WHITE);
+  });
+  it('the curved patch covers its inside fully and nothing outside', () => {
+    const img = render('mesh');
+    expect(px(img, 3, 3)).toEqual(WHITE);
+    expect(px(img, 128, 128)).not.toEqual(WHITE);
+    // Interior rows: no white speckle (every piece lands in a pixel).
+    for (let x = 60; x < 200; x += 7) expect(px(img, x, 128), `${x}`).not.toEqual(WHITE);
+    expect(px(img, 30, 30)[0]).toBeGreaterThan(150); // red near the top-left corner
   });
 });

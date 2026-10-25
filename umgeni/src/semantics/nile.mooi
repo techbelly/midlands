@@ -22,10 +22,11 @@ expr typed{expr: e, type: t} ρ    = must (fit (expr e ρ) (P.type t)) "cannot a
 guard ρ arm rest = lift [R, R, R] (\[c, a, b] -> scalar (D.select (s c) (s a) (s b))) [expr arm.cond ρ, expr arm.value ρ, rest]
 
 -- An operator: a builtin on scalars, or a user operator's body with the
--- arguments bound — lifted over records either way.
+-- arguments bound, its value of the operator's declared result type —
+-- lifted over records either way.
 apply op args | builtin op = lift (map (\_ -> R) args) (\xs -> scalar (prim op (map s xs))) args
 apply op args              = let d = must (P.op op) ("unknown operator " ++ op)
-                             in lift (map (\p -> p.shape) d.params) (\xs -> expr d.body (bindAll empty (map (\p -> p.name) d.params) xs)) args
+                             in lift (map (\p -> p.shape) d.params) (\xs -> must (fit (expr d.body (bindAll empty (map (\p -> p.name) d.params) xs)) d.result) ("'" ++ op ++ "' does not produce its declared type")) args
 
 -- Statements are effects; each returns the environment that follows it.
 exec io decl{name, type: t, value} ρ = bind ρ name (share name (ascribe (expr value ρ) t))
