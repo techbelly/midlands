@@ -13,7 +13,7 @@ import { lowerFusedPipeline } from '../../umgeni/src/gpu/lower.js';
 import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
 import * as rt from '../../umgeni/src/cpu/runtime.js';
 import { parseSvg } from '../src/vector/svg.js';
-import { drawTiger, fitView, tigerBatches } from '../src/vector/tiger.js';
+import { drawTiger, fitView, tigerPaths, toBatches } from '../src/vector/tiger.js';
 
 
 const vector = compileProgramFile('demos/nl/vector.program');
@@ -51,7 +51,7 @@ const tex = device.createTexture({
 });
 
 t0 = performance.now();
-const batches = tigerBatches(tiger, view, vector.api, W, H);
+const batches = toBatches(tigerPaths(tiger, view, vector.api, W, H));
 const frontMs = performance.now() - t0;
 device.pushErrorScope('validation');
 t0 = performance.now();

@@ -2,7 +2,7 @@
 // chari/web/tiger-main.ts; the pipeline is Umgeni-compiled (nl/vector.program).
 
 import { parseSvg } from './src/vector/svg.js';
-import { drawTiger, tigerBatches } from './src/vector/tiger.js';
+import { paintPaths, tigerPaths, toBatches, type TigerPath } from './src/vector/tiger.js';
 import { createPresenter, type Presenter } from '../umgeni/src/gpu/present.js';
 import { lowerFusedPipeline } from '../umgeni/src/gpu/lower.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
@@ -73,45 +73,40 @@ function show(el: HTMLCanvasElement): void {
   canvasGpu.style.display = el === canvasGpu ? '' : 'none';
 }
 
+// The front half (geometry, compiled Nile on the CPU) is the same in both
+// modes; only the back end — rasterize and composite — differs.
 async function draw(): Promise<void> {
   const gpu = modeEl.value === 'gpu' ? await ensureGpu() : null;
-  if (gpu) {
-    show(canvasGpu);
-    await drawGpu(gpu);
-  } else {
-    modeEl.value = 'cpu'; // also the fallback when WebGPU is unavailable
-    show(canvas);
-    drawCpu();
-  }
-}
+  if (!gpu) modeEl.value = 'cpu'; // also the fallback when WebGPU is unavailable
+  show(gpu ? canvasGpu : canvas);
 
-async function drawGpu(state: GpuState): Promise<void> {
-  let t0 = performance.now();
-  const batches = tigerBatches(tiger, viewMatrix(), nile, canvasGpu.width, canvasGpu.height);
+  const t0 = performance.now();
+  const paths = tigerPaths(tiger, viewMatrix(), nile, canvas.width, canvas.height);
   const frontMs = performance.now() - t0;
-  t0 = performance.now();
-  state.gpu.frame(batches, state.context.getCurrentTexture().createView());
-  const submitMs = performance.now() - t0;
-  // The GPU runs after submit; wait for it, so the next frame starts on a
-  // free GPU and the figures add up to what a frame really takes.
-  t0 = performance.now();
-  await state.device.queue.onSubmittedWorkDone();
-  const gpuMs = performance.now() - t0;
+  const backMs = gpu ? await drawGpu(gpu, paths) : drawCpu(paths);
   statsEl.textContent =
     `${tiger.paths.length} paths · ${segs.toLocaleString()} cubics · ${z.toFixed(1)}× · ` +
-    `front (CPU Nile) ${frontMs.toFixed(0)} ms + submit ${submitMs.toFixed(0)} ms + GPU ${gpuMs.toFixed(0)} ms ` +
-    `= ${(frontMs + submitMs + gpuMs).toFixed(0)} ms a frame`;
+    `front (CPU Nile) ${frontMs.toFixed(0)} ms + raster & composite (${gpu ? 'GPU' : 'CPU'}) ${backMs.toFixed(0)} ms ` +
+    `= ${(frontMs + backMs).toFixed(0)} ms a frame`;
 }
 
-function drawCpu(): void {
+// Each back end returns its time in ms.
+async function drawGpu(state: GpuState, paths: TigerPath[]): Promise<number> {
+  const t0 = performance.now();
+  state.gpu.frame(toBatches(paths), state.context.getCurrentTexture().createView());
+  // The GPU runs after submit; wait for it, so the next frame starts on a
+  // free GPU and the figures add up to what a frame really takes.
+  await state.device.queue.onSubmittedWorkDone();
+  return performance.now() - t0;
+}
+
+function drawCpu(paths: TigerPath[]): number {
+  const t0 = performance.now();
   const img = ctx.createImageData(canvas.width, canvas.height);
   img.data.fill(255);
-  const t0 = performance.now();
-  const paths = drawTiger(img, tiger, viewMatrix(), nile);
+  paintPaths(img, nile, paths);
   ctx.putImageData(img, 0, 0);
-  statsEl.textContent =
-    `${paths} paths · ${segs.toLocaleString()} cubic segments · ${z.toFixed(1)}× · ` +
-    `${(performance.now() - t0).toFixed(0)} ms (CPU, fused pipelines + bucketed sort)`;
+  return performance.now() - t0;
 }
 
 const scheduleDraw = frameScheduler(draw);

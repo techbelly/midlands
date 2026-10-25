@@ -7,8 +7,9 @@
 // chooses the view, and composites spans (spans.ts). DOM-free: shared by the
 // browser demo and tests.
 
+import type { PathBatch } from '../../../umgeni/src/gpu/present.js';
 import type { Api } from './draw.js';
-import { hexRGB, paintSpans, type ImgLike } from './spans.js';
+import { hexRGB, paintSpans, type ImgLike, type RGB } from './spans.js';
 import type { Cubic, Svg } from './svg.js';
 
 // Fit the tiger's 900×900 viewBox into W×H.
@@ -29,29 +30,28 @@ function stroke(nile: Api, tiger: Svg, view: number[], w: number, minStroke: num
   return subpaths.flatMap((sub) => nile.SvgStroke({ V: view, R: tiger.matrix, w, minw: minStroke, l: SVG_JOIN, c: SVG_CAP }).run(sub));
 }
 
-// The GPU front half: run each path's geometry (transform → flatten →
-// [stroke] → clip, compiled Nile on the CPU) and return flat bezier batches
-// with normalized colors, ready for the GPU rasterizer+compositor.
-export interface PathBatch {
-  beziers: Float32Array<ArrayBuffer>;
-  n: number;
-  color: readonly [number, number, number];
+// One pipeline, two back ends. The front half is shared: each path's
+// geometry (transform → flatten → [stroke] → clip, compiled Nile on the CPU)
+// becomes a list of beziers and a colour, in drawing order. Then either
+// back end rasterizes and composites them: paintPaths on the CPU, or
+// toBatches → the GPU presenter (gpu/present.ts).
+export interface TigerPath {
+  beziers: number[][];
+  color: RGB;
 }
 
-export function tigerBatches(
+export function tigerPaths(
   tiger: Svg,
   view: number[],
   nile: Api,
   clipW: number,
   clipH: number,
   minStroke = 0.75,
-): PathBatch[] {
+): TigerPath[] {
   const clip = { min: [0, 0], max: [clipW, clipH] };
-  const batches: PathBatch[] = [];
+  const paths: TigerPath[] = [];
   const push = (beziers: number[][], hex: string) => {
-    if (beziers.length === 0) return;
-    const [r, g, b] = hexRGB(hex);
-    batches.push({ beziers: new Float32Array(beziers.flat()), n: beziers.length, color: [r / 255, g / 255, b / 255] });
+    if (beziers.length > 0) paths.push({ beziers, color: hexRGB(hex) });
   };
   for (const path of tiger.paths) {
     if (path.fill) push(nile.SvgFillBeziers({ V: view, R: tiger.matrix, ...clip }).run(path.cubics), path.fill);
@@ -60,28 +60,26 @@ export function tigerBatches(
       push(nile.ClipBeziers(clip).run(outline), path.stroke);
     }
   }
-  return batches;
+  return paths;
 }
 
-// Returns the number of paths drawn. Everything geometric runs in compiled
-// Nile — gezira's own kernels plus nl/vector.nl and nl/svg.nl; clip bounds =
-// the canvas.
-export function drawTiger(
-  img: ImgLike,
-  tiger: Svg,
-  view: number[],
-  nile: Api,
-  minStroke = 0.75,
-): number {
-  const clip = { min: [0, 0], max: [img.width, img.height] };
-  for (const path of tiger.paths) {
-    if (path.fill) {
-      paintSpans(img, nile, nile.SvgFill({ V: view, R: tiger.matrix, ...clip }).run(path.cubics), hexRGB(path.fill));
-    }
-    if (path.stroke) {
-      const outline = stroke(nile, tiger, view, path.strokeWidth, minStroke, path.subpaths);
-      paintSpans(img, nile, nile.FillBeziers(clip).run(outline), hexRGB(path.stroke));
-    }
-  }
+// The CPU back end: rasterize each path and composite its spans, in order.
+export function paintPaths(img: ImgLike, nile: Api, paths: TigerPath[]): void {
+  for (const p of paths) paintSpans(img, nile, nile.Rasterize().run(p.beziers), p.color);
+}
+
+// The GPU back end's input: the same paths as f32 batches, colours 0..1.
+export function toBatches(paths: TigerPath[]): PathBatch[] {
+  return paths.map(({ beziers, color: [r, g, b] }) => ({
+    beziers: new Float32Array(beziers.flat()),
+    n: beziers.length,
+    color: [r / 255, g / 255, b / 255],
+  }));
+}
+
+// The whole tiger on the CPU, clipped to the canvas. Returns the number of
+// paths drawn.
+export function drawTiger(img: ImgLike, tiger: Svg, view: number[], nile: Api, minStroke = 0.75): number {
+  paintPaths(img, nile, tigerPaths(tiger, view, nile, img.width, img.height, minStroke));
   return tiger.paths.length;
 }
