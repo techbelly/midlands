@@ -67,36 +67,43 @@ const viewMatrix = (): number[] => {
 
 const segs = tiger.paths.reduce((a, p) => a + p.cubics.length, 0);
 
+// Only one canvas is visible at a time.
+function show(el: HTMLCanvasElement): void {
+  canvas.style.display = el === canvas ? '' : 'none';
+  canvasGpu.style.display = el === canvasGpu ? '' : 'none';
+}
+
 async function draw(): Promise<void> {
-  const gpuMode = modeEl.value === 'gpu';
-  canvas.style.display = gpuMode ? 'none' : '';
-  canvasGpu.style.display = gpuMode ? '' : 'none';
-
-  if (gpuMode) {
-    const state = await ensureGpu();
-    if (!state) {
-      statsEl.textContent = 'WebGPU unavailable — falling back to CPU.';
-      modeEl.value = 'cpu';
-      return draw();
-    }
-    let t0 = performance.now();
-    const batches = tigerBatches(tiger, viewMatrix(), nile, canvasGpu.width, canvasGpu.height);
-    const frontMs = performance.now() - t0;
-    t0 = performance.now();
-    state.gpu.frame(batches, state.context.getCurrentTexture().createView());
-    const submitMs = performance.now() - t0;
-    // The GPU runs after submit; wait for it, so the next frame starts on a
-    // free GPU and the figures add up to what a frame really takes.
-    t0 = performance.now();
-    await state.device.queue.onSubmittedWorkDone();
-    const gpuMs = performance.now() - t0;
-    statsEl.textContent =
-      `${tiger.paths.length} paths · ${segs.toLocaleString()} cubics · ${z.toFixed(1)}× · ` +
-      `front (CPU Nile) ${frontMs.toFixed(0)} ms + submit ${submitMs.toFixed(0)} ms + GPU ${gpuMs.toFixed(0)} ms ` +
-      `= ${(frontMs + submitMs + gpuMs).toFixed(0)} ms a frame`;
-    return;
+  const gpu = modeEl.value === 'gpu' ? await ensureGpu() : null;
+  if (gpu) {
+    show(canvasGpu);
+    await drawGpu(gpu);
+  } else {
+    modeEl.value = 'cpu'; // also the fallback when WebGPU is unavailable
+    show(canvas);
+    drawCpu();
   }
+}
 
+async function drawGpu(state: GpuState): Promise<void> {
+  let t0 = performance.now();
+  const batches = tigerBatches(tiger, viewMatrix(), nile, canvasGpu.width, canvasGpu.height);
+  const frontMs = performance.now() - t0;
+  t0 = performance.now();
+  state.gpu.frame(batches, state.context.getCurrentTexture().createView());
+  const submitMs = performance.now() - t0;
+  // The GPU runs after submit; wait for it, so the next frame starts on a
+  // free GPU and the figures add up to what a frame really takes.
+  t0 = performance.now();
+  await state.device.queue.onSubmittedWorkDone();
+  const gpuMs = performance.now() - t0;
+  statsEl.textContent =
+    `${tiger.paths.length} paths · ${segs.toLocaleString()} cubics · ${z.toFixed(1)}× · ` +
+    `front (CPU Nile) ${frontMs.toFixed(0)} ms + submit ${submitMs.toFixed(0)} ms + GPU ${gpuMs.toFixed(0)} ms ` +
+    `= ${(frontMs + submitMs + gpuMs).toFixed(0)} ms a frame`;
+}
+
+function drawCpu(): void {
   const img = ctx.createImageData(canvas.width, canvas.height);
   img.data.fill(255);
   const t0 = performance.now();
