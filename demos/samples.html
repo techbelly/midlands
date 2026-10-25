@@ -12,6 +12,8 @@
   .pair { display: flex; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
   .c { flex: 1 1 320px; margin: 0; background: #f6f6f6; border-left: 3px solid #ccc; padding: 0.6rem 0.9rem; font: 11px/1.4 ui-monospace, Menlo, monospace; overflow-x: auto; max-height: 256px; }
   .note { color: #666; font-size: 0.85rem; }
+  .where { color: #666; font-size: 0.85rem; margin: 0.3rem 0 0; }
+  .where:empty { display: none; }
   nav a { margin-right: 1rem; }
   .nile { background: #f6f6f3; border-left: 3px solid #c9c4b5; padding: 0.6rem 0.9rem; font: 12px/1.45 ui-monospace, Menlo, monospace; overflow-x: auto; margin: 0.6rem 0; }
   .pipeline { margin: 0.5rem 0; }
@@ -38,10 +40,22 @@
   pixel under a point; its image is the tiger, drawn by the same Nile, where
   Cairo's is a photograph. Under each picture is the Nile that drew it. A
   twentieth card draws what Cairo's examples index calls Bezier gradients:
-  a Coons patch, cut into pieces and summed per pixel.
+  a Coons patch, cut into pieces and summed per pixel. The renderer menu
+  moves the rasterizing to the GPU: a card's fills and strokes become
+  beziers on the CPU, as before, and <code>RasterizePixels</code>, lowered
+  to WGSL from its intermediate form in the browser, draws them. A card the
+  GPU presenter cannot draw says why it stays on the CPU.
 </p>
 <p class="size">The samples use about 800 lines of Nile in all, and 300 lines of TypeScript for paths, text and pixels. The font is Source Serif where Cairo's asks for Sans.</p>
-<p class="note" id="stats">drawing…</p>
+<div>
+  <label>renderer
+    <select id="mode">
+      <option value="cpu" selected>CPU — Nile compiled to JavaScript</option>
+      <option value="gpu">GPU — WGSL, where the Nile lowers</option>
+    </select>
+  </label>
+  <span class="note" id="stats">drawing…</span>
+</div>
 <div id="samples"></div>
 <footer>Cairo's sample code is by Øyvind Kolås, public domain. <a href="https://github.com/techbelly/midlands">midlands on GitHub</a> — the Nile, the compiler and these demos.</footer>
 <script src="samples-app.js"></script>

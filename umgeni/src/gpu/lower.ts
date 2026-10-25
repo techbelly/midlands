@@ -288,11 +288,13 @@ const fail = (what: string): never => {
 
 // A tail feed: the values first (they read T), then T; then round again.
 // (`again` is only read by a worklist loop, which must not pop that turn.)
+// The temporaries are next0, next1, …: not f0, f1, …, since f16 and f32 are
+// WGSL's own words, and a 49-field patch has an f16.
 function again(j: number, vals: string[], ind: string): string {
   return [
     `${ind}{`,
-    ...vals.map((v, i) => `${ind}  let f${i} = ${v};`),
-    ...vals.map((_, i) => `${ind}  T${j}[${i}] = f${i};`),
+    ...vals.map((v, i) => `${ind}  let next${i} = ${v};`),
+    ...vals.map((_, i) => `${ind}  T${j}[${i}] = next${i};`),
     `${ind}  again = true;`,
     `${ind}  continue;`,
     `${ind}}`,

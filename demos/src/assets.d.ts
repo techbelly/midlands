@@ -9,6 +9,7 @@ declare module '*.nl-lib' {
   export const compileMs: number;
   // One <Name>IR per fused process; only those the pages lower are declared.
   export const RasterizePixelsIR: FusedIR;
+  export const RasterizePixelsEvenOddIR: FusedIR;
 }
 declare module '*.nl' {
   const source: string;

@@ -33,7 +33,13 @@ root builds `dist/` and serves it; `npm run demo:build` just builds.
   ([nl/clip.nl](nl/clip.nl)), the samples' gradients and image painting
   ([nl/samples.nl](nl/samples.nl)), and a twentieth card, a mesh gradient:
   a Coons patch cut into pieces and summed per pixel ([nl/patch.nl](nl/patch.nl)),
-  exact but slow (a 200-pixel patch takes over a second on the CPU).
+  exact but slow (a 200-pixel patch takes over a second on the CPU). The
+  renderer menu moves the rasterizing to the GPU for the cards the presenter
+  can draw (fills and strokes, under either rule, through `RasterizePixels`
+  and `RasterizePixelsEvenOdd` lowered in the browser); the others say why
+  they stay on the CPU. `npm run check:samples` runs the samples' own
+  pipelines that lower (the even-odd rule, the clip join, the mesh) on a real
+  GPU against the CPU.
 
 A page imports a Nile library as `import { nile } from './nl/vector.nl-lib'`.
 The `.nl-lib` file lists the `.nl` sources, and the bundler plugin
@@ -44,4 +50,4 @@ the GPU, not the compiler. The paint page is the exception.
 
 `tools/` also holds the benchmarks and the Deno scripts that check the GPU
 against the CPU (`check-tiger-gpu.ts`, `check-paint-gpu.ts`, `check-present.ts`,
-`check-lowering.ts`).
+`check-lowering.ts`, `check-samples-gpu.ts`).

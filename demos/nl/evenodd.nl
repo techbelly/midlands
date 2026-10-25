@@ -16,3 +16,8 @@ SpansOfEvenOdd : WindPix >> CoverageSpan
 
 RasterizeEvenOdd : Bezier >> CoverageSpan
     ⇒ DecomposeBeziers → GroupBy (@y, @x) → ReduceBy (@y, @x; a ⊕ +, h ⊕ +) → WindScan → SpansOfEvenOdd
+
+-- The pixels themselves, for the GPU presenter (as RasterizePixels is to
+-- RasterizeParallel).
+RasterizePixelsEvenOdd : Bezier >> CoveragePoint
+    ⇒ RasterizeEvenOdd → ExpandSpans

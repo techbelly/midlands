@@ -1,5 +1,5 @@
 // Presentation: many paths rasterized and composited on the GPU, straight to
-// a canvas — the text, paint and tiger demos all draw through it.
+// a canvas — the text, paint, tiger and samples demos all draw through it.
 //
 // Per frame, for each path: clear the grids and coverage over the path's
 // rows → the plan's passes (lower.ts, with a coverage sink) → a blended
@@ -9,18 +9,21 @@
 // offset, colour, band) rides on dynamic buffer offsets, so the generated
 // shaders run unmodified.
 //
-// Each path's clears and draw are bounded to its rows, and its passes to its
-// bounding box. Paths still run one after another (they share the grids), so
-// a frame costs roughly a fixed amount per path; rasterizing all paths in
-// one batch is the next step.
+// A frame may draw its paths through several plans (the samples page fills
+// under either rule): each path names its plan, and the plans share the
+// frame's extent and coverage. Each path's clears and draw are bounded to
+// its rows, and its passes to its bounding box. Paths still run one after
+// another (they share the grids), so a frame costs roughly a fixed amount
+// per path; rasterizing all paths in one batch is the next step.
 
-import { createExecutor, metaWords } from './execute.js';
+import { createExecutor, metaWords, type Executor } from './execute.js';
 import { META_BYTES, type Plan } from './lower.js';
 
 export interface PathBatch {
   tokens: Float32Array<ArrayBuffer>; // n × plan.inputWidth flat, already transformed/clipped
   n: number;
-  color: readonly [number, number, number]; // 0..1
+  color: readonly [number, number, number] | readonly [number, number, number, number]; // 0..1, alpha 1 if absent
+  plan?: string; // which of the presenter's plans; the only one, if absent
 }
 
 export interface Presenter {
@@ -54,24 +57,36 @@ fn fs(@builtin(position) p : vec4f) -> @location(0) vec4f {
   }
   ${paint
     ? 'let c = paint(p.x, p.y); // (a, r, g, b), premultiplied\n  return vec4f(c.y, c.z, c.w, c.x) * cov;'
-    : 'return vec4f(COLOR.rgba.rgb * cov, cov); // premultiplied src-over'}
+    : 'let a = cov * COLOR.rgba.a;\n  return vec4f(COLOR.rgba.rgb * a, a); // premultiplied src-over'}
 }
 ${paint ?? ''}
 `;
 
-// The plan's grid is the frame: extent [height, width], its sink COV.
+// The plans' grid is the frame: extent [height, width], their sink COV.
 export function createPresenter(
   device: GPUDevice,
-  plan: Plan,
+  plan: Plan | Record<string, Plan>,
   opts: { format: GPUTextureFormat; disableBands?: boolean; paint?: string },
 ): Presenter {
-  const [height, width] = plan.extent;
+  const plans: Record<string, Plan> = Array.isArray((plan as Plan).passes) ? { [(plan as Plan).name]: plan as Plan } : (plan as Record<string, Plan>);
+  const names = Object.keys(plans);
+  if (names.length === 0) throw new Error('a presenter needs at least one plan');
+  const first = plans[names[0]];
+  const [height, width] = first.extent;
+  for (const n of names) {
+    if (plans[n].extent[0] !== height || plans[n].extent[1] !== width) throw new Error(`plan '${n}' has a different extent from '${names[0]}'`);
+  }
   const { format } = opts;
-  const x = createExecutor(device, plan, { dynamic: true });
+  const executors: Record<string, Executor> = {};
+  for (const n of names) executors[n] = createExecutor(device, plans[n], { dynamic: true });
   const uStride = Math.max(256, device.limits.minUniformBufferOffsetAlignment);
   const sAlign = Math.max(256, device.limits.minStorageBufferOffsetAlignment);
-  const tokenBytes = plan.inputWidth * 4;
-  const aligned = (n: number) => Math.ceil((n * tokenBytes) / sAlign) * sAlign;
+  const planOf = (p: PathBatch): Plan => {
+    const q = plans[p.plan ?? names[0]];
+    if (!q) throw new Error(`no plan '${p.plan}' in this presenter`);
+    return q;
+  };
+  const aligned = (p: PathBatch) => Math.ceil((p.n * planOf(p).inputWidth * 4) / sAlign) * sAlign;
 
   const layoutC = device.createBindGroupLayout({
     entries: [
@@ -101,7 +116,7 @@ export function createPresenter(
 
   const frameBuf = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   device.queue.writeBuffer(frameBuf, 0, new Uint32Array([width, height, 0, 0]));
-  const cov = device.createBuffer({ size: plan.cells * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  const cov = device.createBuffer({ size: first.cells * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
 
   let pathCap = 0;
   let inCap = 0;
@@ -109,15 +124,15 @@ export function createPresenter(
   let metaBuf: GPUBuffer | null = null;
   let colorBuf: GPUBuffer | null = null;
   let inBuf: GPUBuffer | null = null;
-  let groups: GPUBindGroup[] = [];
+  let groups: Record<string, GPUBindGroup[]> = {};
   let bindC: GPUBindGroup | null = null;
 
   function ensure(paths: PathBatch[]): void {
     let needIn = 0;
     let maxBytes = 4096;
     for (const p of paths) {
-      needIn += aligned(p.n);
-      maxBytes = Math.max(maxBytes, aligned(p.n));
+      needIn += aligned(p);
+      maxBytes = Math.max(maxBytes, aligned(p));
     }
     // Every path binds maxPathBytes at its own offset, so the buffer must
     // extend that far past the last offset — not just hold the paths. (Short
@@ -135,7 +150,8 @@ export function createPresenter(
     metaBuf = device.createBuffer({ size: pathCap * uStride, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     colorBuf = device.createBuffer({ size: pathCap * uStride, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     inBuf = device.createBuffer({ size: inCap, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
-    groups = x.bind({ meta: metaBuf, input: inBuf, inputSize: maxPathBytes, sink: { COV: cov } });
+    groups = {};
+    for (const n of names) groups[n] = executors[n].bind({ meta: metaBuf, input: inBuf, inputSize: maxPathBytes, sink: { COV: cov } });
     bindC = device.createBindGroup({
       layout: layoutC,
       entries: [
@@ -150,8 +166,9 @@ export function createPresenter(
   // padded a pixel; or the whole frame.
   function box(p: PathBatch): { r0: number; r1: number; c0: number; c1: number } {
     if (opts.disableBands) return { r0: 0, r1: height, c0: 0, c1: width };
+    const w = planOf(p).inputWidth;
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (let j = 0; j < p.n * plan.inputWidth; j += 2) {
+    for (let j = 0; j < p.n * w; j += 2) {
       const px = p.tokens[j], py = p.tokens[j + 1];
       if (px < x0) x0 = px;
       if (px > x1) x1 = px;
@@ -173,11 +190,12 @@ export function createPresenter(
       let at = 0;
       drawable.forEach((p, i) => {
         const b = boxes[i];
+        const q = planOf(p);
         inOffsets.push(at);
-        device.queue.writeBuffer(metaBuf!, i * uStride, metaWords(p.n, plan.extent, { segBase: b.r0, segEnd: b.r1, minBase: b.c0, minEnd: b.c1 }));
-        device.queue.writeBuffer(colorBuf!, i * uStride, new Float32Array([...p.color, 1]));
-        device.queue.writeBuffer(inBuf!, at, p.tokens, 0, p.n * plan.inputWidth);
-        at += aligned(p.n);
+        device.queue.writeBuffer(metaBuf!, i * uStride, metaWords(p.n, q.extent, { segBase: b.r0, segEnd: b.r1, minBase: b.c0, minEnd: b.c1 }));
+        device.queue.writeBuffer(colorBuf!, i * uStride, new Float32Array([p.color[0], p.color[1], p.color[2], p.color[3] ?? 1]));
+        device.queue.writeBuffer(inBuf!, at, p.tokens, 0, p.n * q.inputWidth);
+        at += aligned(p);
       });
 
       const enc = device.createCommandEncoder({ label: 'present-frame' });
@@ -193,9 +211,10 @@ export function createPresenter(
         const { r0, r1, c0, c1 } = boxes[i];
         const rows = r1 - r0;
         if (rows === 0 || c1 === c0) return;
-        x.clearGrids(enc, r0 * width, rows * width);
+        const n = p.plan ?? names[0];
+        executors[n].clearGrids(enc, r0 * width, rows * width);
         enc.clearBuffer(cov, r0 * width * 4, rows * width * 4);
-        x.encode(enc, groups, { n: p.n, segments: rows, metaOffset: i * uStride, inputOffset: inOffsets[i] });
+        executors[n].encode(enc, groups[n], { n: p.n, segments: rows, metaOffset: i * uStride, inputOffset: inOffsets[i] });
         const rp = enc.beginRenderPass({ colorAttachments: [{ view: target, loadOp: 'load', storeOp: 'store' }] });
         rp.setPipeline(pipeC);
         rp.setBindGroup(0, bindC!, [i * uStride]);
@@ -207,7 +226,7 @@ export function createPresenter(
     },
     dispose() {
       for (const b of [frameBuf, cov, metaBuf, colorBuf, inBuf]) b?.destroy();
-      x.dispose();
+      for (const n of names) executors[n].dispose();
     },
   };
 }

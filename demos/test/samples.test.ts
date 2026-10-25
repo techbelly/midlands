@@ -44,6 +44,8 @@ describe('the even-odd rule (nl/evenodd.nl)', () => {
     const ir = library.ir.processes.find((p) => p.name === 'RasterizeEvenOdd') as FusedIR;
     const plan = lowerPipeline(ir, { extent: [16, 16], sink: coverageSink });
     expect(plan.passes.length).toBe(2);
+    const pixels = library.ir.processes.find((p) => p.name === 'RasterizePixelsEvenOdd') as FusedIR;
+    expect(lowerPipeline(pixels, { extent: [16, 16], sink: coverageSink }).passes.length).toBe(2);
   });
   it('agrees with non-zero winding on a simple shape', () => {
     const one = square(1, 1, 9, 9);
@@ -122,6 +124,11 @@ describe('clipping and masking (nl/clip.nl)', () => {
     const half = nile.RasterizeParallel().run(square(5, 5, 15, 9.5));
     const edge = nile.Intersect().run([...shape, ...half]);
     expect(pixelAt(edge, 7, 9)).toBeCloseTo(0.5, 9);
+  });
+  it('lowers to the GPU: the join reduces by + alone', () => {
+    const ir = library.ir.processes.find((p) => p.name === 'Intersect') as FusedIR;
+    const plan = lowerPipeline(ir, { extent: [16, 16], sink: coverageSink });
+    expect(plan.passes.length).toBe(2);
   });
   it('masks coverage by a texture alpha', () => {
     // MaskSpans takes a texture, so it is instantiated where it is used.
