@@ -65,13 +65,16 @@ describe('dashes (nl/dash.nl)', () => {
   });
   it('cuts a line into dashes of the pattern, carrying the phase across beziers', () => {
     // 100 long, on 20 off 10: dashes at 0–20, 30–50, 60–80, 90–100.
-    const dashes = nile.DashBeziers({ on: 20, off: 10, phase: 0 }).run([seg(0, 0, 60, 0), seg(60, 0, 100, 0)]);
+    const dashes = nile.DashBeziers({ on1: 20, off1: 10, on2: 20, off2: 10, phase: 0 }).run([seg(0, 0, 60, 0), seg(60, 0, 100, 0)]);
     const starts = dashes.map((b) => b[0]);
     expect(starts).toEqual([0, 30, 60, 90]);
     expect(dashes.reduce((n, b) => n + chord(b), 0)).toBeCloseTo(70, 9);
     // A phase moves the pattern back along the path.
-    const shifted = nile.DashBeziers({ on: 20, off: 10, phase: 25 }).run([seg(0, 0, 100, 0)]);
+    const shifted = nile.DashBeziers({ on1: 20, off1: 10, on2: 20, off2: 10, phase: 25 }).run([seg(0, 0, 100, 0)]);
     expect(shifted.map((b) => b[0])).toEqual([5, 35, 65, 95]);
+    // Cairo's dash sample: 50 on, 10 off, 10 on, 10 off, offset -50.
+    const four = nile.DashBeziers({ on1: 50, off1: 10, on2: 10, off2: 10, phase: -50 }).run([seg(0, 0, 160, 0)]);
+    expect(four.map((b) => [b[0], b[4]])).toEqual([[0, 20], [30, 40], [50, 100], [110, 120], [130, 160]]); // −50 into an 80-long pattern is 30 in: 20 of the first dash remain
   });
   it('strokes disconnected pieces with caps at every end, nothing between', () => {
     const w = 4;
@@ -93,7 +96,7 @@ describe('dashes (nl/dash.nl)', () => {
     expect(a).toEqual(b);
   });
   it('dashes a cubic path end to end', () => {
-    const outline = nile.DashedStroke({ M: I, w: 3, l: 4, c: 0, on: 10, off: 5, phase: 0 }).run([cubic(0, 10, 90, 10)]);
+    const outline = nile.DashedStroke({ M: I, w: 3, l: 4, c: 0, on1: 10, off1: 5, on2: 10, off2: 5, phase: 0 }).run([cubic(0, 10, 90, 10)]);
     const spans = nile.FillBeziers({ min: [0, 0], max: [100, 20] }).run(outline);
     expect(coverageAt(spans, 5, 9)).toBeCloseTo(1, 9);
     expect(coverageAt(spans, 12, 9)).toBeCloseTo(0, 9);
