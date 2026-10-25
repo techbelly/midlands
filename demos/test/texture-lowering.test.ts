@@ -3,7 +3,7 @@
 // headless by tools/check-paint-gpu.ts.)
 import { read } from '../src/sources.js';
 import { describe, expect, it } from 'vitest';
-import { compileProgram } from '../../umgeni/src/compile.js';
+import { compileLibrary } from '../../umgeni/src/compile.js';
 import { lowerTexture } from '../../umgeni/src/gpu/texture.js';
 import { PRESETS } from '../paint-presets.js';
 
@@ -12,7 +12,7 @@ const library = ['types', 'texture', 'compositor', 'gradient', 'filter'].map((n)
 describe('texture lowering', () => {
   for (const p of PRESETS) {
     it(p.name, () => {
-      const tex = lowerTexture(compileProgram([...library, p.source]).ir, 'Paint');
+      const tex = lowerTexture(compileLibrary([...library, p.source]).ir, 'Paint');
       if (/blur|bicubic/i.test(p.name)) {
         expect(tex.ok).toBe(false);
         if (!tex.ok) expect(tex.reason).toMatch(/not a map kernel/);

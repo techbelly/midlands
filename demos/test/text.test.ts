@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { compileProgramFile } from '../src/sources.js';
+import { compileLibraryFile } from '../src/sources.js';
 import { renderText } from '../src/text/render.js';
 import { asciiArt, paintCoverage, textTokens } from '../src/text/host.js';
 import { run, streamer } from '../../umgeni/src/cpu/runtime.js';
 
-const program = compileProgramFile('demos/nl/text.program');
+const library = compileLibraryFile('demos/nl/text.nl-lib');
 
 function coverage(text: string, size: number, width: number, height: number, margin = 2) {
-  const { spans } = renderText(program, text, { size, width, height, margin });
+  const { spans } = renderText(library, text, { size, width, height, margin });
   return paintCoverage(spans, width, height);
 }
 
@@ -25,15 +25,15 @@ function runsInRow(buf: Float64Array, width: number, y: number, threshold = 0.5)
 
 describe('the text pipeline (nl/text.nl)', () => {
   it('compiles with nothing unsupported', () => {
-    expect(program.unsupported).toEqual([]);
-    expect(program.registry.has('TextSpans')).toBe(true);
-    expect(program.registry.has('TextLayout')).toBe(true);
+    expect(library.unsupported).toEqual([]);
+    expect(library.registry.has('TextSpans')).toBe(true);
+    expect(library.registry.has('TextLayout')).toBe(true);
   });
 
   it('LayoutGlyphs advances the pen and wraps in Nile', () => {
     // Wrap width 3em, line height 1em; two glyphs of advance 2em: the second
     // would end at 4em > 3em, so it wraps to (0, 1).
-    const s = streamer(program.registry.get('LayoutGlyphs')!([3, 1]));
+    const s = streamer(library.registry.get('LayoutGlyphs')!([3, 1]));
     const z = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6];
     expect(s.push([...z, 2, 1, 0, 0])).toEqual([z]); // first glyph at the origin
     expect(s.push([...z, 2, 1, 0, 0])).toEqual([[0.1, 1.2, 0.3, 1.4, 0.5, 1.6]]);
@@ -45,7 +45,7 @@ describe('the text pipeline (nl/text.nl)', () => {
   // whole TextLayout (Reverse → WordWidths → Reverse → LayoutGlyphs).
   const layout = (w: number, kinds: number[]) => {
     const z = [0, 0, 0, 0, 0, 0];
-    const out = run(program.registry.get('TextLayout')!([w, 1]), kinds.map((k) => [...z, 1, 1, k, 0]));
+    const out = run(library.registry.get('TextLayout')!([w, 1]), kinds.map((k) => [...z, 1, 1, k, 0]));
     return out.map((t) => [t[0], t[1]]);
   };
 
@@ -102,14 +102,14 @@ describe('the text pipeline (nl/text.nl)', () => {
   it('wraps to a new line when the measure is exceeded', () => {
     const W = 30;
     const H = 40;
-    const { spans } = renderText(program, 'HHHH', { size: 12, width: W, height: H, margin: 2 });
+    const { spans } = renderText(library, 'HHHH', { size: 12, width: W, height: H, margin: 2 });
     const ys = spans.filter((s) => Math.abs(s[2]) > 0.5).map((s) => s[1]);
     // Glyphs land on (at least) two distinct line bands.
     expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(12);
   });
 
   it('space and unknown glyphs still produce well-formed tokens', () => {
-    const tokens = textTokens(program.api, 'A ~');
+    const tokens = textTokens(library.api, 'A ~');
     for (const t of tokens) expect(t).toHaveLength(10);
     // The space is a single degenerate bezier carrying its advance.
     const spaceToken = tokens.find((t) => t.slice(0, 6).every((v) => v === 0));
@@ -124,11 +124,11 @@ describe('the text pipeline (nl/text.nl)', () => {
   });
 
   it('renders identically with kernel fusion (incl. the nested Rasterize splice)', () => {
-    const fused = compileProgramFile('demos/nl/text.program', { fuse: true });
+    const fused = compileLibraryFile('demos/nl/text.nl-lib', { fuse: true });
     expect(fused.source).toContain('// segment: LayoutGlyphs → TransformBeziers → ClipBeziers → DecomposeBeziers');
     const W = 76;
     const H = 14;
-    const a = renderText(program, 'HELLO WRAP', { size: 12, width: W, height: H, margin: 2 });
+    const a = renderText(library, 'HELLO WRAP', { size: 12, width: W, height: H, margin: 2 });
     const b = renderText(fused, 'HELLO WRAP', { size: 12, width: W, height: H, margin: 2 });
     expect(b.spans).toEqual(a.spans);
   });

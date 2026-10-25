@@ -1,5 +1,5 @@
 // Builds the demos as a static site in demos/dist:
-//   1. bundle tools/nile-plugin.ts (node), which compiles *.program imports
+//   1. bundle tools/nile-plugin.ts (node), which compiles *.nl-lib imports
 //   2. bundle each page's main (browser, iife) -> demos/dist/*-app.js
 //   3. copy the pages alongside
 // Open demos/dist/index.html directly, or serve the folder (GitHub Pages).

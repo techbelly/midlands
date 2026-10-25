@@ -6,7 +6,7 @@
 // Run: deno run --allow-read --unstable-sloppy-imports tools/check-paint-gpu.ts
 
 import { read } from '../src/sources.js';
-import { compileProgram } from '../../umgeni/src/compile.js';
+import { compileLibrary } from '../../umgeni/src/compile.js';
 import { createPresenter } from '../../umgeni/src/gpu/present.js';
 import { lowerPipeline } from '../../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../../umgeni/src/gpu/execute.js';
@@ -16,7 +16,7 @@ import { PAINT_GLUE, paintShapes } from '../src/vector/paint.js';
 import { writePixels } from '../src/vector/spans.js';
 import { PRESETS } from '../paint-presets.js';
 
-const library = ['types', 'bezier', 'stroke', 'rasterize', 'texture', 'compositor', 'gradient', 'filter']
+const gezira = ['types', 'bezier', 'stroke', 'rasterize', 'texture', 'compositor', 'gradient', 'filter']
   .map((n) => read(`gezira/${n}.nl`))
   .concat(read('demos/nl/vector.nl'), read('demos/nl/spans.nl'), read('umgeni/nl/rasterize-parallel.nl'));
 
@@ -26,21 +26,21 @@ const device = (await requestDevice())!;
 let failures = 0;
 
 for (const preset of PRESETS) {
-  const program = compileProgram([...library, preset.source, PAINT_GLUE]);
-  if (program.unsupported.length > 0) throw new Error(`${preset.name}: ${JSON.stringify(program.unsupported)}`);
-  const tex = lowerTexture(program.ir, 'Paint');
+  const library = compileLibrary([...gezira, preset.source, PAINT_GLUE]);
+  if (library.unsupported.length > 0) throw new Error(`${preset.name}: ${JSON.stringify(library.unsupported)}`);
+  const tex = lowerTexture(library.ir, 'Paint');
   if (!tex.ok) {
     console.log(`${preset.name}: CPU only — ${tex.reason}`);
     continue;
   }
-  const shapes = paintShapes(program.api, W, H);
+  const shapes = paintShapes(library.api, W, H);
 
   // CPU reference: the same beziers, rasterized and painted in JS.
   const cpu = { width: W, height: H, data: new Uint8ClampedArray(W * H * 4).fill(255) };
-  for (const bs of shapes) writePixels(cpu, program.api, program.api.PaintBeziers({ min: [0, 0], max: [W, H] }).run(bs));
+  for (const bs of shapes) writePixels(cpu, library.api, library.api.PaintBeziers({ min: [0, 0], max: [W, H] }).run(bs));
 
   // GPU: RasterizeParallel lowered from source, composite with the lowered paint().
-  const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizePixels');
+  const fused = library.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizePixels');
   if (!fused || fused.k !== 'fused') throw new Error('RasterizePixels not fused');
   const gpu = createPresenter(device, lowerPipeline(fused, { extent: [H, W], sink: coverageSink }), { format: 'rgba8unorm', paint: tex.wgsl });
   const target = device.createTexture({

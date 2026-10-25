@@ -2,7 +2,7 @@
 // semantics, staged), every plain kernel of a program: random parameters and
 // streams, outputs equal bit for bit. Call inside a describe().
 import { expect, it } from 'vitest';
-import { compileProgram } from '../src/compile.js';
+import { compileLibrary } from '../src/compile.js';
 import { parseProgram } from '../src/parser.js';
 import { kernelContexts } from '../src/elaborate.js';
 import { interpretKernel } from '../src/semantics/concrete.js';
@@ -15,7 +15,7 @@ const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648
 const value = () => [0, 1, -1, 0.5, 2, 3.25, -2.75][Math.floor(rnd() * 7)] + (rnd() < 0.5 ? 0 : Math.round(rnd() * 160) / 16);
 
 export function agree(sources: string[]) {
-  const compiled = compileProgram(sources);
+  const compiled = compileLibrary(sources);
   const { program, kernels } = kernelContexts(parseProgram(sources).modules);
   it('covers the kernels', () => expect(kernels.size).toBeGreaterThan(3));
   for (const [name, ctx] of kernels) {

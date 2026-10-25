@@ -11,7 +11,7 @@
 // Run: deno run --allow-read --allow-env --unstable-sloppy-imports demos/tools/check-lowering.ts
 
 import { read } from '../src/sources.js';
-import { compileProgram } from '../../umgeni/src/compile.js';
+import { compileLibrary } from '../../umgeni/src/compile.js';
 import { createRasterHost } from '../../umgeni/src/gpu/raster.js';
 import { lowerPipeline } from '../../umgeni/src/gpu/lower.js';
 import { appendSink, coverageSink, createExecutor, metaWords, wholeGrid } from '../../umgeni/src/gpu/execute.js';
@@ -39,7 +39,7 @@ const spanSink: Sink = {
 };
 import { paintCoverage, textSpansParams, textTokens } from '../src/text/host.js';
 
-const program = compileProgram([
+const library = compileLibrary([
   read('gezira/types.nl'),
   read('gezira/bezier.nl'),
   read('gezira/rasterize.nl'),
@@ -50,13 +50,13 @@ const program = compileProgram([
   'RasterizeMapped (M : Matrix) : Bezier >> CoverageSpan\n    ⇒ TransformBeziers (M) → RasterizeParallel\n',
   'Expand : CoverageSpan >> CoveragePoint\n    ⇒ ExpandSpans\n',
 ]);
-if (program.unsupported.length > 0) throw new Error(JSON.stringify(program.unsupported));
+if (library.unsupported.length > 0) throw new Error(JSON.stringify(library.unsupported));
 const fused = (name: string) => {
-  const f = program.ir.processes.find((p) => p.k === 'fused' && p.name === name);
+  const f = library.ir.processes.find((p) => p.k === 'fused' && p.name === name);
   if (!f || f.k !== 'fused') throw new Error(`${name} not fused`);
   return f;
 };
-const nile = program.api;
+const nile = library.api;
 
 const W = 320;
 const H = 48;

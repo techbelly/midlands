@@ -73,7 +73,7 @@ export interface TokenLayout {
   fields: Record<string, { at: number; width: number }>;
 }
 
-// Where a registry keeps its program's token layouts (set by generated code).
+// Where a registry keeps its library's token layouts (set by generated code).
 export const TYPES = Symbol.for('midlands.nile.types');
 
 export function describeTypes(R: object, types: Record<string, TokenLayout>): void {
@@ -120,7 +120,7 @@ export function tokenType(registry: object, name: string): TokenType {
   };
 }
 
-// --- a program's API --------------------------------------------------------
+// --- a library's API --------------------------------------------------------
 
 // An Op that can also simply run: push every token, end, return what it emitted.
 export interface RunnableOp extends Op {
@@ -128,7 +128,7 @@ export interface RunnableOp extends Op {
 }
 export type ProcessFn = (params?: Params) => RunnableOp;
 
-// A compiled program as the host sees it: each process by name, taking its
+// A compiled library as the host sees it: each process by name, taking its
 // parameters by name, and each named record type for reading and building
 // tokens. (Nile process and type names start with a capital, so `types`
 // cannot collide.)

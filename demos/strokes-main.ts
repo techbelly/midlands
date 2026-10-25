@@ -3,7 +3,7 @@
 
 import { strokeOutline } from './src/vector/draw.js';
 import { hexRGB, paintSpans } from './src/vector/spans.js';
-import { nile } from './nl/vector.program';
+import { nile } from './nl/vector.nl-lib';
 import { quoteNile } from './src/quote.js';
 import vectorNl from './nl/vector.nl';
 import spansNl from './nl/spans.nl';

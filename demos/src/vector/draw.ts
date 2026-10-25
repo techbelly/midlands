@@ -1,5 +1,5 @@
-// Drawing with a compiled Nile program (nile = api(registry), or
-// program.api): each process by name, its parameters by name, and
+// Drawing with a compiled Nile library (nile = api(registry), or
+// library.api): each process by name, its parameters by name, and
 // .run(tokens) to push a stream through it and collect what it emits.
 
 import type { Api } from '../../../umgeni/src/cpu/runtime.js';

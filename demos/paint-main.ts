@@ -3,7 +3,7 @@
 // every edit; three shapes are then rasterized and painted with `Paint` —
 // on the CPU, or on the GPU with `Paint` lowered to a WGSL function.
 
-import { compileProgram, type CompiledProgram } from '../umgeni/src/compile.js';
+import { compileLibrary, type CompiledLibrary } from '../umgeni/src/compile.js';
 import { createPresenter, type Presenter } from '../umgeni/src/gpu/present.js';
 import { lowerPipeline } from '../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../umgeni/src/gpu/execute.js';
@@ -43,13 +43,13 @@ const ctx = canvas.getContext('2d')!;
 const W = canvas.width;
 const H = canvas.height;
 
-let program: CompiledProgram | null = null;
+let library: CompiledLibrary | null = null;
 let compileNote = '';
 
 function compile(): boolean {
   const t0 = performance.now();
   try {
-    const p = compileProgram([...LIBRARY, editor.value, PAINT_GLUE]);
+    const p = compileLibrary([...LIBRARY, editor.value, PAINT_GLUE]);
     const ms = performance.now() - t0;
     // The library compiles completely, so anything unsupported is from the
     // editor (or depends on something there that is).
@@ -59,7 +59,7 @@ function compile(): boolean {
       statusEl.className = 'err';
       return false;
     }
-    program = p;
+    library = p;
     statusEl.className = '';
     compileNote =
       `Compiled in your browser in ${ms.toFixed(0)} ms: ${p.modules.reduce((n, m) => n + m.decls.length, 0)} ` +
@@ -78,7 +78,7 @@ let device: GPUDevice | null | undefined;
 let gpuContext: GPUCanvasContext | null = null;
 let gpu: { paint: string; renderer: Presenter } | null = null;
 
-async function gpuRenderer(p: CompiledProgram, paint: string): Promise<Presenter | null> {
+async function gpuRenderer(p: CompiledLibrary, paint: string): Promise<Presenter | null> {
   if (device === undefined) {
     device = await requestDevice();
     gpuContext = device ? canvasGpu.getContext('webgpu') : null;
@@ -97,8 +97,8 @@ async function gpuRenderer(p: CompiledProgram, paint: string): Promise<Presenter
 }
 
 async function render(): Promise<void> {
-  if (!program) return;
-  const p = program;
+  if (!library) return;
+  const p = library;
   const t0 = performance.now();
   const shapes = paintShapes(p.api, W, H);
   const geomMs = performance.now() - t0;

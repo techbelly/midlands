@@ -6,7 +6,7 @@
 // Run: deno run --allow-read --unstable-sloppy-imports tools/check-tiger-gpu.ts [size] [zoom]
 // (zoom > 1 magnifies about the centre, as the demo's double-click does)
 
-import { compileProgramFile, read } from '../src/sources.js';
+import { compileLibraryFile, read } from '../src/sources.js';
 import { createPresenter } from '../../umgeni/src/gpu/present.js';
 import { lowerPipeline } from '../../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../../umgeni/src/gpu/execute.js';
@@ -16,7 +16,7 @@ import { parseSvg } from '../src/vector/svg.js';
 import { drawTiger, fitView, paintPaths, tigerPaths, toBatches } from '../src/vector/tiger.js';
 
 
-const vector = compileProgramFile('demos/nl/vector.program');
+const vector = compileLibraryFile('demos/nl/vector.nl-lib');
 const tiger = parseSvg(read('demos/tiger.svg'), vector.api);
 
 const W = Number(Deno.args[0] ?? 512);

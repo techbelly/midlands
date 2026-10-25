@@ -1,5 +1,5 @@
 // The tiger demo shell: zoom/pan state and canvas plumbing. Ported from
-// chari/web/tiger-main.ts; the pipeline is Umgeni-compiled (nl/vector.program).
+// chari/web/tiger-main.ts; the pipeline is Umgeni-compiled (nl/vector.nl-lib).
 
 import { parseSvg } from './src/vector/svg.js';
 import type { Api } from './src/vector/draw.js';
@@ -9,7 +9,7 @@ import { createPresenter } from '../umgeni/src/gpu/present.js';
 import { lowerPipeline } from '../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../umgeni/src/gpu/execute.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
-import { nile, RasterizePixelsIR } from './nl/vector.program';
+import { nile, RasterizePixelsIR } from './nl/vector.nl-lib';
 import svgSrc from './tiger.svg';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
@@ -34,7 +34,7 @@ const statsEl = document.getElementById('stats')!;
 const base = Math.min(canvas.width, canvas.height) / 900;
 
 // A back end rasterizes and composites the paths, and resolves to its time
-// in ms. Each is built once from the compiled program and the canvas it
+// in ms. Each is built once from the compiled library and the canvas it
 // draws on — the same Nile either way: RasterizeParallel → PaintSpans as
 // JS for the CPU, RasterizePixels as WGSL lowered from its IR for the GPU.
 type BackEnd = (paths: TigerPath[]) => Promise<number>;

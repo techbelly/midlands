@@ -1,7 +1,7 @@
 // What the demo bundles import as data (demos/tools/build.mjs loaders):
-// Nile source and SVG as text, fonts as bytes, and Nile programs compiled
+// Nile source and SVG as text, fonts as bytes, and Nile libraries compiled
 // (demos/tools/nile-plugin.ts).
-declare module '*.program' {
+declare module '*.nl-lib' {
   import type { Api } from '../../umgeni/src/cpu/runtime.js';
   import type { FusedIR } from '../../umgeni/src/ir.js';
   export const nile: Api;

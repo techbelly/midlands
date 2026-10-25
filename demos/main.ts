@@ -1,5 +1,5 @@
 // The web demo shell: DOM in, pixels out. The pipeline itself is
-// nl/text.program — compiled by Umgeni at bundle time (tools/nile-plugin.ts)
+// nl/text.nl-lib — compiled by Umgeni at bundle time (tools/nile-plugin.ts)
 // into generated JS plus RasterizeParallel as fused IR (plain data).
 //
 // Three rendering paths over the same Nile source:
@@ -25,7 +25,7 @@ import { createPresenter, type Presenter } from '../umgeni/src/gpu/present.js';
 import { lowerPipeline } from '../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../umgeni/src/gpu/execute.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
-import { compileMs, nile, RasterizePixelsIR } from './nl/text.program';
+import { compileMs, nile, RasterizePixelsIR } from './nl/text.nl-lib';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
 import textNl from './nl/text.nl';

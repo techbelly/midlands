@@ -1,6 +1,6 @@
 // Running a plan (lower.ts): buffers by role, a bind group per pass, and the
 // dispatches, plus the two sinks a host can give the lowering for the
-// pipeline's final emits. Nothing here knows which Nile program is running.
+// pipeline's final emits. Nothing here knows which Nile it is running.
 
 import { META_BYTES, type Binding, type Plan, type Sink } from './lower.js';
 import { WORKGROUP_SIZE } from './wgsl.js';

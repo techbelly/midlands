@@ -31,9 +31,9 @@ Nile ─Ohm─▶ syntax tree ─sugar.mooi─▶ core Nile ─nile.mooi, staged
   ([domain.ts](src/semantics/domain.ts)): make a number, add, compare,
   remember a value, emit a token, and so on. Hand it real numbers
   ([concrete.ts](src/semantics/concrete.ts)) and running the definition
-  runs the program: an interpreter. Hand it placeholders that write down
+  runs the Nile: an interpreter. Hand it placeholders that write down
   each operation instead of doing it ([staged.ts](src/semantics/staged.ts))
-  and what it writes down is the compiled program (the *scalar IR*, an
+  and what it writes down is the compiled code (the *scalar IR*, an
   intermediate form in which every record has been flattened to plain
   numbers). The same equations do both jobs.
 - **Processes as values**: a Nile process may say, mid-stream, `⇒ A → B`:
@@ -70,14 +70,14 @@ subexpression elimination*, CSE).
 
 ## The host interface
 
-A compiled program is used through its API: `program.api`, or
+A compiled library is used through its API: `library.api`, or
 `api(registry)` for a registry generated at build time. Each process is a
 function taking its parameters by the names its Nile signature gives them,
 checked for presence and size; `.run(tokens)` streams tokens through and
 returns what it emits:
 
 ```ts
-const nile = program.api;
+const nile = library.api;
 const spans = nile.SvgFill({ V: view, R: svg.matrix, min: [0, 0], max: [W, H] }).run(cubics);
 ```
 

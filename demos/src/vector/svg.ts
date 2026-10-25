@@ -3,7 +3,7 @@
 // stroke-width; path commands M L H V C S Z, absolute and relative).
 // Regex-based, DOM-free: runs in the browser and in tests. The path
 // commands are interpreted in Nile (nl/svg.nl), so parsing takes the
-// compiled vector program.
+// compiled vector library.
 
 import type { Api } from './draw.js';
 

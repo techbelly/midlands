@@ -11,12 +11,12 @@
 
 import { describe, expect, it } from 'vitest';
 import { read } from '../src/sources.js';
-import { compileProgram } from '../../umgeni/src/compile.js';
+import { compileLibrary } from '../../umgeni/src/compile.js';
 import * as rt from '../../umgeni/src/cpu/runtime.js';
 import { textSpansParams, textTokens } from '../src/text/host.js';
 
 
-const program = compileProgram([
+const library = compileLibrary([
   read('gezira/types.nl'),
   read('gezira/bezier.nl'),
   read('gezira/rasterize.nl'),
@@ -34,9 +34,9 @@ function runOp(op: rt.Op, tokens: number[][]): number[][] {
 
 function decomposed(): rt.Op {
   return rt.pipeline([
-    program.registry.get('SumByPixel')!(),
-    program.registry.get('WindScanline')!(),
-    program.registry.get('SpansOfPixels')!(),
+    library.registry.get('SumByPixel')!(),
+    library.registry.get('WindScanline')!(),
+    library.registry.get('SpansOfPixels')!(),
   ]);
 }
 
@@ -80,7 +80,7 @@ function sampleStream(seed: number, count: number): number[][] {
 describe('CombineEdgeSamples ≡ SumByPixel → WindScanline → SpansOfPixels', () => {
   it('compiles the decomposition (plain sequential Nile, no new syntax)', () => {
     for (const name of ['SumByPixel', 'WindScanline', 'SpansOfPixels', 'RasterizeScan']) {
-      expect(program.registry.has(name), name).toBe(true);
+      expect(library.registry.has(name), name).toBe(true);
     }
   });
 
@@ -89,7 +89,7 @@ describe('CombineEdgeSamples ≡ SumByPixel → WindScanline → SpansOfPixels',
       [3.5, 0.5, 0.4, 0.4], [7.5, 0.5, -0.4, -0.4],
       [2.5, 2.5, 0.9, 0.2], [3.5, 2.5, 0.1, 0.8], [9.5, 2.5, -1, -1],
     ];
-    const ref = runOp(program.registry.get('CombineEdgeSamples')!(), samples);
+    const ref = runOp(library.registry.get('CombineEdgeSamples')!(), samples);
     const dec = runOp(decomposed(), samples);
     expect(dec).toEqual(ref);
   });
@@ -97,7 +97,7 @@ describe('CombineEdgeSamples ≡ SumByPixel → WindScanline → SpansOfPixels',
   it('reproduces the reference exactly on random streams (incl. merged pixels)', () => {
     for (const seed of [1, 2, 3, 4, 5]) {
       const samples = sampleStream(seed, 200);
-      const ref = runOp(program.registry.get('CombineEdgeSamples')!(), samples);
+      const ref = runOp(library.registry.get('CombineEdgeSamples')!(), samples);
       const dec = runOp(decomposed(), samples);
       compareSpans(dec, ref, 1e-12);
     }
@@ -105,26 +105,26 @@ describe('CombineEdgeSamples ≡ SumByPixel → WindScanline → SpansOfPixels',
 
   it('reproduces the reference initial-state artifacts (first sample off-origin)', () => {
     for (const first of [[5.5, 0.5, 0.3, 0.3], [4.5, 3.5, 0.7, 0.7]]) {
-      const ref = runOp(program.registry.get('CombineEdgeSamples')!(), [first]);
+      const ref = runOp(library.registry.get('CombineEdgeSamples')!(), [first]);
       const dec = runOp(decomposed(), [first]);
       expect(dec).toEqual(ref);
     }
     // Empty stream: both emit the reference's (0, 0, 0, 1) epilogue span.
     expect(runOp(decomposed(), [])).toEqual(
-      runOp(program.registry.get('CombineEdgeSamples')!(), []),
+      runOp(library.registry.get('CombineEdgeSamples')!(), []),
     );
   });
 
   it('RasterizeScan matches Rasterize on real text geometry', () => {
     const params = textSpansParams({ size: 14, width: 200, height: 60, margin: 4 });
-    const front = program.api.TextBeziers(params);
+    const front = library.api.TextBeziers(params);
     const beziers: number[][] = [];
     front.setEmit((t) => beziers.push(t));
-    for (const t of textTokens(program.api, 'HELLO WORLD')) front.push(t);
+    for (const t of textTokens(library.api, 'HELLO WORLD')) front.push(t);
     front.end();
 
-    const ref = runOp(program.registry.get('Rasterize')!(), beziers);
-    const dec = runOp(program.registry.get('RasterizeScan')!(), beziers);
+    const ref = runOp(library.registry.get('Rasterize')!(), beziers);
+    const dec = runOp(library.registry.get('RasterizeScan')!(), beziers);
     expect(ref.length).toBeGreaterThan(500);
     const maxDiff = compareSpans(dec, ref, 1e-12);
     // Report the actual float-reassociation gap in the test output.

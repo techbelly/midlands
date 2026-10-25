@@ -10,16 +10,16 @@
 //   deno run --allow-read --unstable-sloppy-imports tools/bench-gpu.ts
 
 import { readFileSync } from 'node:fs';
-import { compileProgram } from '../src/compile.js';
+import { compileLibrary } from '../src/compile.js';
 import { createGpuMapKernel, requestDevice } from '../src/gpu/runtime.js';
 import { isMapKernel } from '../src/gpu/classify.js';
 
 const dir = new URL('../test/fixtures/', import.meta.url);
 const read = (f: string) => readFileSync(new URL(f, dir), 'utf8');
-const program = compileProgram([read('types.nl'), read('bezier.nl'), read('rasterize.nl')]);
+const library = compileLibrary([read('types.nl'), read('bezier.nl'), read('rasterize.nl')]);
 
 // How much of the corpus Phase A covers, for honesty:
-const kernels = program.ir.processes.filter((p) => p.k === 'kernel');
+const kernels = library.ir.processes.filter((p) => p.k === 'kernel');
 const maps = kernels.filter((k) => k.k === 'kernel' && isMapKernel(k));
 console.log(`map-class kernels here: ${maps.map((k) => k.name).join(', ')} (${maps.length}/${kernels.length})`);
 
@@ -44,7 +44,7 @@ function median(xs: number[]): number {
 // CPU path: the compiled fused JS kernel, batch driven token by token
 // (its native calling convention).
 function cpuRun(input: Float32Array, n: number): Float64Array {
-  const op = program.registry.get('TransformBeziers')!(M);
+  const op = library.registry.get('TransformBeziers')!(M);
   const out = new Float64Array(n * WIDTH);
   let at = 0;
   op.setEmit((t) => {

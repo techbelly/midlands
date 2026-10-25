@@ -4,21 +4,21 @@
 
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { compileProgramFile, read } from '../src/sources.js';
+import { compileLibraryFile, read } from '../src/sources.js';
 import { strokeOutline } from '../src/vector/draw.js';
 import { paintSpans } from '../src/vector/spans.js';
 import { parseSvg, pathCubics, pathSubpaths } from '../src/vector/svg.js';
 import { drawTiger, fitView } from '../src/vector/tiger.js';
 
 
-const program = compileProgramFile('demos/nl/vector.program');
-const tiger = parseSvg(read('demos/tiger.svg'), program.api);
+const library = compileLibraryFile('demos/nl/vector.nl-lib');
+const tiger = parseSvg(read('demos/tiger.svg'), library.api);
 
 describe('the tiger demo, headless', () => {
   it('compiles the gezira kernels with nothing unsupported', () => {
-    expect(program.unsupported).toEqual([]);
+    expect(library.unsupported).toEqual([]);
     for (const name of ['FillPath', 'StrokeOutline', 'FillBeziers']) {
-      expect(program.registry.has(name), name).toBe(true);
+      expect(library.registry.has(name), name).toBe(true);
     }
   });
 
@@ -36,7 +36,7 @@ describe('the tiger demo, headless', () => {
     const H = 128;
     const img = { width: W, height: H, data: new Uint8ClampedArray(W * H * 4).fill(255) };
     const t0 = performance.now();
-    const paths = drawTiger(img, tiger, fitView(W, H), program.api);
+    const paths = drawTiger(img, tiger, fitView(W, H), library.api);
     const ms = performance.now() - t0;
     expect(paths).toBe(240);
     let colored = 0;
@@ -54,7 +54,7 @@ describe('the tiger demo, headless', () => {
     const img = { width: 4, height: 1, data: new Uint8ClampedArray(16).fill(255) };
     // The rasterizer emits a zero-length span between two adjacent edge
     // samples, carrying the interior's coverage; it must paint nothing.
-    paintSpans(img, program.api, [[0.5, 0.5, 0.5, 1], [1.5, 0.5, 1, 0], [1.5, 0.5, 0.25, 2]], [0, 0, 0]);
+    paintSpans(img, library.api, [[0.5, 0.5, 0.5, 1], [1.5, 0.5, 1, 0], [1.5, 0.5, 0.25, 2]], [0, 0, 0]);
     expect([...img.data].filter((_, i) => i % 4 === 0)).toEqual([128, 191, 191, 255]);
   });
 
@@ -62,28 +62,28 @@ describe('the tiger demo, headless', () => {
   // reproduce the tiger exactly.
   it('renders the same tiger, pixel for pixel', () => {
     const img = { width: 200, height: 200, data: new Uint8ClampedArray(200 * 200 * 4).fill(255) };
-    drawTiger(img, tiger, fitView(200, 200), program.api);
+    drawTiger(img, tiger, fitView(200, 200), library.api);
     expect(createHash('sha256').update(img.data).digest('hex')).toMatchSnapshot();
   });
 
   it('strokes subpaths as SVG draws them: closed only by Z', () => {
-    const subpaths = (d: string) => pathSubpaths(program.api, d);
+    const subpaths = (d: string) => pathSubpaths(library.api, d);
     expect(subpaths('M0 0 L10 0 L10 10').map((p) => p.length)).toEqual([2]);
     expect(subpaths('M0 0 L10 0 L10 10 Z').map((p) => p.length)).toEqual([3]);
     expect(subpaths('M0 0 L10 0 M20 0 L30 0').map((p) => p.length)).toEqual([1, 1]);
   });
 
   it('interprets path commands as SVG does (in Nile: nl/svg.nl)', () => {
-    const ends = (d: string) => pathCubics(program.api, d).map((c) => c.slice(6));
+    const ends = (d: string) => pathCubics(library.api, d).map((c) => c.slice(6));
     // relative coordinates, H and V, implicit repeats (after m they are l)
     expect(ends('m1 1 2 0 h3 v4 H0 V1')).toEqual([[3, 1], [6, 1], [6, 5], [0, 5], [0, 1], [1, 1]]);
     // a relative m is measured from the current point, or after z from the subpath's start
     expect(ends('M0 0 l10 0 m5 5 l1 0')).toEqual([[10, 0], [0, 0], [16, 5], [15, 5]]);
     expect(ends('M2 2 l10 0 z m5 5 l1 0')).toEqual([[12, 2], [2, 2], [8, 7], [7, 7]]);
     // S reflects the previous control point, and only after C or S
-    const [, s] = pathCubics(program.api, 'M0 0 C1 0 2 1 3 3 S5 6 6 6');
+    const [, s] = pathCubics(library.api, 'M0 0 C1 0 2 1 3 3 S5 6 6 6');
     expect(s.slice(0, 4)).toEqual([3, 3, 4, 5]);
-    expect(pathCubics(program.api, 'M0 0 L3 3 S5 6 6 6')[1].slice(0, 4)).toEqual([3, 3, 3, 3]);
+    expect(pathCubics(library.api, 'M0 0 L3 3 S5 6 6 6')[1].slice(0, 4)).toEqual([3, 3, 3, 3]);
   });
 
   it('strokes a path with caps and joins (the strokes demo pipeline)', () => {
@@ -92,10 +92,10 @@ describe('the tiger demo, headless', () => {
       [20, 90, 40, 60, 60, 40, 80, 20],
       [80, 20, 100, 40, 120, 60, 140, 90],
     ];
-    const outline = (join: number, cap: number) => strokeOutline(program.api, I, 12, join, cap, [zig]);
+    const outline = (join: number, cap: number) => strokeOutline(library.api, I, 12, join, cap, [zig]);
     // Round joins/caps subdivide into more pieces than miter + butt.
     expect(outline(-1, -1).length).toBeGreaterThan(outline(4, 0).length);
-    const spans = program.api.FillBeziers({ min: [0, 0], max: [200, 120] }).run(outline(-1, -1));
+    const spans = library.api.FillBeziers({ min: [0, 0], max: [200, 120] }).run(outline(-1, -1));
     expect(spans.length).toBeGreaterThan(50);
     // Coverage lands inside the canvas.
     for (const [x, y] of spans.slice(0, 20)) {

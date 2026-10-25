@@ -6,7 +6,7 @@
 // compiles the corpus source unmodified.
 import { describe, expect, it } from 'vitest';
 import { gezira, fixture } from './sources.js';
-import { compileProgram, makeStreamer } from '../src/compile.js';
+import { compileLibrary, makeStreamer } from '../src/compile.js';
 
 const oracle: { cases: { process: string; params: number[]; input: number[][]; output: number[][] }[] } =
   JSON.parse(fixture('stroke-oracle.json'));
@@ -16,11 +16,11 @@ describe.each([
   ['fused + cse', {}],
   ['unfused, no cse', { fuse: false, cse: false }],
 ])('gezira stroke.nl vs the original runtime (%s)', (_, opts) => {
-  const program = compileProgram(sources, opts);
+  const library = compileLibrary(sources, opts);
   for (const process of [...new Set(oracle.cases.map((c) => c.process))]) {
     it(process, () => {
       for (const c of oracle.cases.filter((x) => x.process === process)) {
-        const s = makeStreamer(program, c.process, c.params);
+        const s = makeStreamer(library, c.process, c.params);
         const out = [...c.input.flatMap((t) => s.push(t)), ...s.end()];
         expect(out.length).toBe(c.output.length);
         out.forEach((t, i) => t.forEach((x, j) => expect(Math.abs(x - c.output[i][j])).toBeLessThan(1e-6)));

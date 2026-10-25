@@ -9,7 +9,7 @@
 // Run: npm run bench:gpu:resident   (Deno; panics at exit — wgpu teardown bug)
 
 import { read } from '../src/sources.js';
-import { compileProgram } from '../../umgeni/src/compile.js';
+import { compileLibrary } from '../../umgeni/src/compile.js';
 import { createRasterHost } from '../../umgeni/src/gpu/raster.js';
 import { lowerPipeline } from '../../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../../umgeni/src/gpu/execute.js';
@@ -17,7 +17,7 @@ import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
 import * as rt from '../../umgeni/src/cpu/runtime.js';
 import { paintCoverage, textSpansParams, textTokens, type TextSpansParams } from '../src/text/host.js';
 
-const program = compileProgram([
+const library = compileLibrary([
   read('gezira/types.nl'),
   read('gezira/bezier.nl'),
   read('gezira/rasterize.nl'),
@@ -34,17 +34,17 @@ const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.len
 
 // CPU front half: laid-out, transformed, clipped beziers (shared by both sides).
 function frontHalf(text: string, params: TextSpansParams): Float32Array<ArrayBuffer> {
-  const op = program.api.TextBeziers(params);
+  const op = library.api.TextBeziers(params);
   const out: number[] = [];
   op.setEmit((t) => out.push(...t));
-  for (const t of textTokens(program.api, text)) op.push(t);
+  for (const t of textTokens(library.api, text)) op.push(t);
   op.end();
   return new Float32Array(out);
 }
 
 // CPU back half: decompose → sort → sort → combine → paint.
 function cpuCoverage(beziers: Float32Array, width: number, height: number): Float64Array {
-  const op = program.registry.get('Rasterize')!();
+  const op = library.registry.get('Rasterize')!();
   const spans: number[][] = [];
   op.setEmit((t) => spans.push(t));
   const token = new Array(6);
@@ -61,7 +61,7 @@ if (!device) {
   console.error('No WebGPU device.');
   Deno.exit(1);
 }
-const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizePixels');
+const fused = library.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizePixels');
 if (!fused || fused.k !== 'fused') throw new Error('RasterizePixels not fused');
 
 interface Case {

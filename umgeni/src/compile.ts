@@ -1,7 +1,7 @@
 // The whole toolchain, end to end:
 //   source text -> parse -> AST -> elaborate -> IR -> generate -> JS -> Ops
 //
-// compileProgram exposes every intermediate stage as data (AST, IR, generated
+// compileLibrary exposes every intermediate stage as data (AST, IR, generated
 // source), in keeping with the project's inspectability principle.
 
 import type * as ast from './ast.js';
@@ -30,10 +30,10 @@ export interface CompileOptions extends CodegenOptions {
   fuse?: boolean;
 }
 
-export interface CompiledProgram {
+export interface CompiledLibrary {
   /** Instantiate a process by name with its flattened parameter vector. */
   registry: Map<string, ProcessFactory>;
-  /** The program as a host uses it: nile.SvgFill({ … }).run(tokens), nile.types.Point. */
+  /** The library as a host uses it: nile.SvgFill({ … }).run(tokens), nile.types.Point. */
   api: rt.Api;
   /** The generated JS source (inspectable). */
   source: string;
@@ -47,7 +47,7 @@ export interface CompiledProgram {
   ops?: () => number;
 }
 
-export function compileProgram(sources: string[], opts: CompileOptions = {}): CompiledProgram {
+export function compileLibrary(sources: string[], opts: CompileOptions = {}): CompiledLibrary {
   const { modules } = parseProgram(sources);
   const elaborated = elaborateProgram(modules);
   // Pass order: structural (fusion) before scalar (CSE), one run each.
@@ -65,8 +65,8 @@ export function compileProgram(sources: string[], opts: CompileOptions = {}): Co
 }
 
 // Convenience: instantiate one process and drive it via a Streamer.
-export function makeStreamer(program: CompiledProgram, name: string, params: rt.Params = []): rt.Streamer {
-  const factory = program.registry.get(name);
-  if (!factory) throw new Error(`no process named '${name}' (unsupported? ${program.unsupported.map((u) => u.name).join(', ') || 'none'})`);
+export function makeStreamer(library: CompiledLibrary, name: string, params: rt.Params = []): rt.Streamer {
+  const factory = library.registry.get(name);
+  if (!factory) throw new Error(`no process named '${name}' (unsupported? ${library.unsupported.map((u) => u.name).join(', ') || 'none'})`);
   return rt.streamer(factory(params));
 }

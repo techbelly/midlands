@@ -7,7 +7,7 @@
 // Run: deno run --allow-read --unstable-sloppy-imports tools/check-present.ts
 
 import { read } from '../src/sources.js';
-import { compileProgram } from '../../umgeni/src/compile.js';
+import { compileLibrary } from '../../umgeni/src/compile.js';
 import { createRasterHost } from '../../umgeni/src/gpu/raster.js';
 import { createPresenter } from '../../umgeni/src/gpu/present.js';
 import { lowerPipeline } from '../../umgeni/src/gpu/lower.js';
@@ -16,7 +16,7 @@ import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
 import * as rt from '../../umgeni/src/cpu/runtime.js';
 import { textSpansParams, textTokens } from '../src/text/host.js';
 
-const program = compileProgram([
+const library = compileLibrary([
   read('gezira/types.nl'),
   read('gezira/bezier.nl'),
   read('gezira/rasterize.nl'),
@@ -28,16 +28,16 @@ const program = compileProgram([
 const W = 320;
 const H = 48;
 const params = textSpansParams({ size: 16, width: W, height: H, margin: 4 });
-const front = program.api.TextBeziers(params);
+const front = library.api.TextBeziers(params);
 const bez: number[] = [];
 front.setEmit((t) => bez.push(...t));
-for (const t of textTokens(program.api, 'ZERO FENCES')) front.push(t);
+for (const t of textTokens(library.api, 'ZERO FENCES')) front.push(t);
 front.end();
 const beziers = new Float32Array(bez);
 const n = beziers.length / 6;
 
 const device = (await requestDevice())!;
-const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizePixels');
+const fused = library.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizePixels');
 if (!fused || fused.k !== 'fused') throw new Error('RasterizePixels not fused');
 const plan = lowerPipeline(fused, { extent: [H, W], sink: coverageSink });
 
@@ -89,9 +89,9 @@ console.log(
 // resolve accumulates into coverage, so the core must clear it per frame).
 {
   const bez2: number[] = [];
-  const front2 = program.api.TextBeziers(params);
+  const front2 = library.api.TextBeziers(params);
   front2.setEmit((t) => bez2.push(...t));
-  for (const t of textTokens(program.api, 'ZERO')) front2.push(t);
+  for (const t of textTokens(library.api, 'ZERO')) front2.push(t);
   front2.end();
   const beziers2 = new Float32Array(bez2);
   presenter.frame([{ tokens: beziers2, n: beziers2.length / 6, color: black }], tex.createView());
@@ -120,9 +120,9 @@ console.log(
 {
   const small = textSpansParams({ size: 8, width: W, height: H, margin: 4 });
   const bez3: number[] = [];
-  const front3 = program.api.TextBeziers(small);
+  const front3 = library.api.TextBeziers(small);
   front3.setEmit((t) => bez3.push(...t));
-  for (const t of textTokens(program.api, 'ZERO FENCES')) front3.push(t);
+  for (const t of textTokens(library.api, 'ZERO FENCES')) front3.push(t);
   front3.end();
   const beziers3 = new Float32Array(bez3);
   let maxY = 0;

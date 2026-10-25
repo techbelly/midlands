@@ -2,7 +2,7 @@
 // operator's evaluator is its specification, and the JS and wasm backends
 // must agree with it exactly — including on NaN, ±0 and ±∞.
 import { describe, expect, it } from 'vitest';
-import { compileProgram, makeStreamer } from '../src/compile.js';
+import { compileLibrary, makeStreamer } from '../src/compile.js';
 import { BIN, UN } from '../src/scalar.js';
 
 const VALUES = [0, -0, 1, -1, 0.5, -2.5, 3, Infinity, -Infinity, NaN, 1e-300, 7.75];
@@ -18,13 +18,13 @@ describe('scalar operators: every backend agrees with the table', () => {
   // A trivial pipeline around each kernel so it fuses (and so compiles to wasm).
   const pipes = [...Object.keys(BIN).map((n) => `B${n}`), ...Object.keys(UN).map((n) => `U${n}`)]
     .map((k) => `P${k} : ${k.startsWith('B') ? '(Real, Real)' : 'Real'} >> Real\n    ⇒ ${k} → (→)\n`);
-  const programs = [{}, { target: 'wasm' as const }, { boolCond: false, cse: false }]
-    .map((o) => compileProgram([...kernels, ...pipes], o));
-  it('exercises the wasm backend', () => expect(programs[1].source).toContain('rt.wasmSegment('));
+  const libraries = [{}, { target: 'wasm' as const }, { boolCond: false, cse: false }]
+    .map((o) => compileLibrary([...kernels, ...pipes], o));
+  it('exercises the wasm backend', () => expect(libraries[1].source).toContain('rt.wasmSegment('));
 
   for (const [name, op] of Object.entries(BIN)) {
     it(`${op.nile} (${name})`, () => {
-      for (const p of programs) {
+      for (const p of libraries) {
         expect(p.unsupported).toEqual([]);
         const s = makeStreamer(p, `PB${name}`);
         for (const a of VALUES) for (const b of VALUES) expect(Object.is(s.push([a, b])[0][0], op.f(a, b))).toBe(true);
@@ -33,7 +33,7 @@ describe('scalar operators: every backend agrees with the table', () => {
   }
   for (const [name, op] of Object.entries(UN)) {
     it(`${op.nile} (${name})`, () => {
-      for (const p of programs) {
+      for (const p of libraries) {
         const s = makeStreamer(p, `PU${name}`);
         for (const a of VALUES) expect(Object.is(s.push([a])[0][0], op.f(a))).toBe(true);
       }

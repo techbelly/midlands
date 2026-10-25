@@ -18,8 +18,8 @@ root builds `dist/` and serves it; `npm run demo:build` just builds.
   compiler runs in the browser here, so a scene's Nile can be edited and
   recompiled; the paint is lowered to a GPU shader where it can be.
 
-A page imports a Nile program as `import { nile } from './nl/vector.program'`.
-The `.program` file lists the `.nl` sources, and the bundler plugin
+A page imports a Nile library as `import { nile } from './nl/vector.nl-lib'`.
+The `.nl-lib` file lists the `.nl` sources, and the bundler plugin
 ([tools/nile-plugin.ts](tools/nile-plugin.ts)) compiles them at build time, so
 the pages ship generated JavaScript and the compiled pipelines' intermediate
 form for the GPU, not the compiler. The paint page is the exception.

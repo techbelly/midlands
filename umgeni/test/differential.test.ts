@@ -4,7 +4,7 @@
 // compilers do the same arithmetic in the same order, so equality is
 // bitwise, not approximate — fused or not.
 import { describe, expect, it } from 'vitest';
-import { compileProgram } from '../src/compile.js';
+import { compileLibrary } from '../src/compile.js';
 import { run } from '../src/cpu/runtime.js';
 import { fixture } from './sources.js';
 
@@ -20,11 +20,11 @@ describe.each([
   ['unfused', { fuse: false }],
   ['fused', { fuse: true }],
 ])('differential vs chari (%s)', (_, opts) => {
-  const program = compileProgram([MIDPOINT_PRELUDE, kernels], opts);
-  if (opts.fuse) it('fuses', () => expect(program.source).toContain('// segment:'));
+  const library = compileLibrary([MIDPOINT_PRELUDE, kernels], opts);
+  if (opts.fuse) it('fuses', () => expect(library.source).toContain('// segment:'));
   for (const c of oracle.cases) {
     it(`${c.process}: ${c.what}`, () => {
-      const factory = program.registry.get(c.process);
+      const factory = library.registry.get(c.process);
       expect(factory, `umgeni has '${c.process}'`).toBeDefined();
       expect(run(factory!(c.params), c.input.map((t) => [...t]))).toEqual(c.output);
     });

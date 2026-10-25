@@ -4,7 +4,7 @@
 // the ordinary compiler's code — on random parameters and streams, and must
 // agree bit for bit (Object.is on every output value).
 import { describe, expect, it } from 'vitest';
-import { compileProgram } from '../src/compile.js';
+import { compileLibrary } from '../src/compile.js';
 import { parseProgram } from '../src/parser.js';
 import { kernelContexts } from '../src/elaborate.js';
 import { interpretKernel } from '../src/semantics/concrete.js';
@@ -27,7 +27,7 @@ import { dupCat, pipeline, reverse, run } from '../src/cpu/runtime.js';
 
 describe('mid-stream ⇒: interpreter ≡ compiler ≡ the 2012 runtime', () => {
   const sources = ['types', 'bezier', 'stroke'].map((n) => gezira(`${n}.nl`));
-  const compiled = compileProgram(sources);
+  const compiled = compileLibrary(sources);
   const { program, kernels } = kernelContexts(parseProgram(sources).modules, true);
   const interp = (name: string, params: number[] = []) => {
     const c = kernels.get(name)!;

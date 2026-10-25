@@ -4,7 +4,7 @@
 // Scenes: fixtures/paint-scenes.nl, mirrored in tools/oracle/harness.c.
 import { describe, expect, it } from 'vitest';
 import { fixture, gezira } from './sources.js';
-import { compileProgram, makeStreamer } from '../src/compile.js';
+import { compileLibrary, makeStreamer } from '../src/compile.js';
 
 const oracle: { cases: { process: string; input: number[][]; output: number[][] }[] } =
   JSON.parse(fixture('paint-oracle.json'));
@@ -14,15 +14,15 @@ describe.each([
   ['fused + cse', {}],
   ['unfused, no cse', { fuse: false, cse: false }],
 ])('gezira paint library vs the original runtime (%s)', (_, opts) => {
-  const program = compileProgram(sources, opts);
+  const library = compileLibrary(sources, opts);
   it('compiles the whole library: nothing unsupported, the higher-order processes as templates', () => {
-    expect(program.unsupported).toEqual([]);
-    expect(program.templates).toContain('ApplyTexture');
-    expect(program.templates).toContain('GaussianBlur1x21');
+    expect(library.unsupported).toEqual([]);
+    expect(library.templates).toContain('ApplyTexture');
+    expect(library.templates).toContain('GaussianBlur1x21');
   });
   for (const c of oracle.cases) {
     it(c.process, () => {
-      const s = makeStreamer(program, c.process);
+      const s = makeStreamer(library, c.process);
       const out = [...c.input.flatMap((t) => s.push(t)), ...s.end()];
       expect(out.length).toBe(c.output.length);
       out.forEach((t, i) => t.forEach((x, j) => expect(Math.abs(x - c.output[i][j])).toBeLessThan(1e-9)));

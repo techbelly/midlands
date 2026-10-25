@@ -8,7 +8,7 @@
 //
 // Run: npx tsx tools/bench.ts
 
-import { compileProgramFile } from '../src/sources.js';
+import { compileLibraryFile } from '../src/sources.js';
 import { renderText } from '../src/text/render.js';
 import type { CompileOptions } from '../../umgeni/src/compile.js';
 import { opCount } from '../../umgeni/src/passes/cse.js';
@@ -58,7 +58,7 @@ console.log('------------|-------------|------------|-----------|---------------
 for (const v of VARIANTS) {
   // Instrumented build for the op counts (never timed).
   const wasm = v.opts.target === 'wasm';
-  const counted = compileProgramFile('demos/nl/text.program', { ...v.opts, countOps: !wasm });
+  const counted = compileLibraryFile('demos/nl/text.nl-lib', { ...v.opts, countOps: !wasm });
   const before = wasm ? 0 : counted.ops!();
   const { spans } = renderText(counted, TEXT, OPTS);
   const dynOps = wasm ? '—' : counted.ops!() - before;
@@ -69,14 +69,14 @@ for (const v of VARIANTS) {
   else if (sig !== referenceSpans) throw new Error(`variant '${v.name}' changed the output!`);
 
   // Clean build for size and time.
-  const program = compileProgramFile('demos/nl/text.program', v.opts);
-  const stat = program.ir.processes.reduce((n, p) => n + (p.k === 'kernel' ? staticOps(p) : 0), 0);
-  for (let i = 0; i < 5; i++) renderText(program, TEXT, OPTS); // warm-up
-  const times = Array.from({ length: 15 }, () => renderText(program, TEXT, OPTS).rasterMs);
+  const library = compileLibraryFile('demos/nl/text.nl-lib', v.opts);
+  const stat = library.ir.processes.reduce((n, p) => n + (p.k === 'kernel' ? staticOps(p) : 0), 0);
+  for (let i = 0; i < 5; i++) renderText(library, TEXT, OPTS); // warm-up
+  const times = Array.from({ length: 15 }, () => renderText(library, TEXT, OPTS).rasterMs);
 
   console.log(
     `${v.name.padEnd(11)} | ${String(dynOps).padStart(11)} | ${String(stat).padStart(10)} | ` +
-    `${String(program.source.length).padStart(9)} | ${median(times).toFixed(2)}`,
+    `${String(library.source.length).padStart(9)} | ${median(times).toFixed(2)}`,
   );
 }
 console.log('output-equality gate: all variants span-identical ✓');

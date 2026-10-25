@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { read } from '../src/sources.js';
-import { compileProgram } from '../../umgeni/src/compile.js';
+import { compileLibrary } from '../../umgeni/src/compile.js';
 import * as rt from '../../umgeni/src/cpu/runtime.js';
 import { paintCoverage, textSpansParams, textTokens } from '../src/text/host.js';
 
@@ -23,7 +23,7 @@ const SOURCES = [
   read('demos/nl/text.nl'),
   read('umgeni/nl/rasterize-parallel.nl'),
 ];
-const program = compileProgram(SOURCES);
+const library = compileLibrary(SOURCES);
 
 function runOp(op: rt.Op, tokens: number[][]): number[][] {
   const out: number[][] = [];
@@ -43,12 +43,12 @@ function dropArtifacts(spans: number[][]): number[][] {
 
 describe('the rasterizer in access-patterns Nile (nl/rasterize-parallel.nl)', () => {
   it('compiles: GroupBy, ReduceBy, scan clause, windows', () => {
-    expect(program.unsupported).toEqual([]);
-    expect(program.registry.has('RasterizeParallel')).toBe(true);
+    expect(library.unsupported).toEqual([]);
+    expect(library.registry.has('RasterizeParallel')).toBe(true);
     // The declared structure is recorded in the IR for parallel backends.
-    const wind = program.ir.processes.find((p) => p.name === 'WindScan');
+    const wind = library.ir.processes.find((p) => p.name === 'WindScan');
     expect(wind?.k === 'kernel' && wind.access?.scan).toMatchObject({ key: 1, op: '+', identity: 0 });
-    const spans = program.ir.processes.find((p) => p.name === 'SpansOf');
+    const spans = library.ir.processes.find((p) => p.name === 'SpansOf');
     expect(spans?.k === 'kernel' && spans.access?.window).toEqual({ key: 1 }); // segmented by @y
   });
 
@@ -61,7 +61,7 @@ describe('the rasterizer in access-patterns Nile (nl/rasterize-parallel.nl)', ()
       '    ∀ p ∷ ∅',
       '        >> (p.k, p.v × 100)',
     ].join('\n');
-    const p = compileProgram([src]);
+    const p = compileLibrary([src]);
     const out: number[][] = [];
     const op = p.registry.get('SegDiffs')!();
     op.setEmit((t) => out.push(t));
@@ -76,14 +76,14 @@ describe('the rasterizer in access-patterns Nile (nl/rasterize-parallel.nl)', ()
     const W = 220;
     const H = 60;
     const params = textSpansParams({ size: 14, width: W, height: H, margin: 4 });
-    const front = program.api.TextBeziers(params);
+    const front = library.api.TextBeziers(params);
     const beziers: number[][] = [];
     front.setEmit((t) => beziers.push(t));
-    for (const t of textTokens(program.api, 'QUICK BROWN FOX')) front.push(t);
+    for (const t of textTokens(library.api, 'QUICK BROWN FOX')) front.push(t);
     front.end();
 
-    const ref = dropArtifacts(runOp(program.registry.get('Rasterize')!(), beziers));
-    const neu = runOp(program.registry.get('RasterizeParallel')!(), beziers);
+    const ref = dropArtifacts(runOp(library.registry.get('Rasterize')!(), beziers));
+    const neu = runOp(library.registry.get('RasterizeParallel')!(), beziers);
     expect(neu.length).toBe(ref.length);
     let maxDiff = 0;
     for (let i = 0; i < ref.length; i++) {
@@ -107,7 +107,7 @@ describe('the rasterizer in access-patterns Nile (nl/rasterize-parallel.nl)', ()
       '    ∀ (k, v) with S = +[ v ] by @k',
       '        >> (k, S)',
     ].join('\n');
-    const p = compileProgram([src]);
+    const p = compileLibrary([src]);
     const s = runOp(p.registry.get('RunningV')!(), [[1, 10], [1, 20], [1, 5], [2, 7], [2, 1]]);
     // Exclusive: first of each group sees the identity.
     expect(s).toEqual([[1, 0], [1, 10], [1, 30], [2, 0], [2, 7]]);
@@ -121,7 +121,7 @@ describe('the rasterizer in access-patterns Nile (nl/rasterize-parallel.nl)', ()
       '    ∀ p ∷ ∅',
       '        >> p × 100',
     ].join('\n');
-    const p = compileProgram([src]);
+    const p = compileLibrary([src]);
     expect(runOp(p.registry.get('Diffs')!(), [[3], [5], [4]])).toEqual([[2], [-1], [400]]);
     expect(runOp(p.registry.get('Diffs')!(), [[9]])).toEqual([[900]]);
     expect(runOp(p.registry.get('Diffs')!(), [])).toEqual([]);
@@ -133,7 +133,7 @@ describe('the rasterizer in access-patterns Nile (nl/rasterize-parallel.nl)', ()
       ['Bad : Bezier >> CoverageSpan',
         '    ⇒ DecomposeBeziers → GroupBy (@y, @x) → WindScan → SpansOf'].join('\n'),
     ];
-    const p = compileProgram(src);
+    const p = compileLibrary(src);
     const bad = p.unsupported.find((u) => u.name === 'Bad');
     expect(bad?.reason).toMatch(/arrival order after a non-stable GroupBy/);
   });
@@ -144,7 +144,7 @@ describe('the rasterizer in access-patterns Nile (nl/rasterize-parallel.nl)', ()
       ['Ok : Bezier >> CoverageSpan',
         '    ⇒ DecomposeBeziers → GroupBy stable (@y, @x) → WindScan → SpansOf'].join('\n'),
     ];
-    const p = compileProgram(src);
+    const p = compileLibrary(src);
     expect(p.unsupported).toEqual([]);
     expect(p.registry.has('Ok')).toBe(true);
   });
@@ -160,7 +160,7 @@ describe('the rasterizer in access-patterns Nile (nl/rasterize-parallel.nl)', ()
       ].join('\n'),
     ];
     // field syntax is `name ⊕ op`; ⊖ is the (non-commutative) operator
-    const p = compileProgram(src);
+    const p = compileLibrary(src);
     const bad = p.unsupported.find((u) => u.name === 'Bad2');
     expect(bad?.reason).toMatch(/not known to be commutative/);
   });

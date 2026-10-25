@@ -3,12 +3,12 @@
 // produce BIT-IDENTICAL output. Inputs are the oracle suites' cases;
 // demos/test/wasm.test.ts does the same for the text and tiger demos.
 import { describe, expect, it } from 'vitest';
-import { compileProgram, makeStreamer } from '../src/compile.js';
+import { compileLibrary, makeStreamer } from '../src/compile.js';
 import { fixture, gezira } from './sources.js';
 
 function both(sources: string[], process: string, cases: { params?: number[]; input: number[][] }[]) {
-  const js = compileProgram(sources);
-  const wasm = compileProgram(sources, { target: 'wasm' });
+  const js = compileLibrary(sources);
+  const wasm = compileLibrary(sources, { target: 'wasm' });
   expect(wasm.source).toContain('rt.wasmSegment(');
   for (const c of cases) {
     const run = (p: typeof js) => {

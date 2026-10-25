@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseTrueType } from '../src/text/ttf.js';
-import { compileProgramFile } from '../src/sources.js';
+import { compileLibraryFile } from '../src/sources.js';
 import { renderText } from '../src/text/render.js';
 import { colorRuns, fallback, paintCoverage } from '../src/text/host.js';
 
@@ -48,8 +48,8 @@ describe('TrueType reader', () => {
   it('renders through the compiled text pipeline', () => {
     const W = 60;
     const H = 30;
-    const program = compileProgramFile('demos/nl/text.program');
-    const { spans } = renderText(program, 'Oo', { size: 24, width: W, height: H, margin: 2, lineHeight: font.lineHeight, glyphs: font.glyphFor });
+    const library = compileLibraryFile('demos/nl/text.nl-lib');
+    const { spans } = renderText(library, 'Oo', { size: 24, width: W, height: H, margin: 2, lineHeight: font.lineHeight, glyphs: font.glyphFor });
     const cov = paintCoverage(spans, W, H);
     // The capital O's counter is empty, its sides inked, along the mid row.
     const row = Array.from({ length: 22 }, (_, x) => cov[14 * W + 2 + x]);
@@ -79,13 +79,13 @@ describe('colour emoji (COLR/CPAL, Twemoji)', () => {
   });
 
   it('lays out into colour runs, one per colour change, in painting order', () => {
-    const program = compileProgramFile('demos/nl/text.program');
+    const library = compileLibraryFile('demos/nl/text.nl-lib');
     const glyphs = fallback(font, emoji);
-    const runs = colorRuns(program.api, program.api.TextLayout({ w: 20, lh: font.lineHeight }), 'ab 😀 cd', glyphs);
+    const runs = colorRuns(library.api, library.api.TextLayout({ w: 20, lh: font.lineHeight }), 'ab 😀 cd', glyphs);
     expect(runs[0].color).toBeNull(); // 'ab ' in the text colour
     expect(runs.at(-1)!.color).toBeNull(); // ' cd'
     expect(runs.slice(1, -1).every((r) => r.color !== null)).toBe(true); // the emoji's layers
     // Variation selectors and joiners are invisible, not .notdef boxes.
-    expect(colorRuns(program.api, program.api.TextLayout({ w: 20, lh: 1 }), '❤️', glyphs).every((r) => r.color !== null)).toBe(true);
+    expect(colorRuns(library.api, library.api.TextLayout({ w: 20, lh: 1 }), '❤️', glyphs).every((r) => r.color !== null)).toBe(true);
   });
 });
