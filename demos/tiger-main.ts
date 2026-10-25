@@ -6,8 +6,7 @@ import { paintPaths, tigerPaths, toBatches, type TigerPath } from './src/vector/
 import { createPresenter, type Presenter } from '../umgeni/src/gpu/present.js';
 import { lowerFusedPipeline } from '../umgeni/src/gpu/lower.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
-import { nile } from './nl/vector.program';
-import { RasterizeParallelIR } from './nl/text.program';
+import { nile, RasterizeParallelIR } from './nl/vector.program';
 import svgSrc from './tiger.svg';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
@@ -15,11 +14,12 @@ import svgNl from './nl/svg.nl';
 import vectorNl from './nl/vector.nl';
 import spansNl from './nl/spans.nl';
 import strokeNl from '../gezira/stroke.nl';
-import rasterizeNl from '../gezira/rasterize.nl';
+import bezierNl from '../gezira/bezier.nl';
+import rasterizeParallelNl from '../umgeni/nl/rasterize-parallel.nl';
 
 (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
-  [svgNl, vectorNl, spansNl, strokeNl, rasterizeNl],
-  ['PathCubics', 'SvgFill', 'FillPath', 'FillBeziers', 'Rasterize', 'SvgStroke', 'StrokeOutline', 'StrokeBezierPath', 'PaintSpans'],
+  [svgNl, vectorNl, spansNl, strokeNl, bezierNl, rasterizeParallelNl],
+  ['PathCubics', 'SvgFillBeziers', 'SvgStroke', 'StrokeOutline', 'StrokeBezierPath', 'ClipBeziers', 'RasterizeParallel', 'PaintSpans'],
 );
 
 const tiger = parseSvg(svgSrc, nile);

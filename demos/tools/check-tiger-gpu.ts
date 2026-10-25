@@ -7,23 +7,15 @@
 // (zoom > 1 magnifies about the centre, as the demo's double-click does)
 
 import { compileProgramFile, read } from '../src/sources.js';
-import { compileProgram } from '../../umgeni/src/compile.js';
 import { createPresenter } from '../../umgeni/src/gpu/present.js';
 import { lowerFusedPipeline } from '../../umgeni/src/gpu/lower.js';
 import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
 import * as rt from '../../umgeni/src/cpu/runtime.js';
 import { parseSvg } from '../src/vector/svg.js';
-import { drawTiger, fitView, tigerPaths, toBatches } from '../src/vector/tiger.js';
+import { drawTiger, fitView, paintPaths, tigerPaths, toBatches } from '../src/vector/tiger.js';
 
 
 const vector = compileProgramFile('demos/nl/vector.program');
-const raster = compileProgram([
-  read('gezira/types.nl'),
-  read('gezira/bezier.nl'),
-  read('gezira/rasterize.nl'),
-  read('demos/nl/text.nl'),
-  read('umgeni/nl/rasterize-parallel.nl'),
-]);
 const tiger = parseSvg(read('demos/tiger.svg'), vector.api);
 
 const W = Number(Deno.args[0] ?? 512);
@@ -40,7 +32,7 @@ const cpuMs = performance.now() - t0;
 
 // GPU: front half on CPU, then one zero-fence submission.
 const device = (await requestDevice())!;
-const fused = raster.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizeParallel');
+const fused = vector.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizeParallel');
 if (!fused || fused.k !== 'fused') throw new Error('RasterizeParallel not fused');
 const shaders = lowerFusedPipeline(fused, { width: W, height: H });
 const gpu = createPresenter(device, shaders, { width: W, height: H, format: 'rgba8unorm' });
@@ -70,20 +62,15 @@ t0 = performance.now();
 await device.queue.onSubmittedWorkDone();
 const warmGpuMs = performance.now() - t0;
 
-// The like-for-like CPU reference: the SAME f32 batches through the classic
-// Rasterize pipeline, composited with the same colors. This isolates GPU
-// raster+composite correctness from f32-vs-f64 front-half precision (which
-// only shifts antialiased edge pixels).
-import { paintSpans } from '../src/vector/spans.js';
+// The like-for-like CPU reference: the SAME f32 batches through the CPU back
+// end (the same RasterizeParallel the GPU lowers), composited with the same
+// colors. This isolates GPU raster+composite correctness from f32-vs-f64
+// front-half precision (which only shifts antialiased edge pixels).
 const refImg = { width: W, height: H, data: new Uint8ClampedArray(W * H * 4).fill(255) };
-for (const b of batches) {
-  const op = raster.registry.get('Rasterize')!();
-  const spans: number[][] = [];
-  op.setEmit((t) => spans.push(t));
-  for (let i = 0; i < b.n; i++) op.push([...b.beziers.slice(i * 6, i * 6 + 6)]);
-  op.end();
-  paintSpans(refImg, vector.api, spans, [b.color[0] * 255, b.color[1] * 255, b.color[2] * 255]);
-}
+paintPaths(refImg, vector.api, batches.map((b) => ({
+  beziers: Array.from({ length: b.n }, (_, i) => [...b.beziers.slice(i * 6, i * 6 + 6)]),
+  color: [b.color[0] * 255, b.color[1] * 255, b.color[2] * 255] as const,
+})));
 
 // Test-only readback of the composited texture.
 const rowBytes = Math.ceil((W * 4) / 256) * 256;

@@ -64,8 +64,9 @@ export function tigerPaths(
 }
 
 // The CPU back end: rasterize each path and composite its spans, in order.
+// RasterizeParallel is the same Nile the GPU lowers, run on the CPU.
 export function paintPaths(img: ImgLike, nile: Api, paths: TigerPath[]): void {
-  for (const p of paths) paintSpans(img, nile, nile.Rasterize().run(p.beziers), p.color);
+  for (const p of paths) paintSpans(img, nile, nile.RasterizeParallel().run(p.beziers), p.color);
 }
 
 // The GPU back end's input: the same paths as f32 batches, colours 0..1.
