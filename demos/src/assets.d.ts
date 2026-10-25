@@ -7,7 +7,7 @@ declare module '*.program' {
   export const nile: Api;
   export const compileMs: number;
   // One <Name>IR per fused process; only those the pages lower are declared.
-  export const RasterizeParallelIR: FusedIR;
+  export const RasterizePixelsIR: FusedIR;
 }
 declare module '*.nl' {
   const source: string;

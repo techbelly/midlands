@@ -8,7 +8,8 @@
 
 import { compileProgramFile, read } from '../src/sources.js';
 import { createPresenter } from '../../umgeni/src/gpu/present.js';
-import { lowerFusedPipeline } from '../../umgeni/src/gpu/lower.js';
+import { lowerPipeline } from '../../umgeni/src/gpu/lower.js';
+import { coverageSink } from '../../umgeni/src/gpu/execute.js';
 import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
 import * as rt from '../../umgeni/src/cpu/runtime.js';
 import { parseSvg } from '../src/vector/svg.js';
@@ -32,10 +33,10 @@ const cpuMs = performance.now() - t0;
 
 // GPU: front half on CPU, then one zero-fence submission.
 const device = (await requestDevice())!;
-const fused = vector.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizeParallel');
-if (!fused || fused.k !== 'fused') throw new Error('RasterizeParallel not fused');
-const shaders = lowerFusedPipeline(fused, { width: W, height: H });
-const gpu = createPresenter(device, shaders, { width: W, height: H, format: 'rgba8unorm' });
+const fused = vector.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizePixels');
+if (!fused || fused.k !== 'fused') throw new Error('RasterizePixels not fused');
+const plan = lowerPipeline(fused, { extent: [H, W], sink: coverageSink });
+const gpu = createPresenter(device, plan, { format: 'rgba8unorm' });
 const tex = device.createTexture({
   size: { width: W, height: H },
   format: 'rgba8unorm',
@@ -68,7 +69,7 @@ const warmGpuMs = performance.now() - t0;
 // front-half precision (which only shifts antialiased edge pixels).
 const refImg = { width: W, height: H, data: new Uint8ClampedArray(W * H * 4).fill(255) };
 paintPaths(refImg, vector.api, batches.map((b) => ({
-  beziers: Array.from({ length: b.n }, (_, i) => [...b.beziers.slice(i * 6, i * 6 + 6)]),
+  beziers: Array.from({ length: b.n }, (_, i) => [...b.tokens.slice(i * 6, i * 6 + 6)]),
   color: [b.color[0] * 255, b.color[1] * 255, b.color[2] * 255] as const,
 })));
 

@@ -2,11 +2,14 @@
 // chari/web/tiger-main.ts; the pipeline is Umgeni-compiled (nl/vector.program).
 
 import { parseSvg } from './src/vector/svg.js';
+import type { Api } from './src/vector/draw.js';
 import { paintPaths, tigerPaths, toBatches, type TigerPath } from './src/vector/tiger.js';
-import { createPresenter, type Presenter } from '../umgeni/src/gpu/present.js';
-import { lowerFusedPipeline } from '../umgeni/src/gpu/lower.js';
+import type { FusedIR } from '../umgeni/src/ir.js';
+import { createPresenter } from '../umgeni/src/gpu/present.js';
+import { lowerPipeline } from '../umgeni/src/gpu/lower.js';
+import { coverageSink } from '../umgeni/src/gpu/execute.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
-import { nile, RasterizeParallelIR } from './nl/vector.program';
+import { nile, RasterizePixelsIR } from './nl/vector.program';
 import svgSrc from './tiger.svg';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
@@ -19,7 +22,7 @@ import rasterizeParallelNl from '../umgeni/nl/rasterize-parallel.nl';
 
 (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
   [svgNl, vectorNl, spansNl, strokeNl, bezierNl, rasterizeParallelNl],
-  ['PathCubics', 'SvgFillBeziers', 'SvgStroke', 'StrokeOutline', 'StrokeBezierPath', 'ClipBeziers', 'RasterizeParallel', 'PaintSpans'],
+  ['PathCubics', 'SvgFillBeziers', 'SvgStroke', 'StrokeOutline', 'StrokeBezierPath', 'ClipBeziers', 'RasterizeParallel', 'RasterizePixels', 'PaintSpans'],
 );
 
 const tiger = parseSvg(svgSrc, nile);
@@ -27,32 +30,54 @@ const tiger = parseSvg(svgSrc, nile);
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const canvasGpu = document.getElementById('viewgpu') as HTMLCanvasElement;
 const modeEl = document.getElementById('mode') as HTMLSelectElement;
-const ctx = canvas.getContext('2d')!;
 const statsEl = document.getElementById('stats')!;
 const base = Math.min(canvas.width, canvas.height) / 900;
 
-interface GpuState {
-  gpu: Presenter;
-  context: GPUCanvasContext;
-  device: GPUDevice;
-}
-let gpuState: GpuState | 'unavailable' | null = null;
+// A back end rasterizes and composites the paths, and resolves to its time
+// in ms. Each is built once from the compiled program and the canvas it
+// draws on — the same Nile either way: RasterizeParallel → PaintSpans as
+// JS for the CPU, RasterizePixels as WGSL lowered from its IR for the GPU.
+type BackEnd = (paths: TigerPath[]) => Promise<number>;
 
-async function ensureGpu(): Promise<GpuState | null> {
-  if (gpuState === 'unavailable') return null;
-  if (gpuState) return gpuState;
-  const device = await requestDevice();
-  const context = canvasGpu.getContext('webgpu');
-  if (!device || !context) {
-    gpuState = 'unavailable';
-    return null;
-  }
+function cpuBackEnd(nile: Api, ctx: CanvasRenderingContext2D): BackEnd {
+  const { width, height } = ctx.canvas;
+  return async (paths) => {
+    const t0 = performance.now();
+    const img = ctx.createImageData(width, height);
+    img.data.fill(255);
+    paintPaths(img, nile, paths);
+    ctx.putImageData(img, 0, 0);
+    return performance.now() - t0;
+  };
+}
+
+function gpuBackEnd(ir: FusedIR, device: GPUDevice, context: GPUCanvasContext): BackEnd {
+  const { width, height } = context.canvas;
   const format = navigator.gpu.getPreferredCanvasFormat();
   context.configure({ device, format, alphaMode: 'opaque' });
-  const size = { width: canvasGpu.width, height: canvasGpu.height };
-  const shaders = lowerFusedPipeline(RasterizeParallelIR, size);
-  gpuState = { gpu: createPresenter(device, shaders, { ...size, format }), context, device };
-  return gpuState;
+  const plan = lowerPipeline(ir, { extent: [height, width], sink: coverageSink }); // WGSL from IR, in-browser
+  const presenter = createPresenter(device, plan, { format });
+  return async (paths) => {
+    const t0 = performance.now();
+    presenter.frame(toBatches(paths), context.getCurrentTexture().createView());
+    // The GPU runs after submit; wait for it, so the next frame starts on a
+    // free GPU and the figures add up to what a frame really takes.
+    await device.queue.onSubmittedWorkDone();
+    return performance.now() - t0;
+  };
+}
+
+const cpu = cpuBackEnd(nile, canvas.getContext('2d')!);
+
+// The GPU back end is built on first use, if WebGPU is there.
+let gpu: BackEnd | 'unavailable' | null = null;
+async function ensureGpu(): Promise<BackEnd | null> {
+  if (gpu === null) {
+    const device = await requestDevice();
+    const context = canvasGpu.getContext('webgpu');
+    gpu = device && context ? gpuBackEnd(RasterizePixelsIR, device, context) : 'unavailable';
+  }
+  return gpu === 'unavailable' ? null : gpu;
 }
 
 // View state: the viewBox point (fx, fy) sits at the canvas centre, scaled by z.
@@ -76,10 +101,10 @@ function show(el: HTMLCanvasElement): void {
 // The front half (geometry, compiled Nile on the CPU) is the same in both
 // modes; only the back end — rasterize and composite — differs.
 async function draw(): Promise<void> {
-  const gpu = modeEl.value === 'gpu' ? await ensureGpu() : null;
-  if (!gpu) modeEl.value = 'cpu'; // also the fallback when WebGPU is unavailable
-  show(gpu ? canvasGpu : canvas);
-  const backEnd = gpu ? drawGpu(gpu) : drawCpu;
+  const gpuBack = modeEl.value === 'gpu' ? await ensureGpu() : null;
+  if (!gpuBack) modeEl.value = 'cpu'; // also the fallback when WebGPU is unavailable
+  show(gpuBack ? canvasGpu : canvas);
+  const backEnd = gpuBack ?? cpu;
 
   const t0 = performance.now();
   const paths = tigerPaths(tiger, viewMatrix(), nile, canvas.width, canvas.height);
@@ -87,31 +112,9 @@ async function draw(): Promise<void> {
   const backMs = await backEnd(paths);
   statsEl.textContent =
     `${tiger.paths.length} paths · ${segs.toLocaleString()} cubics · ${z.toFixed(1)}× · ` +
-    `front (CPU Nile) ${frontMs.toFixed(0)} ms + raster & composite (${gpu ? 'GPU' : 'CPU'}) ${backMs.toFixed(0)} ms ` +
+    `front (CPU Nile) ${frontMs.toFixed(0)} ms + raster & composite (${gpuBack ? 'GPU' : 'CPU'}) ${backMs.toFixed(0)} ms ` +
     `= ${(frontMs + backMs).toFixed(0)} ms a frame`;
 }
-
-// A back end rasterizes and composites the paths, and resolves to its time
-// in ms.
-type BackEnd = (paths: TigerPath[]) => Promise<number>;
-
-const drawGpu = (state: GpuState): BackEnd => async (paths) => {
-  const t0 = performance.now();
-  state.gpu.frame(toBatches(paths), state.context.getCurrentTexture().createView());
-  // The GPU runs after submit; wait for it, so the next frame starts on a
-  // free GPU and the figures add up to what a frame really takes.
-  await state.device.queue.onSubmittedWorkDone();
-  return performance.now() - t0;
-};
-
-const drawCpu: BackEnd = async (paths) => {
-  const t0 = performance.now();
-  const img = ctx.createImageData(canvas.width, canvas.height);
-  img.data.fill(255);
-  paintPaths(img, nile, paths);
-  ctx.putImageData(img, 0, 0);
-  return performance.now() - t0;
-};
 
 const scheduleDraw = frameScheduler(draw);
 

@@ -10,7 +10,8 @@ import { read } from '../src/sources.js';
 import { compileProgram } from '../../umgeni/src/compile.js';
 import { createRasterHost } from '../../umgeni/src/gpu/raster.js';
 import { createPresenter } from '../../umgeni/src/gpu/present.js';
-import { lowerFusedPipeline } from '../../umgeni/src/gpu/lower.js';
+import { lowerPipeline } from '../../umgeni/src/gpu/lower.js';
+import { coverageSink } from '../../umgeni/src/gpu/execute.js';
 import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
 import * as rt from '../../umgeni/src/cpu/runtime.js';
 import { textSpansParams, textTokens } from '../src/text/host.js';
@@ -19,6 +20,7 @@ const program = compileProgram([
   read('gezira/types.nl'),
   read('gezira/bezier.nl'),
   read('gezira/rasterize.nl'),
+  read('gezira/texture.nl'),
   read('demos/nl/text.nl'),
   read('umgeni/nl/rasterize-parallel.nl'),
 ]);
@@ -35,12 +37,12 @@ const beziers = new Float32Array(bez);
 const n = beziers.length / 6;
 
 const device = (await requestDevice())!;
-const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizeParallel');
-if (!fused || fused.k !== 'fused') throw new Error('RasterizeParallel not fused');
-const shaders = lowerFusedPipeline(fused, { width: W, height: H });
+const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizePixels');
+if (!fused || fused.k !== 'fused') throw new Error('RasterizePixels not fused');
+const plan = lowerPipeline(fused, { extent: [H, W], sink: coverageSink });
 
 // Reference: compute-only coverage (one fence).
-const raster = createRasterHost(device, shaders.decompose, shaders.resolve, { width: W, height: H });
+const raster = createRasterHost(device, plan);
 const cov = await raster.render(beziers, n);
 
 // Presenter into an offscreen texture (no fence in frame()).
@@ -50,10 +52,10 @@ const tex = device.createTexture({
   usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
 });
 // The compositor with one black path over white: pixel = 1 − coverage.
-const presenter = createPresenter(device, shaders, { width: W, height: H, format: 'rgba8unorm' });
+const presenter = createPresenter(device, plan, { format: 'rgba8unorm' });
 const black = [0, 0, 0] as const;
 const t0 = performance.now();
-presenter.frame([{ beziers, n, color: black }], tex.createView());
+presenter.frame([{ tokens: beziers, n, color: black }], tex.createView());
 const submitMs = performance.now() - t0;
 
 // Test-only readback of the texture (bytesPerRow must be 256-aligned).
@@ -92,7 +94,7 @@ console.log(
   for (const t of textTokens(program.api, 'ZERO')) front2.push(t);
   front2.end();
   const beziers2 = new Float32Array(bez2);
-  presenter.frame([{ beziers: beziers2, n: beziers2.length / 6, color: black }], tex.createView());
+  presenter.frame([{ tokens: beziers2, n: beziers2.length / 6, color: black }], tex.createView());
 
   const enc2 = device.createCommandEncoder();
   enc2.copyTextureToBuffer({ texture: tex }, { buffer: readBuf, bytesPerRow: rowBytes }, { width: W, height: H });
@@ -125,7 +127,7 @@ console.log(
   const beziers3 = new Float32Array(bez3);
   let maxY = 0;
   for (let i = 1; i < beziers3.length; i += 2) maxY = Math.max(maxY, beziers3[i]);
-  presenter.frame([{ beziers: beziers3, n: beziers3.length / 6, color: black }], tex.createView());
+  presenter.frame([{ tokens: beziers3, n: beziers3.length / 6, color: black }], tex.createView());
 
   const enc3 = device.createCommandEncoder();
   enc3.copyTextureToBuffer({ texture: tex }, { buffer: readBuf, bytesPerRow: rowBytes }, { width: W, height: H });

@@ -13,3 +13,8 @@ SpansOf : WindPix >> CoverageSpan
 
 RasterizeParallel : Bezier >> CoverageSpan
     ⇒ DecomposeBeziers → GroupBy (@y, @x) → ReduceBy (@y, @x; a ⊕ +, h ⊕ +) → WindScan → SpansOf
+
+-- The pixels themselves, for a back end that paints pixels rather than spans
+-- (the GPU presenter): gezira's ExpandSpans decodes each span's run.
+RasterizePixels : Bezier >> CoveragePoint
+    ⇒ RasterizeParallel → ExpandSpans

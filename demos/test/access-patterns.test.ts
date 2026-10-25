@@ -19,6 +19,7 @@ const SOURCES = [
   read('gezira/types.nl'),
   read('gezira/bezier.nl'),
   read('gezira/rasterize.nl'),
+  read('gezira/texture.nl'),
   read('demos/nl/text.nl'),
   read('umgeni/nl/rasterize-parallel.nl'),
 ];

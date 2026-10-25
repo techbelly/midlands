@@ -8,7 +8,8 @@
 import { read } from '../src/sources.js';
 import { compileProgram } from '../../umgeni/src/compile.js';
 import { createPresenter } from '../../umgeni/src/gpu/present.js';
-import { lowerFusedPipeline } from '../../umgeni/src/gpu/lower.js';
+import { lowerPipeline } from '../../umgeni/src/gpu/lower.js';
+import { coverageSink } from '../../umgeni/src/gpu/execute.js';
 import { lowerTexture } from '../../umgeni/src/gpu/texture.js';
 import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
 import { PAINT_GLUE, paintShapes } from '../src/vector/paint.js';
@@ -39,17 +40,15 @@ for (const preset of PRESETS) {
   for (const bs of shapes) writePixels(cpu, program.api, program.api.PaintBeziers({ min: [0, 0], max: [W, H] }).run(bs));
 
   // GPU: RasterizeParallel lowered from source, composite with the lowered paint().
-  const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizeParallel');
-  if (!fused || fused.k !== 'fused') throw new Error('RasterizeParallel not fused');
-  const gpu = createPresenter(device, lowerFusedPipeline(fused, { width: W, height: H }), {
-    width: W, height: H, format: 'rgba8unorm', paint: tex.wgsl,
-  });
+  const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizePixels');
+  if (!fused || fused.k !== 'fused') throw new Error('RasterizePixels not fused');
+  const gpu = createPresenter(device, lowerPipeline(fused, { extent: [H, W], sink: coverageSink }), { format: 'rgba8unorm', paint: tex.wgsl });
   const target = device.createTexture({
     size: { width: W, height: H }, format: 'rgba8unorm',
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   });
   device.pushErrorScope('validation');
-  gpu.frame(shapes.map((bs) => ({ beziers: new Float32Array(bs.flat()), n: bs.length, color: [0, 0, 0] as const })), target.createView());
+  gpu.frame(shapes.map((bs) => ({ tokens: new Float32Array(bs.flat()), n: bs.length, color: [0, 0, 0] as const })), target.createView());
   const err = await device.popErrorScope();
   if (err) throw new Error(`${preset.name}: GPU validation error: ${err.message}`);
 

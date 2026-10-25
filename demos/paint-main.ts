@@ -5,7 +5,8 @@
 
 import { compileProgram, type CompiledProgram } from '../umgeni/src/compile.js';
 import { createPresenter, type Presenter } from '../umgeni/src/gpu/present.js';
-import { lowerFusedPipeline } from '../umgeni/src/gpu/lower.js';
+import { lowerPipeline } from '../umgeni/src/gpu/lower.js';
+import { coverageSink } from '../umgeni/src/gpu/execute.js';
 import { lowerTexture } from '../umgeni/src/gpu/texture.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
 import { PAINT_GLUE, paintShapes } from './src/vector/paint.js';
@@ -86,11 +87,11 @@ async function gpuRenderer(p: CompiledProgram, paint: string): Promise<Presenter
   if (!device || !gpuContext) return null;
   if (gpu?.paint !== paint) {
     gpu?.renderer.dispose();
-    const fused = p.ir.processes.find((x) => x.k === 'fused' && x.name === 'RasterizeParallel');
+    const fused = p.ir.processes.find((x) => x.k === 'fused' && x.name === 'RasterizePixels');
     if (!fused || fused.k !== 'fused') return null;
-    const shaders = lowerFusedPipeline(fused, { width: W, height: H });
+    const plan = lowerPipeline(fused, { extent: [H, W], sink: coverageSink });
     const format = navigator.gpu.getPreferredCanvasFormat();
-    gpu = { paint, renderer: createPresenter(device, shaders, { width: W, height: H, format, paint }) };
+    gpu = { paint, renderer: createPresenter(device, plan, { format, paint }) };
   }
   return gpu.renderer;
 }
@@ -121,7 +122,7 @@ async function render(): Promise<void> {
   if (gpuMode && renderer) {
     const t1 = performance.now();
     renderer.frame(
-      shapes.map((bs) => ({ beziers: new Float32Array(bs.flat()), n: bs.length, color: [0, 0, 0] as const })),
+      shapes.map((bs) => ({ tokens: new Float32Array(bs.flat()), n: bs.length, color: [0, 0, 0] as const })),
       gpuContext!.getCurrentTexture().createView(),
     );
     statusEl.textContent = `${compileNote}  Geometry ${geomMs.toFixed(0)} ms (CPU Nile); ` +

@@ -14,7 +14,7 @@ import { fixture, gezira, nl } from './sources.js';
 const library = ['types', 'bezier', 'stroke', 'rasterize', 'texture', 'compositor', 'gradient', 'filter'].map((n) => gezira(`${n}.nl`));
 const PROGRAMS: [string, string[]][] = [
   ['gezira + paint scenes', [...library, fixture('paint-scenes.nl')]],
-  ['RasterizeParallel', [gezira('types.nl'), gezira('bezier.nl'), gezira('rasterize.nl'), nl('rasterize-parallel.nl')]],
+  ['RasterizeParallel', [gezira('types.nl'), gezira('bezier.nl'), gezira('rasterize.nl'), gezira('texture.nl'), nl('rasterize-parallel.nl')]],
   ['chari kernels', [fixture('chari-kernels.nl')]],
 ];
 

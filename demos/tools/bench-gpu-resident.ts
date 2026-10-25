@@ -11,7 +11,8 @@
 import { read } from '../src/sources.js';
 import { compileProgram } from '../../umgeni/src/compile.js';
 import { createRasterHost } from '../../umgeni/src/gpu/raster.js';
-import { lowerFusedPipeline } from '../../umgeni/src/gpu/lower.js';
+import { lowerPipeline } from '../../umgeni/src/gpu/lower.js';
+import { coverageSink } from '../../umgeni/src/gpu/execute.js';
 import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
 import * as rt from '../../umgeni/src/cpu/runtime.js';
 import { paintCoverage, textSpansParams, textTokens, type TextSpansParams } from '../src/text/host.js';
@@ -20,6 +21,7 @@ const program = compileProgram([
   read('gezira/types.nl'),
   read('gezira/bezier.nl'),
   read('gezira/rasterize.nl'),
+  read('gezira/texture.nl'),
   read('demos/nl/text.nl'),
   read('umgeni/nl/rasterize-parallel.nl'),
 ]);
@@ -59,8 +61,8 @@ if (!device) {
   console.error('No WebGPU device.');
   Deno.exit(1);
 }
-const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizeParallel');
-if (!fused || fused.k !== 'fused') throw new Error('RasterizeParallel not fused');
+const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizePixels');
+if (!fused || fused.k !== 'fused') throw new Error('RasterizePixels not fused');
 
 interface Case {
   name: string;
@@ -80,8 +82,7 @@ for (const c of CASES) {
   const beziers = frontHalf(c.text, params);
   const n = beziers.length / 6;
 
-  const shaders = lowerFusedPipeline(fused, { width: c.width, height: c.height });
-  const gpu = createRasterHost(device, shaders.decompose, shaders.resolve, { width: c.width, height: c.height });
+  const gpu = createRasterHost(device, lowerPipeline(fused, { extent: [c.height, c.width], sink: coverageSink }));
   const cpuCov = cpuCoverage(beziers, c.width, c.height);
   const gpuCov = await gpu.render(beziers, n);
   if (gpu.overflowed()) throw new Error('worklist overflow');

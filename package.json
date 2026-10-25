@@ -14,7 +14,8 @@
     "bench": "npx tsx demos/tools/bench.ts",
     "bench:gpu": "deno run --allow-read --allow-env --unstable-sloppy-imports umgeni/tools/bench-gpu.ts",
     "bench:gpu:resident": "deno run --allow-read --allow-env --unstable-sloppy-imports demos/tools/bench-gpu-resident.ts",
-    "check:present": "deno run --allow-read --allow-env --unstable-sloppy-imports demos/tools/check-present.ts"
+    "check:present": "deno run --allow-read --allow-env --unstable-sloppy-imports demos/tools/check-present.ts",
+    "check:lowering": "deno run --allow-read --allow-env --unstable-sloppy-imports demos/tools/check-lowering.ts"
   },
   "devDependencies": {
     "@types/node": "^26.0.1",

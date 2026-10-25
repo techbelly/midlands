@@ -72,7 +72,7 @@ export function paintPaths(img: ImgLike, nile: Api, paths: TigerPath[]): void {
 // The GPU back end's input: the same paths as f32 batches, colours 0..1.
 export function toBatches(paths: TigerPath[]): PathBatch[] {
   return paths.map(({ beziers, color: [r, g, b] }) => ({
-    beziers: new Float32Array(beziers.flat()),
+    tokens: new Float32Array(beziers.flat()),
     n: beziers.length,
     color: [r / 255, g / 255, b / 255],
   }));

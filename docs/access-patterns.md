@@ -1,8 +1,9 @@
 # Declared access patterns: scans, reductions, groups, and windows
 
-Status: IMPLEMENTED 2026-07-05 (CPU/reference backend; the GPU lowering of
-these constructs is the remaining repayment step). Spec reviewed and
-approved. See [nl/rasterize-parallel.nl](../umgeni/nl/rasterize-parallel.nl) for the rasterizer in
+Status: IMPLEMENTED 2026-07-05 (CPU/reference backend). GPU lowering by
+declaration, rather than by recognising one pipeline shape, landed
+2026-10-25 (`umgeni/src/gpu/lower.ts`; `npm run check:lowering` proves it on
+pipelines it was not written against). Spec reviewed and approved. See [nl/rasterize-parallel.nl](../umgeni/nl/rasterize-parallel.nl) for the rasterizer in
 this syntax and [test/access-patterns.test.ts](../demos/test/access-patterns.test.ts)
 for the validation, including the stability discipline. Successor to
 [scan-design.md](scan-design.md).

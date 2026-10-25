@@ -22,9 +22,10 @@ import sourceSerif from './fonts/SourceSerif4.ttf';
 import twemoji from './fonts/Twemoji.Mozilla.ttf';
 import { createRasterHost, type GpuRasterizer } from '../umgeni/src/gpu/raster.js';
 import { createPresenter, type Presenter } from '../umgeni/src/gpu/present.js';
-import { lowerFusedPipeline, type LoweredShaders } from '../umgeni/src/gpu/lower.js';
+import { lowerPipeline } from '../umgeni/src/gpu/lower.js';
+import { coverageSink } from '../umgeni/src/gpu/execute.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
-import { compileMs, nile, RasterizeParallelIR } from './nl/text.program';
+import { compileMs, nile, RasterizePixelsIR } from './nl/text.program';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
 import textNl from './nl/text.nl';
@@ -34,7 +35,7 @@ import rasterizeParallelNl from '../umgeni/nl/rasterize-parallel.nl';
 
 (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
   [textNl, spansNl, rasterizeNl, rasterizeParallelNl],
-  ['TextSpans', 'TextBeziers', 'PlaceBeziers', 'TextLayout', 'WordWidths', 'LayoutGlyphs', 'Rasterize', 'RasterizeParallel', 'PaintSpans'],
+  ['TextSpans', 'TextBeziers', 'PlaceBeziers', 'TextLayout', 'WordWidths', 'LayoutGlyphs', 'Rasterize', 'RasterizeParallel', 'RasterizePixels', 'PaintSpans'],
 );
 
 
@@ -62,7 +63,6 @@ const TEXT_COLOR = [24, 24, 24] as const;
 
 interface GpuState {
   device: GPUDevice;
-  shaders: LoweredShaders;
   raster: GpuRasterizer;
   presenter: Presenter;
   context: GPUCanvasContext;
@@ -80,13 +80,13 @@ async function ensureGpu(): Promise<GpuState | null> {
   }
   const format = navigator.gpu.getPreferredCanvasFormat();
   context.configure({ device, format, alphaMode: 'opaque' });
-  const shaders = lowerFusedPipeline(RasterizeParallelIR, SIZE); // WGSL from IR, in-browser
+  // WGSL from IR, in-browser: the frame is the grid, [rows, columns].
+  const plan = lowerPipeline(RasterizePixelsIR, { extent: [SIZE.height, SIZE.width], sink: coverageSink });
   gpuState = {
     device,
-    shaders,
     context,
-    raster: createRasterHost(device, shaders.decompose, shaders.resolve, SIZE),
-    presenter: createPresenter(device, shaders, { ...SIZE, format }), // one black path
+    raster: createRasterHost(device, plan),
+    presenter: createPresenter(device, plan, { format }), // one black path
   };
   return gpuState;
 }
@@ -147,7 +147,7 @@ async function render(): Promise<void> {
       const batches = runs(text, params).map((r) => {
         const bs = placed(r, params);
         const c = rgb255(r);
-        return { beziers: new Float32Array(bs.flat()), n: bs.length, color: [c[0] / 255, c[1] / 255, c[2] / 255] as const };
+        return { tokens: new Float32Array(bs.flat()), n: bs.length, color: [c[0] / 255, c[1] / 255, c[2] / 255] as const };
       });
       const frontMs = performance.now() - t0;
       t0 = performance.now();

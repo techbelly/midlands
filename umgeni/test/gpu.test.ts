@@ -8,6 +8,8 @@ import { compileProgram } from '../src/compile.js';
 import { isMapKernel } from '../src/gpu/classify.js';
 import { genMapShader } from '../src/gpu/wgsl.js';
 import { evalStateInit } from '../src/gpu/eval.js';
+import { lowerPipeline, LowerError } from '../src/gpu/lower.js';
+import { appendSink, coverageSink } from '../src/gpu/execute.js';
 import type { KernelIR } from '../src/ir.js';
 
 
@@ -59,51 +61,80 @@ describe('WGSL generation', () => {
   });
 });
 
-describe('resident rasterizer shaders', () => {
-  it('generates the decompose worklist shader from Nile IR (golden)', async () => {
-    const { genDecomposeShader } = await import('../src/gpu/lower.js');
-    const kernel = kernelsOf('types.nl', 'rasterize.nl').find((k) => k.name === 'DecomposeBeziers')!;
-    const shader = genDecomposeShader(kernel, { width: 880, height: 360 });
-    expect(shader).toMatchSnapshot();
-    // WGSL reserves the `__` prefix; CSE temporaries must not collide.
-    expect(shader).not.toMatch(/\b__/);
-    // Feedback lowered to the per-thread worklist, emit to grid atomics.
-    expect(shader).toContain('atomicAdd(&GA[');
-    expect(shader).toContain('sp += 1u;');
-  });
-
-  it('rejects kernels without the decompose shape', async () => {
-    const { genDecomposeShader } = await import('../src/gpu/lower.js');
-    const combine = kernelsOf('types.nl', 'rasterize.nl').find((k) => k.name === 'CombineEdgeSamples')!;
-    expect(() => genDecomposeShader(combine, { width: 8, height: 8 })).toThrow(/decompose shape/);
-  });
-});
-
 describe('pipeline lowering (gpu/lower.ts)', () => {
-  const rasterizeParallelSources = ['types.nl', 'bezier.nl', 'rasterize.nl'].map(gezira);
+  const sources = ['types.nl', 'bezier.nl', 'rasterize.nl', 'texture.nl'].map(gezira);
   const nlSrc = nl('rasterize-parallel.nl');
+  const fusedOf = (program: ReturnType<typeof compileProgram>, name: string) => {
+    const f = program.ir.processes.find((p) => p.k === 'fused' && p.name === name);
+    if (!f || f.k !== 'fused') throw new Error(`${name} not fused`);
+    return f;
+  };
+  const frame = (sink = coverageSink) => ({ extent: [360, 880], sink });
 
-  it('lowers RasterizeParallel to both shaders from IR alone (golden)', async () => {
-    const { lowerFusedPipeline } = await import('../src/gpu/lower.js');
-    const program = compileProgram([...rasterizeParallelSources, nlSrc]);
-    const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizeParallel');
-    expect(fused?.k).toBe('fused');
-    const shaders = lowerFusedPipeline(fused as never, { width: 880, height: 360 });
-    // Kernel logic in both passes is generated; scaffolding is the backend.
-    expect(shaders.decompose).toContain('atomicAdd(&GA[');
-    expect(shaders.resolve).toContain("generated from 'WindScan'");
-    expect(shaders.resolve).toMatchSnapshot();
+  it('lowers RasterizeParallel to a plan of two passes from IR alone (golden)', () => {
+    const plan = lowerPipeline(fusedOf(compileProgram([...sources, nlSrc]), 'RasterizeParallel'), frame());
+    expect(plan.passes.map((p) => [p.name, p.over])).toEqual([
+      ['DecomposeBeziers', 'tokens'],
+      ['WindScan → SpansOf', 'segments'],
+    ]);
+    expect(plan.grids).toEqual(['G0', 'G1']);
+    expect(plan.cells).toBe(360 * 880);
+    const [a, b] = plan.passes;
+    // Feedback lowered to the per-thread worklist, emit to grid atomics.
+    expect(a.wgsl).toContain('atomicAdd(&G0[');
+    expect(a.wgsl).toContain('sp0 += 1u;');
+    // WGSL reserves the `__` prefix; CSE temporaries must not collide.
+    expect(a.wgsl).not.toMatch(/\b__/);
+    expect(b.wgsl).not.toMatch(/\b__/);
+    expect(b.bindings.map((x) => x.name)).toEqual(['META', 'G0', 'G1', 'COV']);
+    expect(a.wgsl).toMatchSnapshot();
+    expect(b.wgsl).toMatchSnapshot();
   });
 
-  it('refuses shapes the lowering cannot honour, with reasons', async () => {
-    const { recognize, LowerError } = await import('../src/gpu/lower.js');
-    const stable = compileProgram([
-      ...rasterizeParallelSources,
-      nlSrc.replace('GroupBy (@y, @x)', 'GroupBy stable (@y, @x)'),
-    ]);
-    const fused = stable.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizeParallel');
-    expect(() => recognize(fused as never)).toThrow(LowerError);
-    expect(() => recognize(fused as never)).toThrow(/stable cannot lower to atomic grids/);
+  it('lowers a feedback kernel after the window (RasterizeParallel → ExpandSpans) with a per-point sink', () => {
+    const plan = lowerPipeline(fusedOf(compileProgram([...sources, nlSrc]), 'RasterizePixels'), frame());
+    expect(plan.passes.map((p) => p.name)).toEqual(['DecomposeBeziers', 'WindScan → SpansOf → ExpandSpans']);
+    const b = plan.passes[1];
+    // ExpandSpans feeds once per token, at the end: a loop, not a worklist.
+    expect(b.wgsl).toContain('again = true;');
+    expect(b.wgsl).not.toContain('var<private> F2');
+    expect(b.bindings.map((x) => x.role)).toEqual(['meta', 'grid', 'grid', 'sink']);
+  });
+
+  it('lowers a parameterized map prefix (TransformBeziers → RasterizeParallel)', () => {
+    const src = `${nlSrc}\nRasterizeMapped (M : Matrix) : Bezier >> CoverageSpan\n    ⇒ TransformBeziers (M) → RasterizeParallel\n`;
+    const plan = lowerPipeline(fusedOf(compileProgram([...sources, src]), 'RasterizeMapped'), frame());
+    expect(plan.paramWidth).toBe(6);
+    const a = plan.passes[0];
+    expect(a.name).toBe('TransformBeziers → DecomposeBeziers');
+    expect(a.bindings.map((x) => x.name)).toEqual(['META', 'INBUF', 'P', 'OVERFLOW', 'G0', 'G1']);
+    expect(a.wgsl).toContain('P[0u]');
+    expect(a.wgsl).toContain('st1('); // TransformBeziers emits into DecomposeBeziers
+  });
+
+  it('appends tokens for a pipeline of maps and feedback (ExpandSpans alone)', () => {
+    const program = compileProgram([...sources, 'Expand : CoverageSpan >> CoveragePoint\n    ⇒ ExpandSpans\n']);
+    const plan = lowerPipeline(fusedOf(program, 'Expand'), { extent: [1], sink: appendSink(4) });
+    expect(plan.passes).toHaveLength(1);
+    expect(plan.passes[0].bindings.map((x) => x.name)).toEqual(['META', 'INBUF', 'OUT', 'COUNT']);
+    expect(plan.grids).toEqual([]);
+  });
+
+  it('refuses what no declaration licenses, naming the declaration', () => {
+    const refuse = (nile: string, name: string, why: RegExp) => {
+      const program = compileProgram([...sources, nile]);
+      expect(() => lowerPipeline(fusedOf(program, name), frame())).toThrow(LowerError);
+      expect(() => lowerPipeline(fusedOf(program, name), frame())).toThrow(why);
+    };
+    refuse(nlSrc.replace('GroupBy (@y, @x)', 'GroupBy stable (@y, @x)'), 'RasterizeParallel', /stable cannot lower to atomic grids/);
+    // The sequential rasterizer: SortBy has no parallel reading.
+    refuse('', 'Rasterize', /SortBy needs the whole stream in order/);
+    // Carried state on an ungrouped stream.
+    refuse('Combine : EdgeSample >> CoverageSpan\n    ⇒ DecomposeBeziers → CombineEdgeSamples\n', 'Combine', /a flush body runs once per stream; it needs a segment/);
+    // A scan by the wrong key.
+    refuse(nlSrc.replace('+[ h ] by @y', '+[ h ] by @x'), 'RasterizeParallel', /scans by a field that is not the grid's major key/);
+    // A window that does not declare its segment.
+    refuse(nlSrc.replace('∀ p ∷ q by @y', '∀ p ∷ q'), 'RasterizeParallel', /must declare its segment/);
   });
 });
 
