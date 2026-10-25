@@ -29,7 +29,7 @@ export interface RasterOptions {
 
 // The compute core (buffers, bind groups, pass encoding) for the readback
 // host below. (Presentation — many paths, colours, textures, zero fences —
-// is gpu/tiger.ts.)
+// is gpu/present.ts.)
 export interface RasterCore {
   readonly width: number;
   readonly height: number;

@@ -9,7 +9,7 @@
 import { read } from '../src/sources.js';
 import { compileProgram } from '../../umgeni/src/compile.js';
 import { createRasterHost } from '../../umgeni/src/gpu/raster.js';
-import { createTigerGpu } from '../../umgeni/src/gpu/tiger.js';
+import { createPresenter } from '../../umgeni/src/gpu/present.js';
 import { lowerFusedPipeline } from '../../umgeni/src/gpu/lower.js';
 import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
 import * as rt from '../../umgeni/src/cpu/runtime.js';
@@ -50,7 +50,7 @@ const tex = device.createTexture({
   usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
 });
 // The compositor with one black path over white: pixel = 1 − coverage.
-const presenter = createTigerGpu(device, shaders, { width: W, height: H, format: 'rgba8unorm' });
+const presenter = createPresenter(device, shaders, { width: W, height: H, format: 'rgba8unorm' });
 const black = [0, 0, 0] as const;
 const t0 = performance.now();
 presenter.frame([{ beziers, n, color: black }], tex.createView());

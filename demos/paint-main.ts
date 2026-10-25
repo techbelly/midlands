@@ -4,7 +4,7 @@
 // on the CPU, or on the GPU with `Paint` lowered to a WGSL function.
 
 import { compileProgram, type CompiledProgram } from '../umgeni/src/compile.js';
-import { createTigerGpu, type TigerGpu } from '../umgeni/src/gpu/tiger.js';
+import { createPresenter, type Presenter } from '../umgeni/src/gpu/present.js';
 import { lowerFusedPipeline } from '../umgeni/src/gpu/lower.js';
 import { lowerTexture } from '../umgeni/src/gpu/texture.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
@@ -75,9 +75,9 @@ function compile(): boolean {
 
 let device: GPUDevice | null | undefined;
 let gpuContext: GPUCanvasContext | null = null;
-let gpu: { paint: string; renderer: TigerGpu } | null = null;
+let gpu: { paint: string; renderer: Presenter } | null = null;
 
-async function gpuRenderer(p: CompiledProgram, paint: string): Promise<TigerGpu | null> {
+async function gpuRenderer(p: CompiledProgram, paint: string): Promise<Presenter | null> {
   if (device === undefined) {
     device = await requestDevice();
     gpuContext = device ? canvasGpu.getContext('webgpu') : null;
@@ -90,7 +90,7 @@ async function gpuRenderer(p: CompiledProgram, paint: string): Promise<TigerGpu 
     if (!fused || fused.k !== 'fused') return null;
     const shaders = lowerFusedPipeline(fused, { width: W, height: H });
     const format = navigator.gpu.getPreferredCanvasFormat();
-    gpu = { paint, renderer: createTigerGpu(device, shaders, { width: W, height: H, format, paint }) };
+    gpu = { paint, renderer: createPresenter(device, shaders, { width: W, height: H, format, paint }) };
   }
   return gpu.renderer;
 }

@@ -1,9 +1,11 @@
-// Multi-path GPU rendering with color compositing — the tiger on the GPU.
+// Presentation: many paths rasterized and composited on the GPU, straight to
+// a canvas — the text, paint and tiger demos all draw through it.
 //
 // Per frame, for each path: clear grids+coverage → pass A (decompose, the
 // source-lowered shader) → pass B (resolve) → a blended fullscreen draw of
-// the coverage in the path's color. All 240 paths encode into ONE command
-// buffer and ONE submission: zero fences. Per-path variation (token count,
+// the coverage in the path's color (or a paint lowered from Nile). All
+// paths (the tiger's 240, say) encode into ONE command buffer and ONE
+// submission: zero fences. Per-path variation (token count,
 // input offset, color) rides on dynamic buffer offsets, so the generated
 // shaders run unmodified; only this compositor is new, and it is
 // presentation scaffolding, not kernel logic.
@@ -16,15 +18,15 @@
 import type { LoweredShaders } from './lower.js';
 import { WORKGROUP_SIZE } from './wgsl.js';
 
-export interface TigerPathBatch {
+export interface PathBatch {
   beziers: Float32Array<ArrayBuffer>; // n×6 flat, already transformed/clipped
   n: number;
   color: readonly [number, number, number]; // 0..1
 }
 
-export interface TigerGpu {
+export interface Presenter {
   /** Encode and submit the whole frame. Zero fences. */
-  frame(paths: TigerPathBatch[], target: GPUTextureView): void;
+  frame(paths: PathBatch[], target: GPUTextureView): void;
   dispose(): void;
 }
 
@@ -58,11 +60,11 @@ fn fs(@builtin(position) p : vec4f) -> @location(0) vec4f {
 ${paint ?? ''}
 `;
 
-export function createTigerGpu(
+export function createPresenter(
   device: GPUDevice,
   shaders: LoweredShaders,
   opts: { width: number; height: number; format: GPUTextureFormat; disableBands?: boolean; paint?: string },
-): TigerGpu {
+): Presenter {
   const { width, height, format } = opts;
   const uStride = Math.max(256, device.limits.minUniformBufferOffsetAlignment);
   const sAlign = Math.max(256, device.limits.minStorageBufferOffsetAlignment);
@@ -94,18 +96,18 @@ export function createTigerGpu(
   });
 
   const pipeA = device.createComputePipeline({
-    label: 'tiger-decompose',
+    label: 'present-decompose',
     layout: device.createPipelineLayout({ bindGroupLayouts: [layoutA] }),
     compute: { module: device.createShaderModule({ code: shaders.decompose }), entryPoint: 'main' },
   });
   const pipeB = device.createComputePipeline({
-    label: 'tiger-resolve',
+    label: 'present-resolve',
     layout: device.createPipelineLayout({ bindGroupLayouts: [layoutB] }),
     compute: { module: device.createShaderModule({ code: shaders.resolve }), entryPoint: 'main' },
   });
-  const compositeModule = device.createShaderModule({ code: compositeShader(opts.paint), label: 'tiger-composite' });
+  const compositeModule = device.createShaderModule({ code: compositeShader(opts.paint), label: 'present-composite' });
   const pipeC = device.createRenderPipeline({
-    label: 'tiger-composite',
+    label: 'present-composite',
     layout: device.createPipelineLayout({ bindGroupLayouts: [layoutC] }),
     vertex: { module: compositeModule, entryPoint: 'vs' },
     fragment: {
@@ -145,7 +147,7 @@ export function createTigerGpu(
   // path may need and rebuild when either capacity grows.
   let maxPathBytes = 0;
 
-  function ensure(paths: TigerPathBatch[]): void {
+  function ensure(paths: PathBatch[]): void {
     const needPaths = paths.length;
     let needIn = 0;
     let maxBytes = 4096;
@@ -239,7 +241,7 @@ export function createTigerGpu(
         at += Math.ceil((p.n * 24) / sAlign) * sAlign;
       }
 
-      const enc = device.createCommandEncoder({ label: 'tiger-frame' });
+      const enc = device.createCommandEncoder({ label: 'present-frame' });
       // Clear the target on its own. (Folding the clear into the first path's
       // draw left that draw unscissored, so it painted the coverage buffer's
       // stale rows outside its band — ghosts whenever the drawing shrank.)

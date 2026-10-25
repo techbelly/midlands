@@ -8,7 +8,7 @@
 
 import { compileProgramFile, read } from '../src/sources.js';
 import { compileProgram } from '../../umgeni/src/compile.js';
-import { createTigerGpu } from '../../umgeni/src/gpu/tiger.js';
+import { createPresenter } from '../../umgeni/src/gpu/present.js';
 import { lowerFusedPipeline } from '../../umgeni/src/gpu/lower.js';
 import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
 import * as rt from '../../umgeni/src/cpu/runtime.js';
@@ -43,7 +43,7 @@ const device = (await requestDevice())!;
 const fused = raster.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizeParallel');
 if (!fused || fused.k !== 'fused') throw new Error('RasterizeParallel not fused');
 const shaders = lowerFusedPipeline(fused, { width: W, height: H });
-const gpu = createTigerGpu(device, shaders, { width: W, height: H, format: 'rgba8unorm' });
+const gpu = createPresenter(device, shaders, { width: W, height: H, format: 'rgba8unorm' });
 const tex = device.createTexture({
   size: { width: W, height: H },
   format: 'rgba8unorm',

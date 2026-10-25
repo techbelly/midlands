@@ -7,7 +7,7 @@
 
 import { read } from '../src/sources.js';
 import { compileProgram } from '../../umgeni/src/compile.js';
-import { createTigerGpu } from '../../umgeni/src/gpu/tiger.js';
+import { createPresenter } from '../../umgeni/src/gpu/present.js';
 import { lowerFusedPipeline } from '../../umgeni/src/gpu/lower.js';
 import { lowerTexture } from '../../umgeni/src/gpu/texture.js';
 import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
@@ -41,7 +41,7 @@ for (const preset of PRESETS) {
   // GPU: RasterizeParallel lowered from source, composite with the lowered paint().
   const fused = program.ir.processes.find((p) => p.k === 'fused' && p.name === 'RasterizeParallel');
   if (!fused || fused.k !== 'fused') throw new Error('RasterizeParallel not fused');
-  const gpu = createTigerGpu(device, lowerFusedPipeline(fused, { width: W, height: H }), {
+  const gpu = createPresenter(device, lowerFusedPipeline(fused, { width: W, height: H }), {
     width: W, height: H, format: 'rgba8unorm', paint: tex.wgsl,
   });
   const target = device.createTexture({

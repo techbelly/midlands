@@ -21,7 +21,7 @@ import sourceSerif from './fonts/SourceSerif4.ttf';
 // Twemoji Mozilla: CC-BY 4.0 art (fonts/TWEMOJI-LICENSE.md)
 import twemoji from './fonts/Twemoji.Mozilla.ttf';
 import { createRasterHost, type GpuRasterizer } from '../umgeni/src/gpu/raster.js';
-import { createTigerGpu, type TigerGpu } from '../umgeni/src/gpu/tiger.js';
+import { createPresenter, type Presenter } from '../umgeni/src/gpu/present.js';
 import { lowerFusedPipeline, type LoweredShaders } from '../umgeni/src/gpu/lower.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
 import { compileMs, nile, RasterizeParallelIR } from './nl/text.program';
@@ -64,7 +64,7 @@ interface GpuState {
   device: GPUDevice;
   shaders: LoweredShaders;
   raster: GpuRasterizer;
-  presenter: TigerGpu;
+  presenter: Presenter;
   context: GPUCanvasContext;
 }
 let gpuState: GpuState | 'unavailable' | null = null;
@@ -86,7 +86,7 @@ async function ensureGpu(): Promise<GpuState | null> {
     shaders,
     context,
     raster: createRasterHost(device, shaders.decompose, shaders.resolve, SIZE),
-    presenter: createTigerGpu(device, shaders, { ...SIZE, format }), // one black path
+    presenter: createPresenter(device, shaders, { ...SIZE, format }), // one black path
   };
   return gpuState;
 }

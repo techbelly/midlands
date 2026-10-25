@@ -3,7 +3,7 @@
 
 import { parseSvg } from './src/vector/svg.js';
 import { drawTiger, tigerBatches } from './src/vector/tiger.js';
-import { createTigerGpu, type TigerGpu } from '../umgeni/src/gpu/tiger.js';
+import { createPresenter, type Presenter } from '../umgeni/src/gpu/present.js';
 import { lowerFusedPipeline } from '../umgeni/src/gpu/lower.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
 import { nile } from './nl/vector.program';
@@ -32,7 +32,7 @@ const statsEl = document.getElementById('stats')!;
 const base = Math.min(canvas.width, canvas.height) / 900;
 
 interface GpuState {
-  gpu: TigerGpu;
+  gpu: Presenter;
   context: GPUCanvasContext;
   device: GPUDevice;
 }
@@ -51,7 +51,7 @@ async function ensureGpu(): Promise<GpuState | null> {
   context.configure({ device, format, alphaMode: 'opaque' });
   const size = { width: canvasGpu.width, height: canvasGpu.height };
   const shaders = lowerFusedPipeline(RasterizeParallelIR, size);
-  gpuState = { gpu: createTigerGpu(device, shaders, { ...size, format }), context, device };
+  gpuState = { gpu: createPresenter(device, shaders, { ...size, format }), context, device };
   return gpuState;
 }
 
