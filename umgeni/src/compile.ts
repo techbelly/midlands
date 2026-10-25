@@ -10,6 +10,7 @@ import { elaborateProgram } from './elaborate.js';
 import { generate, type CodegenOptions } from './cpu/js.js';
 import { cseModule } from './passes/cse.js';
 import { fuseModule } from './passes/fuse.js';
+import { tailModule } from './passes/tail.js';
 import type { ModuleIR } from './ir.js';
 import * as rt from './cpu/runtime.js';
 
@@ -28,6 +29,10 @@ export interface CompileOptions extends CodegenOptions {
    *  token arrays and queues, a cost the dyn-ops metric cannot see), at the
    *  price of larger generated source (stage kernels are embedded). */
   fuse?: boolean;
+  /** Mark feeds in tail position, so a back end loops instead of pushing
+   *  and popping (passes/tail.ts). Default true: measured −9% wall on the
+   *  paragraph benchmark's JS build, output identical. */
+  tail?: boolean;
 }
 
 export interface CompiledLibrary {
@@ -54,6 +59,7 @@ export function compileLibrary(sources: string[], opts: CompileOptions = {}): Co
   let ir = elaborated.ir;
   if (opts.fuse ?? true) ir = fuseModule(ir);
   if (opts.cse ?? true) ir = cseModule(ir);
+  if (opts.tail ?? true) ir = tailModule(ir);
   const source = generate(ir, { boolCond: opts.boolCond ?? true, countOps: opts.countOps, target: opts.target });
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
   const registryObj = new Function('rt', `return (${source})(rt);`)(rt) as Record<string, ProcessFactory>;

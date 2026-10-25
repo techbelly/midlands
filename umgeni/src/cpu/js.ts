@@ -8,6 +8,7 @@
 import { anyStmt, type FusedIR, type FusedSegment, type FusedStage, type KernelIR, type ModuleIR, type PipelineIR, type ScalarExpr, type Stmt } from '../ir.js';
 import { opCount } from '../passes/cse.js';
 import { compilePipeline, inWasm } from './wasm.js';
+import { needsWorklist } from '../passes/tail.js';
 import { renderCond, renderExpr, type Dialect } from '../scalar.js';
 
 export interface CodegenOptions {
@@ -40,6 +41,7 @@ interface GenEnv {
   input(i: number): string;
   emit(vals: string[]): string;
   feed(vals: string[]): string;
+  tailFeed?(vals: string[]): string; // a tail feed (passes/tail.ts): the loop's next turn
 }
 
 const KERNEL_ENV: GenEnv = {
@@ -94,7 +96,7 @@ function genStmts(stmts: Stmt[], indent: string, o: CodegenOptions, env: GenEnv)
         break;
       case 'feed':
         count(s.values.reduce((n, v) => n + opCount(v), 0));
-        lines.push(`${indent}${env.feed(s.values.map((v) => genExpr(v, o, env)))}`);
+        lines.push(`${indent}${(s.tail && env.tailFeed ? env.tailFeed : env.feed)(s.values.map((v) => genExpr(v, o, env)))}`);
         break;
       case 'if': {
         count(opCount(s.cond));
@@ -123,7 +125,7 @@ function genKernel(k: KernelIR, o: CodegenOptions): string {
 function genBuiltinStage(s: Exclude<PipelineIR['stages'][number], { k: 'stage' }>, o: CodegenOptions): string {
   switch (s.k) {
     case 'sortBy':
-      return `rt.sortBy(${s.keyIndex})`;
+      return `rt.sortBy([${s.keyIndexes.join(', ')}])`;
     case 'identity':
       return `rt.identity()`;
     case 'reverse':
@@ -160,9 +162,11 @@ function genPipeline(p: PipelineIR, o: CodegenOptions): string {
 // A run of kernels becomes one op: each stage is a local function taking its
 // input token as scalar arguments; emit is a direct call to the next stage
 // (the last stage calls the op's emit). A standalone kernel is a segment of
-// one. A stage with feedback keeps a LIFO worklist; a stage with prologue
-// statements seeds on first use (first token, or end of stream), so the
-// pipeline is wired before it emits.
+// one. A stage with feedback keeps a LIFO worklist, popping at the bottom of
+// its loop so that a tail feed (passes/tail.ts) can set the inputs and go
+// round again; a stage whose feeds are all tail feeds is just that loop. A
+// stage with prologue statements seeds on first use (first token, or end of
+// stream), so the pipeline is wired before it emits.
 
 const stmtsFeed = (stmts: Stmt[]) => anyStmt(stmts, (s) => s.k === 'feed');
 
@@ -180,12 +184,16 @@ function genSegment(stages: FusedStage[], o: CodegenOptions): string {
     const k = stage.kernel;
     const argJs = stage.args.flat().map((a) => genExpr(a, o, KERNEL_ENV)); // over the op's P
     const feeds = stmtsFeed(k.body) || stmtsFeed(k.init);
+    const worklist = feeds && (stmtsFeed(k.init) || needsWorklist(k.body));
+    const inputs = Array.from({ length: k.inputWidth }, (_, i) => `i${j}_${i}`);
     const env: GenEnv = {
       param: (i) => argJs[i],
       state: (i) => `S${j}[${i}]`,
-      input: (i) => (feeds ? `T${j}[${i}]` : `a${i}`),
+      input: (i) => (feeds ? inputs[i] : `a${i}`),
       emit: (vals) => (j + 1 < stages.length ? `st${j + 1}(${vals.join(', ')});` : `EMIT([${vals.join(', ')}]);`),
       feed: (vals) => `q${j}.push([${vals.join(', ')}]);`,
+      // The values first (they read the inputs), then the inputs.
+      tailFeed: (vals) => `{ ${vals.map((v, i) => `const n${i} = ${v};`).join(' ')} ${vals.map((_, i) => `${inputs[i]} = n${i};`).join(' ')} continue; }`,
     };
     lines.push(`  const S${j} = new Float64Array(${k.stateInit.length});`);
     k.stateInit.forEach((e, i) => lines.push(`  S${j}[${i}] = ${genExpr(e, o, env)};`));
@@ -199,15 +207,30 @@ function genSegment(stages: FusedStage[], o: CodegenOptions): string {
       lines.push(`  }`);
     }
     const params = Array.from({ length: k.inputWidth }, (_, i) => `a${i}`).join(', ');
-    if (feeds) {
+    const declare = (init: (n: string, i: number) => string) => (inputs.length > 0 ? `let ${inputs.map(init).join(', ')};` : '');
+    if (worklist) {
+      const pop = `T${j} = q${j}.pop(); ${inputs.map((n, i) => `${n} = T${j}[${i}];`).join(' ')}`;
       lines.push(`  const q${j} = [];`);
       lines.push(`  function run${j}() {`);
-      lines.push(`    while (q${j}.length > 0) {`);
-      lines.push(`      const T${j} = q${j}.pop();`);
+      lines.push(`    if (q${j}.length === 0) return;`);
+      lines.push(`    ${declare((n) => n)}`);
+      lines.push(`    let ${pop}`);
+      lines.push(`    for (;;) {`);
       lines.push(genStmts(k.body, '      ', o, env));
+      lines.push(`      if (q${j}.length === 0) return;`);
+      lines.push(`      ${pop}`);
       lines.push(`    }`);
       lines.push(`  }`);
       lines.push(`  function st${j}(${params}) { ${seed}q${j}.push([${params}]); run${j}(); }`);
+    } else if (feeds) {
+      lines.push(`  function st${j}(${params}) {`);
+      if (seed) lines.push(`    ${seed.trim()}`);
+      lines.push(`    ${declare((n, i) => `${n} = a${i}`)}`);
+      lines.push(`    for (;;) {`);
+      lines.push(genStmts(k.body, '      ', o, env));
+      lines.push(`      return;`);
+      lines.push(`    }`);
+      lines.push(`  }`);
     } else {
       lines.push(`  function st${j}(${params}) {`);
       if (seed) lines.push(`    ${seed.trim()}`);
@@ -219,7 +242,7 @@ function genSegment(stages: FusedStage[], o: CodegenOptions): string {
       lines.push(genStmts(k.epilogue, '    ', o, env));
       lines.push(`  }`);
     }
-    ends.push(`${seed}${feeds ? `run${j}(); ` : ''}${k.epilogue.length > 0 ? `fl${j}();` : ''}`.trim());
+    ends.push(`${seed}${worklist ? `run${j}(); ` : ''}${k.epilogue.length > 0 ? `fl${j}();` : ''}`.trim());
   });
 
   const w0 = stages[0].kernel.inputWidth;

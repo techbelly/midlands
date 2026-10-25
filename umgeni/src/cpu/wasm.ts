@@ -7,7 +7,9 @@
 //     last stage            input), or stored in the output buffer the JS
 //                           side drains (the last part)
 //   `<<`                 → pushed onto the stage's LIFO worklist; the stage
-//                           pops and runs its body until the list is empty
+//                           pops and runs its body until the list is empty.
+//                           A tail feed (passes/tail.ts) sets the inputs and
+//                           branches back to the top of the body instead
 //   a barrier            → in place on the buffer at end of stream: a stable
 //     (SortBy, GroupBy,      radix sort by the key's bits, a reversal, or a
 //     Reverse, ReduceBy)     merge of same-key runs; the buffer then streams
@@ -27,6 +29,7 @@
 
 import { anyStmt, type FusedSegment, type FusedStage, type ScalarExpr, type Stmt } from '../ir.js';
 import { BIN, UN } from '../scalar.js';
+import { needsWorklist } from '../passes/tail.js';
 
 // --- a minimal binary encoder ---------------------------------------------------
 
@@ -194,9 +197,10 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
   const inBase = outLimit;
   let top = inBase + 8 * w0 * IN_TOKENS;
   const feeding = parts.map((p) => p.stages.map((s) => anyStmt(s.kernel.body, (x) => x.k === 'feed')));
+  const worklist = parts.map((p) => p.stages.map((s) => needsWorklist(s.kernel.body)));
   const stackBase = parts.map((p, pi) => p.stages.map((_, j) => {
     const b = top;
-    if (feeding[pi][j]) top += STACK_BYTES;
+    if (worklist[pi][j]) top += STACK_BYTES;
     return b;
   }));
   const heap0 = top;
@@ -305,7 +309,8 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
           return locals.get(name)!;
         },
       };
-      const run = (list: Stmt[]): void => {
+      // `depth`: enclosing ifs, so a tail feed can branch to the loop around the body.
+      const run = (list: Stmt[], depth: number): void => {
         for (const s of list) {
           switch (s.k) {
             case 'let':
@@ -322,6 +327,14 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
               f.emit(call(j + 1 < part.stages.length ? ST[p][j + 1] : EMIT[p]));
               break;
             case 'feed':
+              if (s.tail) {
+                // The values first (they read the inputs), then the inputs; then round again.
+                const next = s.values.map(() => f.local(F64));
+                s.values.forEach((v, i) => { num(f, v, env); f.emit(set(next[i])); });
+                next.forEach((n, i) => f.emit(get(n), set(inputs[i])));
+                f.emit([OP.br, ...uleb(depth)]);
+                break;
+              }
               s.values.forEach((v, i) => { f.emit(gget(sp[p][j])); num(f, v, env); f.emit(stF64(8 * i)); });
               f.emit(gget(sp[p][j]), i32c(8 * w), add, gset(sp[p][j]));
               f.emit(ifThen([...gget(sp[p][j]), ...i32c(stackBase[p][j] + STACK_BYTES), OP.i32GtU], [OP.unreachable]));
@@ -329,25 +342,33 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
             case 'if':
               cond(f, s.cond, env);
               f.emit([OP.if, VOID]);
-              run(s.then);
-              if (s.else.length > 0) { f.emit([OP.else]); run(s.else); }
+              run(s.then, depth + 1);
+              if (s.else.length > 0) { f.emit([OP.else]); run(s.else, depth + 1); }
               f.emit([OP.end]);
               break;
           }
         }
       };
-      if (feeds && !flush) {
-        // Push the incoming token, then run until the worklist is empty —
-        // depth-first, exactly the JS segment's `while (q.length) q.pop()`.
+      if (feeds && !flush && worklist[p][j]) {
+        // Push the incoming token and pop it back; then run the body, popping
+        // the next token at the bottom of the loop until the worklist is empty
+        // — depth-first, exactly the JS segment's loop. A tail feed branches
+        // to the top of the loop, past the pop.
         for (let i = 0; i < w; i++) f.emit(gget(sp[p][j]), get(i), stF64(8 * i));
         f.emit(gget(sp[p][j]), i32c(8 * w), add, gset(sp[p][j]));
         const pop = [...gget(sp[p][j]), ...i32c(8 * w), ...sub, ...gset(sp[p][j])];
         for (let i = 0; i < w; i++) pop.push(...gget(sp[p][j]), ...ldF64(8 * i), ...set(inputs[i]));
-        f.emit([OP.block, VOID, OP.loop, VOID], gget(sp[p][j]), i32c(stackBase[p][j]), [OP.i32GtU, OP.i32Eqz, OP.brIf, 1], pop);
-        run(list);
-        f.emit([OP.br, 0, OP.end, OP.end]);
+        f.emit(pop, [OP.block, VOID, OP.loop, VOID]);
+        run(list, 0);
+        f.emit(gget(sp[p][j]), i32c(stackBase[p][j]), [OP.i32GtU, OP.i32Eqz, OP.brIf, 1], pop, [OP.br, 0, OP.end, OP.end]);
+      } else if (feeds && !flush) {
+        // Every feed is a tail feed: the body loops over one token, no worklist.
+        for (let i = 0; i < w; i++) f.emit(get(i), set(inputs[i]));
+        f.emit([OP.block, VOID, OP.loop, VOID]);
+        run(list, 0);
+        f.emit([OP.br, 1, OP.end, OP.end]);
       } else {
-        run(list);
+        run(list, 0);
       }
     };
     define(ST[p][j], (f) => build(f, k.body, false));
@@ -521,7 +542,7 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
         const buf = [...gget(bufBase[p - 1]), ...gget(bufTop[p - 1])];
         barriers[p - 1].forEach((b, i) => {
           switch (b.k) {
-            case 'sortBy': f.emit(buf, i32c(wb), i32c(8 * b.keyIndex), call(SORT)); break;
+            case 'sortBy':
             case 'groupBy': for (const key of [...b.keyIndexes].reverse()) f.emit(buf, i32c(wb), i32c(8 * key), call(SORT)); break;
             case 'reverse': f.emit(buf, i32c(wb), call(REVERSE)); break;
             case 'reduceBy': f.emit(call(REDUCE[p - 1][i])); break;

@@ -4,6 +4,10 @@
 // direct call to the next stage with scalar arguments, eliminating the
 // per-token arrays and queues the unfused runtime pays between stages.
 //
+// Consecutive sorts also join: `SortBy (@x) → SortBy (@y)` is two stable
+// sorts, which order by (y, x); one sort by both keys, major first, is the
+// same permutation and passes over the stream once.
+//
 // Conservative bail (the whole pipeline is left unfused, which stays
 // correct): a stage that isn't a compiled kernel or pipeline.
 
@@ -27,10 +31,12 @@ function fusePipeline(p: PipelineIR, byName: Map<string, ProcessIR>): ProcessIR 
 
   const segments: FusedSegment[] = [];
   for (const r of flat) {
+    const last = segments[segments.length - 1];
     if (r.k === 'kernel') {
-      const last = segments[segments.length - 1];
       if (last?.k === 'kernels') last.stages.push(r.stage);
       else segments.push({ k: 'kernels', stages: [r.stage] });
+    } else if (r.k === 'sortBy' && last?.k === 'sortBy') {
+      segments[segments.length - 1] = { k: 'sortBy', keyIndexes: [...r.keyIndexes, ...last.keyIndexes] };
     } else {
       segments.push(r); // barrier stages pass through
     }

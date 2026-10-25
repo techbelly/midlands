@@ -32,7 +32,8 @@
 // centres), as DecomposeBeziers emits them. GroupBy's exact equality and the
 // grid's floor then agree.
 
-import { allStmts, anyStmt, type FusedIR, type FusedStage, type KernelIR, type Stmt } from '../ir.js';
+import { allStmts, anyStmt, type FusedIR, type FusedStage, type KernelIR } from '../ir.js';
+import { needsWorklist } from '../passes/tail.js';
 import { wgslBody, wgslExpr, WORKGROUP_SIZE, type WgslEnv } from './wgsl.js';
 
 export class LowerError extends Error {}
@@ -212,34 +213,36 @@ function genStages(stages: FusedStage[], width: number, o: PassOptions, key: num
 
     const args = stage.args.flat().map((a) => wgslExpr(a, P));
     const feeds = anyStmt(k.body, (s) => s.k === 'feed');
-    // A kernel whose every feed ends its block (ExpandSpans: `>> …; << …`)
-    // feeds at most once per token, so it is a loop over one token, not a
-    // worklist. Several feeds in a row (DecomposeBeziers) need the worklist.
-    const tail = feeds && tailFeeds(k.body, true);
-    out.feeds ||= feeds && !tail;
+    // A tail feed (passes/tail.ts) is the loop's next turn. A kernel whose
+    // every feed is one (ExpandSpans: `>> …; << …`) feeds at most once per
+    // token, so it is a loop over one token, no worklist; several feeds in a
+    // row (DecomposeBeziers) need the worklist, popped at the top of the loop
+    // unless the last turn fed.
+    const worklist = feeds && needsWorklist(k.body);
+    out.feeds ||= worklist;
     const w = k.inputWidth;
     const env: WgslEnv = {
       param: (i) => args[i],
       state: (i) => `S${j}[${i}]`,
       input: (i) => (feeds ? `T${j}[${i}u]` : `a${i}`),
       emit: (vals, ind) => (j + 1 < stages.length ? `${ind}${call(j + 1, vals)}` : o.sink.emit(vals, ind)),
-      feed: (vals, ind) => (tail ? again(j, vals, ind) : push(j, w, o.cap, vals, ind)),
+      feed: (vals, ind, tail) => (tail ? again(j, vals, ind) : push(j, w, o.cap, vals, ind)),
     };
     out.decls.push(`var<private> S${j} : array<f32, ${Math.max(1, k.stateInit.length)}>;`);
     k.stateInit.forEach((e, i) => out.init.push(`  S${j}[${i}] = ${wgslExpr(e, env)};`));
     const params = Array.from({ length: w }, (_, i) => `a${i} : f32`).join(', ');
-    if (tail) {
+    if (feeds && !worklist) {
       fns.push([
         `fn st${j}(${params}) {`,
         `  var T${j} : array<f32, ${w}>;`,
         ...Array.from({ length: w }, (_, i) => `  T${j}[${i}] = a${i};`),
+        `  var again = false;`,
         `  var guard = 0u;`,
         `  loop {`,
         `    if (guard > 1000000u) { break; }`,
         `    guard += 1u;`,
-        `    var again = false;`,
         wgslBody(k.body, '    ', env),
-        `    if (!again) { break; }`,
+        `    break;`,
         `  }`,
         `}`,
       ].join('\n'));
@@ -249,13 +252,18 @@ function genStages(stages: FusedStage[], width: number, o: PassOptions, key: num
       fns.push([
         `fn st${j}(${params}) {`,
         push(j, w, o.cap, Array.from({ length: w }, (_, i) => `a${i}`), '  '),
+        `  var T${j} : array<f32, ${w}>;`,
+        `  var again = false;`,
         `  var guard = 0u;`,
         `  loop {`,
-        `    if (sp${j} == 0u || guard > 1000000u) { break; }`,
+        `    if (guard > 1000000u) { break; }`,
         `    guard += 1u;`,
-        `    sp${j} -= 1u;`,
-        `    var T${j} : array<f32, ${w}>;`,
-        `    for (var k = 0u; k < ${w}u; k += 1u) { T${j}[k] = F${j}[sp${j} * ${w}u + k]; }`,
+        `    if (!again) {`,
+        `      if (sp${j} == 0u) { break; }`,
+        `      sp${j} -= 1u;`,
+        `      for (var k = 0u; k < ${w}u; k += 1u) { T${j}[k] = F${j}[sp${j} * ${w}u + k]; }`,
+        `    }`,
+        `    again = false;`,
         wgslBody(k.body, '    ', env),
         `  }`,
         `}`,
@@ -278,23 +286,16 @@ const fail = (what: string): never => {
   throw new LowerError(`${what} has no meaning here`);
 };
 
-// Every feed is the last statement of its block, in a block that is itself
-// last, and so on outward (so nothing runs after it and at most one runs).
-function tailFeeds(stmts: Stmt[], tail: boolean): boolean {
-  return stmts.every((s, i) => {
-    const t = tail && i === stmts.length - 1;
-    if (s.k === 'feed') return t;
-    if (s.k === 'if') return tailFeeds(s.then, t) && tailFeeds(s.else, t);
-    return true;
-  });
-}
-
-// The next token of a tail-feeding loop: the values first (they read T), then T.
+// A tail feed: the values first (they read T), then T; then round again.
+// (`again` is only read by a worklist loop, which must not pop that turn.)
 function again(j: number, vals: string[], ind: string): string {
   return [
-    ...vals.map((v, i) => `${ind}let f${i} = ${v};`),
-    ...vals.map((_, i) => `${ind}T${j}[${i}] = f${i};`),
-    `${ind}again = true;`,
+    `${ind}{`,
+    ...vals.map((v, i) => `${ind}  let f${i} = ${v};`),
+    ...vals.map((_, i) => `${ind}  T${j}[${i}] = f${i};`),
+    `${ind}  again = true;`,
+    `${ind}  continue;`,
+    `${ind}}`,
   ].join('\n');
 }
 

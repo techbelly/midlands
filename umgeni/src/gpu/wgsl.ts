@@ -35,7 +35,7 @@ export interface WgslEnv {
   state(i: number): string;
   input(i: number): string;
   emit(vals: string[], indent: string): string;
-  feed(vals: string[], indent: string): string;
+  feed(vals: string[], indent: string, tail: boolean): string; // tail: passes/tail.ts
   /** Local-name rendering override (e.g. a per-stage prefix when several
    *  kernel bodies share one shader function). Defaults to the module
    *  mangler. */
@@ -82,7 +82,7 @@ export function wgslBody(list: Stmt[], indent: string, c: WgslEnv, mutable = ass
         lines.push(c.emit(s.values.map((v) => expr(v, c)), indent));
         break;
       case 'feed':
-        lines.push(c.feed(s.values.map((v) => expr(v, c)), indent));
+        lines.push(c.feed(s.values.map((v) => expr(v, c)), indent, s.tail === true));
         break;
       case 'setState':
         // Valid only where the env's state is mutable (thread-local arrays);

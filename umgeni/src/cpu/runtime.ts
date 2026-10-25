@@ -156,18 +156,22 @@ export function api(registry: Map<string, (P?: Params) => Op> | Record<string, (
   return out as Api;
 }
 
-// A buffering sort stage: collects every token, emits stably sorted by the
-// given flattened field offset on end(). It stalls the streaming overlap but
-// composes through the same end() propagation as any other op.
+// A stable sort by one or more keys (flattened field offsets, major first):
+// by the first key, then within equal first keys by the rest, then by
+// arrival. `SortBy (@x) → SortBy (@y)` fuses to keys [y, x], and GroupBy is
+// the same sort by its keys.
 //
 // The sort itself exploits the keys rasterization produces — pixel
 // coordinates, i.e. half-integers in a bounded range: tokens are bucketed by
 // the integer part of the key (O(n), stable by construction), and a bucket
 // only pays for a comparison sort if it actually contains distinct keys.
 // For scanline data every bucket is single-keyed, so no comparisons happen
-// at all. Keys that don't fit (wide range, non-finite) fall back to a plain
-// stable sort, so the result is always exactly a stable sort by key.
-export function sortTokens(buffer: Token[], keyIndex: number): Token[] {
+// at all; the remaining keys then sort each bucket on its own. Keys that
+// don't fit (wide range, non-finite) fall back to a plain stable sort, so
+// the result is always exactly a stable sort by key.
+export function sortTokens(buffer: Token[], keys: number[]): Token[] {
+  if (keys.length === 0) return buffer;
+  const [keyIndex, ...rest] = keys;
   const n = buffer.length;
   if (n < 2) return buffer;
 
@@ -186,7 +190,7 @@ export function sortTokens(buffer: Token[], keyIndex: number): Token[] {
 
   // Bucket count must stay O(n) for this to be a win.
   if (!finite || max - min > 4 * n + 1024) {
-    return buffer.sort((a, b) => a[keyIndex] - b[keyIndex]); // native sort is stable
+    return sortTokens(buffer, rest).sort((a, b) => a[keyIndex] - b[keyIndex]); // native sort is stable
   }
 
   const base = Math.floor(min);
@@ -204,8 +208,9 @@ export function sortTokens(buffer: Token[], keyIndex: number): Token[] {
   }
   const out: Token[] = [];
   for (let i = 0; i < buckets.length; i++) {
-    const b = buckets[i];
+    let b = buckets[i];
     if (b === undefined) continue;
+    b = sortTokens(b, rest);
     if (mixed[i]) b.sort((a, c) => a[keyIndex] - c[keyIndex]);
     for (const t of b) out.push(t);
   }
@@ -237,13 +242,14 @@ export function barrier(f: (ts: Token[]) => Token[]): Op {
   };
 }
 
-export const sortBy = (keyIndex: number): Op => barrier((ts) => sortTokens(ts, keyIndex));
+// A buffering sort stage: it stalls the streaming overlap but composes
+// through the same end() propagation as any other op.
+export const sortBy = (keys: number[]): Op => barrier((ts) => sortTokens(ts, keys));
 
 // GroupBy: buffer, order by keys (major first), emit on end(). The language
-// contract is key order only; this implementation happens to be stable
-// (successive stable sorts, minor key first), which is a valid instance.
-export const groupBy = (keyIndexes: number[], _stable: boolean): Op =>
-  barrier((ts) => keyIndexes.reduceRight((acc, k) => sortTokens(acc, k), ts));
+// contract is key order only; this implementation happens to be stable,
+// which is a valid instance.
+export const groupBy = (keyIndexes: number[], _stable: boolean): Op => barrier((ts) => sortTokens(ts, keyIndexes));
 
 // ReduceBy: merge adjacent same-key runs (the upstream GroupBy guarantees
 // grouping) with per-field combining functions; other fields keep the first

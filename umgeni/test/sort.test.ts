@@ -26,27 +26,37 @@ describe('sortTokens', () => {
   it('matches a reference stable sort on half-integer scanline keys', () => {
     const rand = lcg(1);
     const keys = Array.from({ length: 500 }, () => Math.floor(rand() * 40) + 0.5);
-    expect(sortTokens(tokensFrom(keys), 0)).toEqual(referenceSort(tokensFrom(keys), 0));
+    expect(sortTokens(tokensFrom(keys), [0])).toEqual(referenceSort(tokensFrom(keys), 0));
   });
 
   it('handles mixed fractional keys sharing an integer part', () => {
     const rand = lcg(2);
     const keys = Array.from({ length: 300 }, () => Math.floor(rand() * 20) + Math.round(rand() * 4) / 4);
-    expect(sortTokens(tokensFrom(keys), 0)).toEqual(referenceSort(tokensFrom(keys), 0));
+    expect(sortTokens(tokensFrom(keys), [0])).toEqual(referenceSort(tokensFrom(keys), 0));
   });
 
   it('falls back to a plain stable sort for wide or non-finite key ranges', () => {
     const wide = [5e9, -3e9, 12, 5e9, 0, -3e9].map((k, i) => [k, i] as Token);
-    expect(sortTokens([...wide], 0)).toEqual(referenceSort(wide, 0));
+    expect(sortTokens([...wide], [0])).toEqual(referenceSort(wide, 0));
   });
 
   it('sorts by the given field offset, not the first', () => {
     const tokens: Token[] = [[9, 2.5, 0], [1, 0.5, 1], [5, 2.5, 2], [7, 1.5, 3]];
-    expect(sortTokens([...tokens], 1)).toEqual(referenceSort(tokens, 1));
+    expect(sortTokens([...tokens], [1])).toEqual(referenceSort(tokens, 1));
   });
 
   it('handles empty and single-token buffers', () => {
-    expect(sortTokens([], 0)).toEqual([]);
-    expect(sortTokens([[3, 0]], 0)).toEqual([[3, 0]]);
+    expect(sortTokens([], [0])).toEqual([]);
+    expect(sortTokens([[3, 0]], [0])).toEqual([[3, 0]]);
+  });
+  it('sorts by several keys, major first, exactly as successive stable sorts do', () => {
+    const rand = lcg(3);
+    const tokens: Token[] = Array.from({ length: 400 }, (_, i) => [Math.floor(rand() * 12) + 0.5, Math.floor(rand() * 30) + 0.5, i]);
+    // SortBy (@x) → SortBy (@y): by x, then stably by y.
+    const twice = referenceSort(referenceSort(tokens, 0), 1);
+    expect(sortTokens([...tokens], [1, 0])).toEqual(twice);
+    // Keys that fall back to the comparison sort, mixed with ones that bucket.
+    const wide: Token[] = Array.from({ length: 200 }, (_, i) => [Math.floor(rand() * 3) * 5e9, Math.floor(rand() * 7) + rand() / 2, i]);
+    expect(sortTokens([...wide], [0, 1])).toEqual(referenceSort(referenceSort(wide, 1), 0));
   });
 });

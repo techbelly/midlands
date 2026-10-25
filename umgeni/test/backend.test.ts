@@ -85,7 +85,7 @@ describe('generated kernels', () => {
   it('exposes the generated JS source as an inspectable artifact', () => {
     const library = compileLibrary([gezira('types.nl'), gezira('rasterize.nl')]);
     expect(library.source).toContain('R["DecomposeBeziers"]');
-    expect(library.source).toContain('rt.sortBy(0)'); // SortBy (@x) resolved to offset 0
+    expect(library.source).toContain('rt.sortBy([1, 0])'); // SortBy (@x) → SortBy (@y), fused: one sort by (y, x)
   });
 
   it('compiles all of stroke.nl: mid-stream ⇒, generators, DupCat, Reverse', () => {

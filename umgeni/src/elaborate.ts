@@ -448,7 +448,7 @@ class Elaborator {
         if (typeof key !== 'object' || !('kind' in key) || key.kind !== 'offset') {
           throw new ElabError(`SortBy in '${d.name}' expects an @field key`);
         }
-        stages.push({ k: 'sortBy', keyIndex: fieldInfo(stream, key.field).offset });
+        stages.push({ k: 'sortBy', keyIndexes: [fieldInfo(stream, key.field).offset] });
         continue;
       }
       if (name === 'Reverse') {

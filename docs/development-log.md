@@ -281,7 +281,7 @@ counts as of October 2026):
 | elaboration | [elaborate.ts](../umgeni/src/elaborate.ts) | 822 | typed AST → scalar IR; templates inline process arguments as closures |
 | higher-order | [substitute.ts](../umgeni/src/substitute.ts) | 205 | mid-stream `⇒` is a state machine plus feedback over frames |
 | IR | [ir.ts](../umgeni/src/ir.ts), [scalar.ts](../umgeni/src/scalar.ts) | 151 + 107 | one tree, two folds; every scalar operator defined once |
-| passes | [fuse](../umgeni/src/passes/fuse.ts), [cse](../umgeni/src/passes/cse.ts) | 84 + 226 | stages call each other directly; value numbering without SSA |
+| passes | [fuse](../umgeni/src/passes/fuse.ts), [cse](../umgeni/src/passes/cse.ts), [tail](../umgeni/src/passes/tail.ts) | 91 + 226 + 46 | stages call each other directly, adjacent sorts merge; value numbering without SSA; a tail `<<` is the loop's next turn |
 | JS | [codegen.ts](../umgeni/src/cpu/js.ts), [runtime.ts](../umgeni/src/cpu/runtime.ts) | 269 + 313 | every kernel is a segment; barriers are functions on finite streams |
 | wasm | [wasm.ts](../umgeni/src/cpu/wasm.ts) | 341 | the same segments, in the binary format, bit-identical |
 | GPU | [wgsl](../umgeni/src/gpu/wgsl.ts), [lower](../umgeni/src/gpu/lower.ts), [texture](../umgeni/src/gpu/texture.ts), [classify](../umgeni/src/gpu/classify.ts) | 143 + 310 + 113 + 21 | declarations license parallel lowering; textures become one `paint()` |

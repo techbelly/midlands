@@ -38,7 +38,9 @@ export type Stmt =
   | { k: 'assign'; name: string; expr: ScalarExpr }  // mutation (primed state locals)
   | { k: 'if'; cond: ScalarExpr; then: Stmt[]; else: Stmt[] }
   | { k: 'emit'; values: ScalarExpr[] }   // exactly outputWidth values
-  | { k: 'feed'; values: ScalarExpr[] }   // exactly inputWidth values (`<<`)
+  // exactly inputWidth values (`<<`). `tail`: nothing runs after it, so it
+  // is simply the stage's next token (marked by passes/tail.ts).
+  | { k: 'feed'; values: ScalarExpr[]; tail?: true }
   | { k: 'setState'; index: number; expr: ScalarExpr };
 
 export interface KernelIR {
@@ -80,7 +82,9 @@ export interface PipelineIR {
 }
 export type StageIR =
   | { k: 'stage'; name: string; args: ScalarExpr[][] } // one flat vector per argument
-  | { k: 'sortBy'; keyIndex: number }                  // flattened field offset
+  // Flattened field offsets, major first. Elaboration gives one key; fusion
+  // joins `SortBy (@x) → SortBy (@y)` into one sort by (y, x).
+  | { k: 'sortBy'; keyIndexes: number[] }
   | { k: 'identity' }
   // Whole-stream builtins: Reverse emits its input backwards at end of
   // stream; DupCat feeds every token to both branches and emits all of the

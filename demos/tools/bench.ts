@@ -35,12 +35,13 @@ interface Variant {
   opts: CompileOptions;
 }
 const VARIANTS: Variant[] = [
-  { name: 'baseline', opts: { cse: false, boolCond: false, fuse: false } },
+  { name: 'baseline', opts: { cse: false, boolCond: false, fuse: false, tail: false } },
   { name: '+cse', opts: { cse: true, boolCond: false, fuse: false } },
   { name: '+bool', opts: { cse: false, boolCond: true, fuse: false } },
   { name: '+cse +bool', opts: { cse: true, boolCond: true, fuse: false } },
   { name: '+fuse', opts: { cse: false, boolCond: false, fuse: true } },
-  { name: 'all three', opts: { cse: true, boolCond: true, fuse: true } },
+  { name: 'all -tail', opts: { cse: true, boolCond: true, fuse: true, tail: false } },
+  { name: 'all four', opts: { cse: true, boolCond: true, fuse: true } },
   // Fused segments as WebAssembly (op counting is a JS-codegen feature).
   { name: 'all + wasm', opts: { cse: true, boolCond: true, fuse: true, target: 'wasm' } },
 ];

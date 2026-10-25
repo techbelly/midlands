@@ -67,10 +67,13 @@ Nile ─Ohm─▶ syntax tree ─sugar.mooi─▶ core Nile ─nile.mooi, staged
     [texture.ts](src/gpu/texture.ts) turns gezira's textures into a shader
     `paint()` function.
 
-Before code is written, two passes tidy the intermediate form: consecutive
+Before code is written, three passes tidy the intermediate form: consecutive
 kernels are joined so tokens pass between them as function arguments rather
-than arrays (*fusion*), and repeated calculations are done once (*common
-subexpression elimination*, CSE).
+than arrays, and two sorts in a row become one sort by both keys (*fusion*);
+repeated calculations are done once (*common subexpression elimination*,
+CSE); and a `<<` that nothing follows is marked as the stage's next token, so
+a back end loops instead of pushing it onto the worklist and popping it
+straight back ([tail.ts](src/passes/tail.ts)).
 
 ## The host interface
 
