@@ -7,10 +7,10 @@
 ../../gezira/stroke.nl
 ../../gezira/rasterize.nl
 ../../gezira/texture.nl
-vector.nl
+../../roda/vector.nl
 svg.nl
-spans.nl
-../../umgeni/nl/rasterize-parallel.nl
-evenodd.nl
-dash.nl
-clip.nl
+../../roda/spans.nl
+../../roda/rasterize-parallel.nl
+../../roda/evenodd.nl
+../../roda/dash.nl
+../../roda/clip.nl

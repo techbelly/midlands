@@ -20,7 +20,7 @@ const library = compileLibrary([
   read('gezira/types.nl'),
   read('gezira/bezier.nl'),
   read('gezira/rasterize.nl'),
-  read('demos/nl/text.nl'),
+  read('roda/text.nl'),
   read('demos/test/fixtures/combine-scan.nl'),
 ]);
 

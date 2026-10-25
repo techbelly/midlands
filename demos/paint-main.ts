@@ -20,9 +20,9 @@ import texture from '../gezira/texture.nl';
 import compositor from '../gezira/compositor.nl';
 import gradient from '../gezira/gradient.nl';
 import filter from '../gezira/filter.nl';
-import vector from './nl/vector.nl';
-import spans from './nl/spans.nl';
-import rasterizeParallel from '../umgeni/nl/rasterize-parallel.nl';
+import vector from '../roda/vector.nl';
+import spans from '../roda/spans.nl';
+import rasterizeParallel from '../roda/rasterize-parallel.nl';
 import { quoteNile } from './src/quote.js';
 
 (document.getElementById('nile') as HTMLElement).textContent = quoteNile(

@@ -18,7 +18,7 @@ import { PRESETS } from '../paint-presets.js';
 
 const gezira = ['types', 'bezier', 'stroke', 'rasterize', 'texture', 'compositor', 'gradient', 'filter']
   .map((n) => read(`gezira/${n}.nl`))
-  .concat(read('demos/nl/vector.nl'), read('demos/nl/spans.nl'), read('umgeni/nl/rasterize-parallel.nl'));
+  .concat(read('roda/vector.nl'), read('roda/spans.nl'), read('roda/rasterize-parallel.nl'));
 
 const W = 480;
 const H = 360;

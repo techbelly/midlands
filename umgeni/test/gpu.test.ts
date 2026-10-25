@@ -3,7 +3,7 @@
 // `npm run bench:gpu` — which also checks GPU-vs-CPU output tolerance.
 
 import { describe, expect, it } from 'vitest';
-import { gezira, nl } from './sources.js';
+import { gezira, roda } from './sources.js';
 import { compileLibrary } from '../src/compile.js';
 import { isMapKernel } from '../src/gpu/classify.js';
 import { genMapShader } from '../src/gpu/wgsl.js';
@@ -63,7 +63,7 @@ describe('WGSL generation', () => {
 
 describe('pipeline lowering (gpu/lower.ts)', () => {
   const sources = ['types.nl', 'bezier.nl', 'rasterize.nl', 'texture.nl'].map(gezira);
-  const nlSrc = nl('rasterize-parallel.nl');
+  const nlSrc = roda('rasterize-parallel.nl');
   const fusedOf = (library: ReturnType<typeof compileLibrary>, name: string) => {
     const f = library.ir.processes.find((p) => p.k === 'fused' && p.name === name);
     if (!f || f.k !== 'fused') throw new Error(`${name} not fused`);

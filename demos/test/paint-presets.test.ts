@@ -12,7 +12,7 @@ const glue = 'Painted : CoverageSpan >> (Color, CoveragePoint)\n    ⇒ ApplyTex
 describe('paint presets', () => {
   for (const p of PRESETS) {
     it(p.name, () => {
-      const library = compileLibrary([...gezira, read('demos/nl/vector.nl'), p.source, glue]);
+      const library = compileLibrary([...gezira, read('roda/vector.nl'), p.source, glue]);
       expect(library.unsupported).toEqual([]);
       const s = makeStreamer(library, 'Painted');
       const out = [...s.push([100.5, 120.5, 1, 6]), ...s.end()];

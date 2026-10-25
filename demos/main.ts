@@ -28,10 +28,10 @@ import { requestDevice } from '../umgeni/src/gpu/runtime.js';
 import { compileMs, nile, nileWasm, RasterizePixelsIR } from './nl/text.nl-lib';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
-import textNl from './nl/text.nl';
-import spansNl from './nl/spans.nl';
+import textNl from '../roda/text.nl';
+import spansNl from '../roda/spans.nl';
 import rasterizeNl from '../gezira/rasterize.nl';
-import rasterizeParallelNl from '../umgeni/nl/rasterize-parallel.nl';
+import rasterizeParallelNl from '../roda/rasterize-parallel.nl';
 
 (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
   [textNl, spansNl, rasterizeNl, rasterizeParallelNl],

@@ -5,6 +5,6 @@
 ../../gezira/bezier.nl
 ../../gezira/rasterize.nl
 ../../gezira/texture.nl
-text.nl
-spans.nl
-../../umgeni/nl/rasterize-parallel.nl
+../../roda/text.nl
+../../roda/spans.nl
+../../roda/rasterize-parallel.nl

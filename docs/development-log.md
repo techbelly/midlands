@@ -49,7 +49,7 @@ Frankish:
   wherever they are used; none are unsupported. A pipeline that uses a process
   which failed to compile is reported unsupported too, rather than compiling
   to a reference that fails at run time.
-- **Text pipeline: working end to end.** [nl/text.nl](../demos/nl/text.nl) is the first
+- **Text pipeline: working end to end.** [text.nl](../roda/text.nl) is the first
   Umgeni-authored Nile: a `GlyphBezier` stream type and a stateful
   `LayoutGlyphs` kernel that does pen advance and line wrapping *in Nile*, feeding the gezira kernels:
   `LayoutGlyphs → TransformBeziers → ClipBeziers → Rasterize`. The host side
@@ -168,7 +168,7 @@ Frankish:
   is a *compile error*; `ReduceBy (@y, @x; a ⊕ +, h ⊕ +)` (commutativity
   checked against ordering); `with H = +[ h ] by @y` exclusive-scan clauses;
   `p ∷ q` / `p ∷ ∅` window arms. The rasterizer rewritten in this syntax
-  ([nl/rasterize-parallel.nl](../umgeni/nl/rasterize-parallel.nl)) matches the classic pipeline
+  ([roda/rasterize-parallel.nl](../roda/rasterize-parallel.nl)) matches the classic pipeline
   structure-exactly (coverage within 1e-12; the reference's phantom
   initial-pixel spans are gone by construction — see the one-ulp validation
   in [test/scan-decomposition.test.ts](../demos/test/scan-decomposition.test.ts)).
@@ -242,7 +242,7 @@ Frankish:
   fonts at their default instance) — and TrueType outlines are quadratic
   Béziers, exactly gezira's `Bezier`, so glyphs feed the pipeline with no
   curve conversion. Bundled: Source Serif 4 ([fonts/](../demos/fonts/), OFL). Word
-  wrapping is pure Nile ([nl/text.nl](../demos/nl/text.nl)): `Reverse → WordWidths →
+  wrapping is pure Nile ([roda/text.nl](../roda/text.nl)): `Reverse → WordWidths →
   Reverse` runs backwards summing advances, restarting at spaces, so each
   word's first glyph carries the word's width; `LayoutGlyphs` then breaks
   greedily (spaces hang in the margin; over-long words break by character;

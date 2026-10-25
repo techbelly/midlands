@@ -14,11 +14,11 @@ import svgSrc from './tiger.svg';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
 import svgNl from './nl/svg.nl';
-import vectorNl from './nl/vector.nl';
-import spansNl from './nl/spans.nl';
+import vectorNl from '../roda/vector.nl';
+import spansNl from '../roda/spans.nl';
 import strokeNl from '../gezira/stroke.nl';
 import bezierNl from '../gezira/bezier.nl';
-import rasterizeParallelNl from '../umgeni/nl/rasterize-parallel.nl';
+import rasterizeParallelNl from '../roda/rasterize-parallel.nl';
 
 (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
   [svgNl, vectorNl, spansNl, strokeNl, bezierNl, rasterizeParallelNl],

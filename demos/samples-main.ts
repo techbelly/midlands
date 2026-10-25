@@ -26,16 +26,17 @@ import rasterizeNl from '../gezira/rasterize.nl';
 import textureNl from '../gezira/texture.nl';
 import gradientNl from '../gezira/gradient.nl';
 import filterNl from '../gezira/filter.nl';
-import vectorNl from './nl/vector.nl';
-import spansNl from './nl/spans.nl';
-import rasterizeParallelNl from '../umgeni/nl/rasterize-parallel.nl';
-import evenoddNl from './nl/evenodd.nl';
-import dashNl from './nl/dash.nl';
-import clipNl from './nl/clip.nl';
+import vectorNl from '../roda/vector.nl';
+import spansNl from '../roda/spans.nl';
+import rasterizeParallelNl from '../roda/rasterize-parallel.nl';
+import evenoddNl from '../roda/evenodd.nl';
+import dashNl from '../roda/dash.nl';
+import clipNl from '../roda/clip.nl';
+import imageNl from '../roda/image.nl';
 import samplesNl from './nl/samples.nl';
-import patchNl from './nl/patch.nl';
+import patchNl from '../roda/patch.nl';
 
-const SOURCES = [typesNl, bezierNl, strokeNl, rasterizeNl, textureNl, gradientNl, filterNl, vectorNl, spansNl, rasterizeParallelNl, evenoddNl, dashNl, clipNl, samplesNl, patchNl];
+const SOURCES = [typesNl, bezierNl, strokeNl, rasterizeNl, textureNl, gradientNl, filterNl, vectorNl, spansNl, rasterizeParallelNl, evenoddNl, dashNl, clipNl, patchNl, imageNl, samplesNl];
 const SIZE = 256;
 const font = parseTrueType(sourceSerif);
 // The picture the image samples use, where Cairo's use a photograph: the

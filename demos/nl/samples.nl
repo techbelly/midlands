@@ -1,6 +1,6 @@
--- The Cairo samples' own Nile. Most samples need only the kernels in the
--- other files; the gradient sample's two sources are textures, defined here,
--- with the pipelines that paint a shape with them.
+-- The Cairo samples' own Nile: the gradient sample's two sources are
+-- textures, defined here, with the pipelines that paint a shape with them.
+-- Everything else the samples draw with is roda's.
 
 -- Cairo's linear gradient from (0, 0) to (0, 256), white to black.
 Sky : Texture
@@ -30,19 +30,3 @@ FillWinding (min, max : Point) : Bezier >> CoverageSpan
 
 FillEvenOdd (min, max : Point) : Bezier >> CoverageSpan
     ⇒ ClipBeziers (min, max) → RasterizeEvenOdd
-
--- An image as a source. Nile has no memory to read, so ReadImage is a
--- process the host supplies, declared here by its signature alone: the
--- colour (premultiplied) of the pixel under a point, transparent outside
--- the image. Everything around it is Nile: M places the image on the page,
--- so its inverse carries each pixel into the image's space, where it is
--- sampled bilinearly as Cairo's default filter does. A pattern repeats the
--- image across the plane, and has a matrix of its own, from the page's
--- user space into the image's (Cairo's pattern matrix).
-ReadImage :: (img : Real) : Point >> Color
-
-PaintImage (M : Matrix, img : Real) : CoverageSpan >> PaintedPixel
-    ⇒ ApplyTexture (TransformPoints (⁻¹ M) → BilinearFilter (ReadImage (img)))
-
-PaintImageRepeat (M, Mp : Matrix, D : Point, img : Real) : CoverageSpan >> PaintedPixel
-    ⇒ ApplyTexture (TransformPoints (Mp ∘ ⁻¹ M) → RepeatTexture (D) → BilinearFilter (ReadImage (img)))

@@ -4,7 +4,8 @@
 //
 // What is counted where:
 //   gezira        Amelang's kernels, unmodified
-//   demos' Nile   the Nile written for the pages (demos/nl, umgeni/nl)
+//   roda          the library written beyond gezira
+//   demos' Nile   the Nile particular to a page (demos/nl)
 //   Nile in Mooi  the four files that define Nile (umgeni/src/semantics/*.mooi)
 //   mooi          the language's implementation (grammar, evaluator, prelude)
 //   umgeni        the compiler, TypeScript and the Ohm grammar, by part;
@@ -26,7 +27,8 @@ const total = (fs: string[]) => fs.reduce((n, f) => n + lines(f), 0);
 
 const parts: [string, string[]][] = [
   ['gezira (Nile, unmodified)', files('gezira', /\.nl$/)],
-  ["the demos' Nile", [...files('demos/nl', /\.nl$/), ...files('umgeni/nl', /\.nl$/)]],
+  ['roda (Nile beyond gezira)', files('roda', /\.nl$/)],
+  ["the demos' own Nile", files('demos/nl', /\.nl$/)],
   ['Nile in Mooi (semantics/*.mooi)', files('umgeni/src/semantics', /\.mooi$/)],
   ['mooi (the language)', files('mooi/src', /\.(ts|ohm)$/)],
   ['umgeni, all (TypeScript + Ohm)', files('umgeni/src', /\.(ts|ohm)$/, true)],

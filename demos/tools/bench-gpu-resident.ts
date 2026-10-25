@@ -22,8 +22,8 @@ const library = compileLibrary([
   read('gezira/bezier.nl'),
   read('gezira/rasterize.nl'),
   read('gezira/texture.nl'),
-  read('demos/nl/text.nl'),
-  read('umgeni/nl/rasterize-parallel.nl'),
+  read('roda/text.nl'),
+  read('roda/rasterize-parallel.nl'),
 ]);
 
 const PARA =
