@@ -79,35 +79,39 @@ async function draw(): Promise<void> {
   const gpu = modeEl.value === 'gpu' ? await ensureGpu() : null;
   if (!gpu) modeEl.value = 'cpu'; // also the fallback when WebGPU is unavailable
   show(gpu ? canvasGpu : canvas);
+  const backEnd = gpu ? drawGpu(gpu) : drawCpu;
 
   const t0 = performance.now();
   const paths = tigerPaths(tiger, viewMatrix(), nile, canvas.width, canvas.height);
   const frontMs = performance.now() - t0;
-  const backMs = gpu ? await drawGpu(gpu, paths) : drawCpu(paths);
+  const backMs = await backEnd(paths);
   statsEl.textContent =
     `${tiger.paths.length} paths · ${segs.toLocaleString()} cubics · ${z.toFixed(1)}× · ` +
     `front (CPU Nile) ${frontMs.toFixed(0)} ms + raster & composite (${gpu ? 'GPU' : 'CPU'}) ${backMs.toFixed(0)} ms ` +
     `= ${(frontMs + backMs).toFixed(0)} ms a frame`;
 }
 
-// Each back end returns its time in ms.
-async function drawGpu(state: GpuState, paths: TigerPath[]): Promise<number> {
+// A back end rasterizes and composites the paths, and resolves to its time
+// in ms.
+type BackEnd = (paths: TigerPath[]) => Promise<number>;
+
+const drawGpu = (state: GpuState): BackEnd => async (paths) => {
   const t0 = performance.now();
   state.gpu.frame(toBatches(paths), state.context.getCurrentTexture().createView());
   // The GPU runs after submit; wait for it, so the next frame starts on a
   // free GPU and the figures add up to what a frame really takes.
   await state.device.queue.onSubmittedWorkDone();
   return performance.now() - t0;
-}
+};
 
-function drawCpu(paths: TigerPath[]): number {
+const drawCpu: BackEnd = async (paths) => {
   const t0 = performance.now();
   const img = ctx.createImageData(canvas.width, canvas.height);
   img.data.fill(255);
   paintPaths(img, nile, paths);
   ctx.putImageData(img, 0, 0);
   return performance.now() - t0;
-}
+};
 
 const scheduleDraw = frameScheduler(draw);
 
