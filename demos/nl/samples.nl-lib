@@ -1,0 +1,17 @@
+-- The Cairo samples page's Nile program: gezira's kernels, unmodified, the
+-- demos' vector and span stages, umgeni's parallel rasterizer, and the
+-- samples' own fill rule, dashes, clipping and gradients.
+-- One source per line, relative to this file.
+../../gezira/types.nl
+../../gezira/bezier.nl
+../../gezira/stroke.nl
+../../gezira/rasterize.nl
+../../gezira/texture.nl
+../../gezira/gradient.nl
+vector.nl
+spans.nl
+../../umgeni/nl/rasterize-parallel.nl
+evenodd.nl
+dash.nl
+clip.nl
+samples.nl

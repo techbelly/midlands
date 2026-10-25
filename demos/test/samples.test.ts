@@ -133,3 +133,83 @@ describe('clipping and masking (nl/clip.nl)', () => {
     for (const q of pts) expect(q[2]).toBeCloseTo(0.5, 9);
   });
 });
+
+// --- the samples page, headless -----------------------------------------------
+import { readFileSync } from 'node:fs';
+import { parseTrueType } from '../src/text/ttf.js';
+import { Sheet } from '../src/samples/draw.js';
+import { SCENES } from '../src/samples/scenes.js';
+import { path } from '../src/samples/path.js';
+
+const samples = compileLibraryFile('demos/nl/samples.nl-lib');
+const font = parseTrueType(readFileSync(new URL('../fonts/SourceSerif4.ttf', import.meta.url)));
+const page = () => ({ width: 256, height: 256, data: new Uint8ClampedArray(256 * 256 * 4).fill(255) });
+const px = (img: { data: Uint8ClampedArray }, x: number, y: number) => [...img.data.slice((y * 256 + x) * 4, (y * 256 + x) * 4 + 3)];
+const WHITE = [255, 255, 255];
+const render = (id: string) => {
+  const scene = SCENES.find((s) => s.id === id)!;
+  const img = page();
+  scene.draw!(new Sheet(samples.api, img), font);
+  return img;
+};
+
+describe('the Cairo samples, drawn by Nile', () => {
+  it('the samples library compiles with nothing unsupported', () => {
+    expect(samples.unsupported).toEqual([]);
+  });
+  it('builds paths as Cairo does: arcs join the current point, close_path closes', () => {
+    const p = path().moveTo(0, 0).arc(10, 0, 10, Math.PI, 2 * Math.PI).closePath().build();
+    expect(p.subpaths.length).toBe(1);
+    const first = p.subpaths[0][0];
+    expect([first[0], first[1]]).toEqual([0, 0]); // the arc starts at the current point: no line needed
+    const last = p.subpaths[0][p.subpaths[0].length - 1];
+    expect([last[6], last[7]]).toEqual([0, 0]); // closed back to the start
+    expect(path().rectangle(1, 2, 3, 4).build().cubics.length).toBe(4);
+  });
+  it('draws every sample that has what it needs, and says what the rest lack', () => {
+    for (const scene of SCENES) {
+      if (!scene.draw) {
+        expect(scene.missing, scene.id).toBeTruthy();
+        continue;
+      }
+      const img = render(scene.id);
+      let inked = 0;
+      for (let i = 0; i < 256 * 256; i++) if (img.data[i * 4] !== 255 || img.data[i * 4 + 1] !== 255 || img.data[i * 4 + 2] !== 255) inked++;
+      expect(inked, scene.id).toBeGreaterThan(200);
+    }
+    expect(SCENES.filter((s) => s.draw).length).toBe(16);
+  });
+  it('arc: a thick black arc from 45° to 180°, and nothing on the other side', () => {
+    const img = render('arc');
+    expect(px(img, 128 + Math.round(100 * Math.cos(2)), 128 + Math.round(100 * Math.sin(2)))).toEqual([0, 0, 0]); // on the arc
+    expect(px(img, 128 + Math.round(100 * Math.cos(-1)), 128 + Math.round(100 * Math.sin(-1)))).toEqual(WHITE); // off it
+  });
+  it('clip: everything outside the circle stays white', () => {
+    const img = render('clip');
+    expect(px(img, 5, 5)).toEqual(WHITE);
+    expect(px(img, 128, 128)).not.toEqual(WHITE);
+    expect(px(img, 128, 60)).toEqual([0, 0, 0]); // inside the clip, filled black
+  });
+  it('fill style: even-odd leaves the circles empty, winding fills the one wound the same way', () => {
+    const img = render('fill_style');
+    expect(px(img, 64, 64)).toEqual(WHITE); // even-odd: inside the left circle
+    expect(px(img, 192, 64)).toEqual(WHITE); // and the right
+    expect(px(img, 64, 192)).not.toEqual(WHITE); // winding: the left circle winds with the rectangle
+    expect(px(img, 192, 192)).toEqual(WHITE); // the right winds against it
+    expect(px(img, 30, 60)[1]).toBeGreaterThan(150); // green, between
+  });
+  it('gradient: the sky runs white to black down the page', () => {
+    const img = render('gradient');
+    expect(px(img, 20, 3)[0]).toBeGreaterThan(240);
+    expect(px(img, 20, 252)[0]).toBeLessThan(15);
+    expect(px(img, 128, 110)[0]).toBeGreaterThan(200); // the sun's centre is white
+  });
+  it('dash: ink and gaps along the line', () => {
+    const img = render('dash');
+    // The line from (128, 25.6) towards (230.4, 230.4): the first 20 are ink, then a gap.
+    const at = (d: number) => px(img, Math.round(128 + 102.4 * d / 229), Math.round(25.6 + 204.8 * d / 229));
+    expect(at(8)).toEqual([0, 0, 0]);
+    expect(at(25)).toEqual(WHITE);
+    expect(at(70)).toEqual([0, 0, 0]);
+  });
+});

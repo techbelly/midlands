@@ -19,6 +19,16 @@ root builds `dist/` and serves it; `npm run demo:build` just builds.
 - **paint**: gezira's textures, gradients, compositing and filters. The
   compiler runs in the browser here, so a scene's Nile can be edited and
   recompiled; the paint is lowered to a GPU shader where it can be.
+- **samples** (`samples.html`): Cairo's nineteen samples, each one's C beside
+  the same picture drawn by Nile, with the Nile that drew it. Paths are built
+  in TypeScript ([src/samples/path.ts](src/samples/path.ts), with text as a
+  path from the font); fill, stroke, clip and paint are Nile
+  ([src/samples/draw.ts](src/samples/draw.ts)). Three samples that take an
+  image as a source wait for an image primitive. The Nile written for these
+  pages beyond gezira: the even-odd fill rule ([nl/evenodd.nl](nl/evenodd.nl)),
+  dashes and a stroker that caps each piece ([nl/dash.nl](nl/dash.nl)),
+  clipping to a shape and masking ([nl/clip.nl](nl/clip.nl)), and the
+  samples' gradients ([nl/samples.nl](nl/samples.nl)).
 
 A page imports a Nile library as `import { nile } from './nl/vector.nl-lib'`.
 The `.nl-lib` file lists the `.nl` sources, and the bundler plugin

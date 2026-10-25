@@ -17,7 +17,7 @@ is a start.
 | [gezira/](gezira/) | Amelang's gezira kernels, unmodified: Béziers, strokes, rasterization, textures, gradients, compositing, filters | ~600 lines of Nile |
 | [umgeni/](umgeni/) | a compiler for (extended) Nile → JavaScript, WebAssembly and WebGPU | ~5,300 lines of TypeScript, 1,200 of them the GPU back end and 600 the WebAssembly one |
 | [mooi/](mooi/) | a small language for writing down what a language means, as equations; Nile's meaning is 252 lines of it | ~360 lines |
-| [demos/](demos/) | text (TrueType and colour emoji), the Ghostscript tiger, strokes, a paint gallery | |
+| [demos/](demos/) | text (TrueType and colour emoji), the Ghostscript tiger, strokes, a paint gallery, Cairo's samples drawn by Nile | |
 | [docs/](docs/) | design notes, research notes | |
 
 ## Running it

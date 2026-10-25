@@ -61,5 +61,6 @@ await page('main.ts', 'app.js');
 await page('tiger-main.ts', 'tiger-app.js');
 await page('strokes-main.ts', 'strokes-app.js');
 await page('paint-main.ts', 'paint-app.js');
+await page('samples-main.ts', 'samples-app.js');
 for (const f of readdirSync(demos)) if (f.endsWith('.html')) copyFileSync(join(demos, f), join(dist, f));
-console.log('demos/dist written — open index.html (text), tiger.html, strokes.html, paint.html');
+console.log('demos/dist written — open index.html (text), tiger.html, strokes.html, paint.html, samples.html');
