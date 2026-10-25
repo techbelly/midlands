@@ -7,4 +7,4 @@ import { librarySources, read } from '../src/sources.js';
 
 const library = ['types', 'bezier', 'stroke', 'rasterize', 'texture', 'compositor', 'gradient', 'filter'].map((n) => read(`gezira/${n}.nl`));
 describe('interpreter ≡ compiler, kernel by kernel: text + RasterizeParallel', () => agree(librarySources('demos/nl/text.nl-lib').map((p) => read(p))));
-describe('interpreter ≡ compiler, kernel by kernel: vector', () => agree([...library, read('demos/nl/vector.nl'), read('demos/nl/svg.nl')]));
+describe('interpreter ≡ compiler, kernel by kernel: vector', () => agree([...library, read('demos/nl/vector.nl'), read('demos/nl/svg.nl'), read('umgeni/nl/rasterize-parallel.nl'), read('demos/nl/evenodd.nl')]));
