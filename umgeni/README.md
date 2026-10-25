@@ -83,6 +83,10 @@ CSE); and a `<<` that nothing follows is marked as the stage's next token, so
 a back end loops instead of pushing it onto the worklist and popping it
 straight back ([tail.ts](src/passes/tail.ts)).
 
+`npm run sizes` from the root counts the compiler by these stages: Nile → AST,
+AST → IR (the Mooi files and their hosts, the IR and its passes), and the
+three back ends.
+
 ## The host interface
 
 A compiled library is used through its API: `library.api`, or
