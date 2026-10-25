@@ -8,6 +8,20 @@ Cubic <: (A, B, C, D : Point)
 ∆(M : Matrix) : Real
     M.a × M.d - M.b × M.c
 
+-- The map that undoes M: (⁻¹ M) ⊗ (M ⊗ P) = P. The adjugate, over the
+-- determinant (a scalar divides every field).
+⁻¹(M : Matrix) : Matrix
+    (M.d, -M.b, -M.c, M.a, M.c × M.f - M.d × M.e, M.b × M.e - M.a × M.f) / ∆ M
+
+-- Maps composed in the order given, the first to be applied last: Cairo's
+-- translate, then rotate, then scale, as one matrix. The host hands over
+-- the list and receives the product.
+Compose : Matrix >> Matrix
+    M = (1, 0, 0, 1, 0, 0) : Matrix
+    ∀ N
+        M' = M ∘ N
+    >> M
+
 TransformCubics (M : Matrix) : Cubic >> Cubic
     ∀ (A, B, C, D)
         >> (M ⊗ A, M ⊗ B, M ⊗ C, M ⊗ D)

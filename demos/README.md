@@ -22,7 +22,8 @@ root builds `dist/` and serves it; `npm run demo:build` just builds.
 - **samples** (`samples.html`): Cairo's nineteen samples, each one's C beside
   the same picture drawn by Nile, with the Nile that drew it. Paths are built
   in TypeScript ([src/samples/path.ts](src/samples/path.ts), with text as a
-  path from the font); fill, stroke, clip and paint are Nile
+  path from the font); fill, stroke, clip, paint and the transforms (composed
+  and inverted by [nl/vector.nl](nl/vector.nl)) are Nile
   ([src/samples/draw.ts](src/samples/draw.ts)). The three samples that
   paint with an image use `ReadImage`, a process the host supplies (Nile has
   no memory to read); their image is the tiger, drawn by the same Nile. The

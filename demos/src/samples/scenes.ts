@@ -6,7 +6,7 @@
 import type { Font } from '../text/ttf.js';
 import { path, type Path } from './path.js';
 import { textExtents, textPath } from './text.js';
-import { invert as invertM, multiply, rotate, scale, translate, type Rgba, type Sheet } from './draw.js';
+import { rotate, scale, translate, type Rgba, type Sheet } from './draw.js';
 import type { ImgLike } from '../vector/spans.js';
 
 export interface Scene {
@@ -336,7 +336,7 @@ cairo_pattern_destroy (pat);`,
     },
   },
   {
-    id: 'image', title: 'image', nile: ['PaintImage', 'ReadImage', 'TransformPoints', 'BilinearFilter', 'ApplyTexture'],
+    id: 'image', title: 'image', nile: ['Compose', 'PaintImage', 'ReadImage', 'TransformPoints', 'BilinearFilter', 'ApplyTexture'],
     cairo: `int              w, h;
 cairo_surface_t *image;
 
@@ -354,12 +354,11 @@ cairo_paint (cr);
 cairo_surface_destroy (image);`,
     draw(s, _font, image) {
       const { width: w, height: h } = image;
-      const M = [translate(128, 128), rotate(45 * D), scale(256 / w, 256 / h), translate(-0.5 * w, -0.5 * h)].reduce(multiply);
-      s.paintImage(image, M);
+      s.paintImage(image, s.matrix(translate(128, 128), rotate(45 * D), scale(256 / w, 256 / h), translate(-0.5 * w, -0.5 * h)));
     },
   },
   {
-    id: 'imagepattern', title: 'imagepattern', nile: ['PaintImageRepeat', 'ReadImage', 'RepeatTexture', 'TransformPoints', 'BilinearFilter', 'ApplyTexture'],
+    id: 'imagepattern', title: 'imagepattern', nile: ['Compose', 'PaintImageRepeat', 'ReadImage', 'RepeatTexture', 'TransformPoints', 'BilinearFilter', 'ApplyTexture'],
     cairo: `int              w, h;
 cairo_surface_t *image;
 cairo_pattern_t *pattern;
@@ -389,11 +388,8 @@ cairo_pattern_destroy (pattern);
 cairo_surface_destroy (image);`,
     draw(s, _font, image) {
       const { width: w, height: h } = image;
-      // The page's transform, and the pattern's matrix (page space → image space).
-      const ctm = [translate(128, 128), rotate(Math.PI / 4), scale(1 / Math.SQRT2, 1 / Math.SQRT2), translate(-128, -128)].reduce(multiply);
-      const pattern = scale((w / 256) * 5, (h / 256) * 5);
-      // paintImage takes image → page: the inverse of (pattern ∘ ctm⁻¹).
-      s.paintImage(image, multiply(ctm, invertM(pattern)), 'repeat');
+      const ctm = s.matrix(translate(128, 128), rotate(Math.PI / 4), scale(1 / Math.SQRT2, 1 / Math.SQRT2), translate(-128, -128));
+      s.paintImage(image, ctm, 'repeat', scale((w / 256) * 5, (h / 256) * 5));
     },
   },
   {

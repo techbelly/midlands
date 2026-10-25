@@ -15,15 +15,6 @@ export const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
 export const translate = (x: number, y: number): Matrix => [1, 0, 0, 1, x, y];
 export const scale = (x: number, y: number): Matrix => [x, 0, 0, y, 0, 0];
 export const rotate = (t: number): Matrix => [Math.cos(t), Math.sin(t), -Math.sin(t), Math.cos(t), 0, 0];
-/** M then N, as Cairo composes: (M ∘ N) applies N first. multiply(M, N) = M ∘ N. */
-export const multiply = (M: Matrix, N: Matrix): Matrix =>
-  [M[0] * N[0] + M[2] * N[1], M[1] * N[0] + M[3] * N[1], M[0] * N[2] + M[2] * N[3], M[1] * N[2] + M[3] * N[3], M[0] * N[4] + M[2] * N[5] + M[4], M[1] * N[4] + M[3] * N[5] + M[5]];
-export const invert = (M: Matrix): Matrix => {
-  const det = M[0] * M[3] - M[1] * M[2];
-  const [a, b, c, d] = [M[3] / det, -M[1] / det, -M[2] / det, M[0] / det];
-  return [a, b, c, d, -(a * M[4] + c * M[5]), -(b * M[4] + d * M[5])];
-};
-
 // ReadImage, the process the host supplies (nl/samples.nl): the pixel
 // under a point, premultiplied, transparent outside the image. The images
 // are kept in a table; a process parameter is a number, so an image is
@@ -102,16 +93,22 @@ export class Sheet {
     writePixels(this.img, this.nile, this.nile[texture](this.box).run(this.flatten(path.cubics)));
   }
 
+  /** Maps composed in order, the first applied last, as Cairo's translate,
+   *  rotate and scale calls build the transform (nl/vector.nl's Compose). */
+  matrix(...maps: Matrix[]): Matrix {
+    return this.nile.Compose().run(maps.map((m) => [...m]))[0] as unknown as Matrix;
+  }
+
   /** Cairo's paint with an image source: the whole page (within the clip)
-   *  from the image placed by M (image → page), repeated or not. */
-  paintImage(image: ImgLike, M: Matrix, extend: 'none' | 'repeat' = 'none'): void {
+   *  from the image placed by M (the transform in force), either once or
+   *  repeated as a pattern, whose own matrix maps user space to the image. */
+  paintImage(image: ImgLike, M: Matrix, extend: 'none' | 'repeat' = 'none', pattern: Matrix = IDENTITY): void {
     const img = this.images.indexOf(image) >= 0 ? this.images.indexOf(image) : this.images.push(image) - 1;
     const page = this.coverage(this.flatten(path().rectangle(0, 0, this.img.width, this.img.height).build().cubics), 'winding');
     const spans = this.clipSpans ? this.nile.Intersect().run([...page, ...this.clipSpans]).map((p) => [p[0], p[1], p[2], 1]) : page;
-    const Mi = invert(M);
     const pixels = extend === 'repeat'
-      ? this.nile.PaintImageRepeat({ Mi, D: [image.width, image.height], img }).run(spans)
-      : this.nile.PaintImage({ Mi, img }).run(spans);
+      ? this.nile.PaintImageRepeat({ M, Mp: pattern, D: [image.width, image.height], img }).run(spans)
+      : this.nile.PaintImage({ M, img }).run(spans);
     writePixels(this.img, this.nile, pixels);
   }
 

@@ -134,6 +134,31 @@ describe('clipping and masking (nl/clip.nl)', () => {
   });
 });
 
+describe('matrices (nl/vector.nl)', () => {
+  // A map under test: translate, rotate a third of a turn, scale unevenly.
+  const maps = [[1, 0, 0, 1, 30, -7], [0.5, 0.8660254037844386, -0.8660254037844386, 0.5, 0, 0], [2, 0, 0, 0.5, 0, 0]];
+  it('Compose applies the maps in order, the first last, as Cairo does', () => {
+    const [M] = nile.Compose().run(maps);
+    // (translate ∘ rotate ∘ scale) ⊗ P = translate(rotate(scale(P)))
+    const P = [3, 4];
+    const S = [2 * P[0], 0.5 * P[1]];
+    const R = [0.5 * S[0] - 0.8660254037844386 * S[1], 0.8660254037844386 * S[0] + 0.5 * S[1]];
+    const T = [R[0] + 30, R[1] - 7];
+    expect(M[0] * P[0] + M[2] * P[1] + M[4]).toBeCloseTo(T[0], 9);
+    expect(M[1] * P[0] + M[3] * P[1] + M[5]).toBeCloseTo(T[1], 9);
+  });
+  it('⁻¹ undoes a map', () => {
+    // The inverse is an operator, so it is tested through the process that uses
+    // it: Undo composes a map with its inverse and must give the identity.
+    const undo = 'Undo : Matrix >> Matrix\n    ∀ M\n        >> M ∘ ⁻¹ M\n';
+    const lib = compileLibrary([...librarySources('demos/nl/vector.nl-lib').map((f) => read(f)), undo]);
+    expect(lib.unsupported).toEqual([]);
+    const [M] = nile.Compose().run(maps);
+    const [I] = lib.api.Undo().run([M]);
+    [1, 0, 0, 1, 0, 0].forEach((v, i) => expect(I[i]).toBeCloseTo(v, 9));
+  });
+});
+
 // --- the samples page, headless -----------------------------------------------
 import { readFileSync } from 'node:fs';
 import { parseTrueType } from '../src/text/ttf.js';
