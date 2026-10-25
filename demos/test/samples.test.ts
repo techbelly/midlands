@@ -49,3 +49,53 @@ describe('the even-odd rule (nl/evenodd.nl)', () => {
     expect(nile.RasterizeEvenOdd().run(one)).toEqual(nile.RasterizeParallel().run(one));
   });
 });
+
+// A straight segment as a flat bezier, and a flat cubic.
+const seg = (x0: number, y0: number, x1: number, y1: number): number[] => [x0, y0, (x0 + x1) / 2, (y0 + y1) / 2, x1, y1];
+const cubic = (x0: number, y0: number, x1: number, y1: number): number[] =>
+  [x0, y0, x0 + (x1 - x0) / 3, y0 + (y1 - y0) / 3, x0 + (2 * (x1 - x0)) / 3, y0 + (2 * (y1 - y0)) / 3, x1, y1];
+const chord = (b: number[]) => Math.hypot(b[4] - b[0], b[5] - b[1]);
+const I = [1, 0, 0, 1, 0, 0];
+
+describe('dashes (nl/dash.nl)', () => {
+  it('compiles: DashBeziers and the capped stroker', () => {
+    expect(library.unsupported).toEqual([]);
+    for (const n of ['DashBeziers', 'StrokePieces', 'DashedStroke']) expect(library.registry.has(n), n).toBe(true);
+  });
+  it('cuts a line into dashes of the pattern, carrying the phase across beziers', () => {
+    // 100 long, on 20 off 10: dashes at 0–20, 30–50, 60–80, 90–100.
+    const dashes = nile.DashBeziers({ on: 20, off: 10, phase: 0 }).run([seg(0, 0, 60, 0), seg(60, 0, 100, 0)]);
+    const starts = dashes.map((b) => b[0]);
+    expect(starts).toEqual([0, 30, 60, 90]);
+    expect(dashes.reduce((n, b) => n + chord(b), 0)).toBeCloseTo(70, 9);
+    // A phase moves the pattern back along the path.
+    const shifted = nile.DashBeziers({ on: 20, off: 10, phase: 25 }).run([seg(0, 0, 100, 0)]);
+    expect(shifted.map((b) => b[0])).toEqual([5, 35, 65, 95]);
+  });
+  it('strokes disconnected pieces with caps at every end, nothing between', () => {
+    const w = 4;
+    const pieces = [seg(2, 10, 20, 10), seg(40, 10, 58, 10)];
+    const spans = nile.FillBeziers({ min: [0, 0], max: [64, 20] }).run(nile.StrokePieces({ w, l: 4, c: 0 }).run(pieces));
+    expect(coverageAt(spans, 10, 9)).toBeCloseTo(1, 9); // on the first piece
+    expect(coverageAt(spans, 50, 9)).toBeCloseTo(1, 9); // on the second
+    expect(coverageAt(spans, 30, 9)).toBeCloseTo(0, 9); // the gap
+    expect(coverageAt(spans, 10, 5)).toBeCloseTo(0, 9); // outside the width
+    // Square caps extend each piece by half the width.
+    const square = nile.FillBeziers({ min: [0, 0], max: [64, 20] }).run(nile.StrokePieces({ w, l: 4, c: 1 }).run(pieces));
+    expect(coverageAt(square, 21, 9)).toBeCloseTo(1, 9);
+    expect(coverageAt(spans, 21, 9)).toBeCloseTo(0, 9);
+  });
+  it('is gezira\'s stroker on a connected path', () => {
+    const zigzag = [seg(5, 5, 25, 30), seg(25, 30, 45, 5), seg(45, 5, 60, 28)];
+    const a = nile.StrokePieces({ w: 6, l: 4, c: -1 }).run(zigzag);
+    const b = nile.StrokeBezierPath({ w: 6, l: 4, c: -1 }).run(zigzag);
+    expect(a).toEqual(b);
+  });
+  it('dashes a cubic path end to end', () => {
+    const outline = nile.DashedStroke({ M: I, w: 3, l: 4, c: 0, on: 10, off: 5, phase: 0 }).run([cubic(0, 10, 90, 10)]);
+    const spans = nile.FillBeziers({ min: [0, 0], max: [100, 20] }).run(outline);
+    expect(coverageAt(spans, 5, 9)).toBeCloseTo(1, 9);
+    expect(coverageAt(spans, 12, 9)).toBeCloseTo(0, 9);
+    expect(coverageAt(spans, 20, 9)).toBeCloseTo(1, 9);
+  });
+});
