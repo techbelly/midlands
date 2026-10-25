@@ -30,3 +30,17 @@ FillWinding (min, max : Point) : Bezier >> CoverageSpan
 
 FillEvenOdd (min, max : Point) : Bezier >> CoverageSpan
     ⇒ ClipBeziers (min, max) → RasterizeEvenOdd
+
+-- An image as a source. Nile has no memory to read, so ReadImage is a
+-- process the host supplies, declared here by its signature alone: the
+-- colour (premultiplied) of the pixel under a point, transparent outside
+-- the image. Everything around it is Nile: the points are carried into the
+-- image's space, sampled bilinearly as Cairo's default filter does, and
+-- repeated across the plane for a pattern.
+ReadImage :: (img : Real) : Point >> Color
+
+PaintImage (Mi : Matrix, img : Real) : CoverageSpan >> PaintedPixel
+    ⇒ ApplyTexture (TransformPoints (Mi) → BilinearFilter (ReadImage (img)))
+
+PaintImageRepeat (Mi : Matrix, D : Point, img : Real) : CoverageSpan >> PaintedPixel
+    ⇒ ApplyTexture (TransformPoints (Mi) → RepeatTexture (D) → BilinearFilter (ReadImage (img)))

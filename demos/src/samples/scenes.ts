@@ -6,16 +6,15 @@
 import type { Font } from '../text/ttf.js';
 import { path, type Path } from './path.js';
 import { textExtents, textPath } from './text.js';
-import type { Rgba, Sheet } from './draw.js';
+import { invert as invertM, multiply, rotate, scale, translate, type Rgba, type Sheet } from './draw.js';
+import type { ImgLike } from '../vector/spans.js';
 
 export interface Scene {
   id: string; // the anchor on cairographics.org/samples
   title: string;
   cairo: string;
   nile: string[];
-  /** Absent when the sample needs something Nile does not have yet. */
-  draw?: (s: Sheet, font: Font) => void;
-  missing?: string;
+  draw: (s: Sheet, font: Font, image: ImgLike) => void;
 }
 
 const D = Math.PI / 180;
@@ -26,7 +25,6 @@ const circle = (x: number, y: number, r: number): Path => path().arc(x, y, r, 0,
 
 const STROKE = ['StrokeOutline', 'StrokeBezierPath', 'FillWinding', 'RasterizeParallel', 'PaintSpans'];
 const FILL = ['FlattenCubics', 'FillWinding', 'RasterizeParallel', 'PaintSpans'];
-const IMAGE = 'An image as a source is a host primitive Nile does not have yet: Nile has no random access to memory, so sampling a bitmap needs a process the host supplies.';
 
 // The arc samples share their helping lines.
 function arcHelp(s: Sheet, xc: number, yc: number, r: number, a1: number, a2: number): void {
@@ -121,7 +119,7 @@ cairo_stroke (cr);`,
     },
   },
   {
-    id: 'clip_image', title: 'clip image', nile: [], missing: IMAGE,
+    id: 'clip_image', title: 'clip image', nile: ['Intersect', 'PaintImage', 'ReadImage', 'BilinearFilter', 'ApplyTexture'],
     cairo: `int              w, h;
 cairo_surface_t *image;
 
@@ -139,6 +137,10 @@ cairo_set_source_surface (cr, image, 0, 0);
 cairo_paint (cr);
 
 cairo_surface_destroy (image);`,
+    draw(s, _font, image) {
+      s.clip(circle(128, 128, 76.8));
+      s.paintImage(image, scale(256 / image.width, 256 / image.height));
+    },
   },
   {
     id: 'curve_rectangle', title: 'curve rectangle', nile: [...FILL, 'StrokeOutline'],
@@ -331,7 +333,7 @@ cairo_pattern_destroy (pat);`,
     },
   },
   {
-    id: 'image', title: 'image', nile: [], missing: IMAGE,
+    id: 'image', title: 'image', nile: ['PaintImage', 'ReadImage', 'TransformPoints', 'BilinearFilter', 'ApplyTexture'],
     cairo: `int              w, h;
 cairo_surface_t *image;
 
@@ -347,9 +349,14 @@ cairo_translate (cr, -0.5*w, -0.5*h);
 cairo_set_source_surface (cr, image, 0, 0);
 cairo_paint (cr);
 cairo_surface_destroy (image);`,
+    draw(s, _font, image) {
+      const { width: w, height: h } = image;
+      const M = [translate(128, 128), rotate(45 * D), scale(256 / w, 256 / h), translate(-0.5 * w, -0.5 * h)].reduce(multiply);
+      s.paintImage(image, M);
+    },
   },
   {
-    id: 'imagepattern', title: 'imagepattern', nile: [], missing: IMAGE,
+    id: 'imagepattern', title: 'imagepattern', nile: ['PaintImageRepeat', 'ReadImage', 'RepeatTexture', 'TransformPoints', 'BilinearFilter', 'ApplyTexture'],
     cairo: `int              w, h;
 cairo_surface_t *image;
 cairo_pattern_t *pattern;
@@ -377,6 +384,14 @@ cairo_fill (cr);
 
 cairo_pattern_destroy (pattern);
 cairo_surface_destroy (image);`,
+    draw(s, _font, image) {
+      const { width: w, height: h } = image;
+      // The page's transform, and the pattern's matrix (page space → image space).
+      const ctm = [translate(128, 128), rotate(Math.PI / 4), scale(1 / Math.SQRT2, 1 / Math.SQRT2), translate(-128, -128)].reduce(multiply);
+      const pattern = scale((w / 256) * 5, (h / 256) * 5);
+      // paintImage takes image → page: the inverse of (pattern ∘ ctm⁻¹).
+      s.paintImage(image, multiply(ctm, invertM(pattern)), 'repeat');
+    },
   },
   {
     id: 'multi_segment_caps', title: 'multi segment caps', nile: STROKE,

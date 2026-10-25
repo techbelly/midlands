@@ -97,6 +97,19 @@ PathCubic.get(t, 'n');              // a field
 const X = PaintedPixel.at('P.x');   // an offset, for hot loops
 ```
 
+A process can also be the host's to define. Nile has no memory to read, so
+sampling an image, say, is declared in Nile by its signature alone, with
+its parameters, and defined by the host as an op over its flattened
+parameters; a pipeline uses it like any stage:
+
+```
+ReadImage :: (img : Real) : Point >> Color
+```
+
+```ts
+nile.provide('ReadImage', (P) => readImageOp(images[P[0]]));
+```
+
 ## Tests and oracles
 
 `npm test` from the root runs these checks:

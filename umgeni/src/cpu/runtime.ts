@@ -66,6 +66,31 @@ function flattenNamed(what: string, fields: { name: string; width: number }[], n
   return out;
 }
 
+// --- processes the host supplies ---------------------------------------------
+
+// A process declared in Nile by its signature alone (`ReadImage :: (img :
+// Real) : Point >> Color`) is the host's to define: generated code holds a place
+// for it, and the host fills the place with a factory taking the flattened
+// parameters (or, through the api, by name).
+export const HOSTS = Symbol.for('midlands.nile.hosts');
+type Slot = { factory: ((P?: Params) => Op) | null };
+
+export function hostProcess(R: object, name: string): (P?: Params) => Op {
+  const hosts = ((R as { [HOSTS]?: Map<string, Slot> })[HOSTS] ??= new Map());
+  const slot: Slot = { factory: null };
+  hosts.set(name, slot);
+  return (P) => {
+    if (!slot.factory) throw new Error(`'${name}' is a process the host supplies, and this host has not provided it (nile.provide)`);
+    return slot.factory(P);
+  };
+}
+
+export function provide(R: object, name: string, factory: (P: number[]) => Op): void {
+  const slot = (R as { [HOSTS]?: Map<string, Slot> })[HOSTS]?.get(name);
+  if (!slot) throw new Error(`'${name}' is not a process the host supplies (declared as 'Name :: (params) : In >> Out')`);
+  slot.factory = (P) => factory(Array.isArray(P) ? P : P === undefined ? [] : (P as unknown as number[]));
+}
+
 // --- tokens by field name ----------------------------------------------------
 
 export interface TokenLayout {
@@ -132,7 +157,12 @@ export type ProcessFn = (params?: Params) => RunnableOp;
 // parameters by name, and each named record type for reading and building
 // tokens. (Nile process and type names start with a capital, so `types`
 // cannot collide.)
-export type Api = { readonly [process: string]: ProcessFn } & { readonly types: { readonly [name: string]: TokenType } };
+export type Api = { readonly [process: string]: ProcessFn } & {
+  readonly types: { readonly [name: string]: TokenType };
+  /** Define a process the Nile declared by signature alone, as an Op over
+   *  its flattened parameters. */
+  readonly provide: (name: string, factory: (P: number[]) => Op) => void;
+};
 
 export function api(registry: Map<string, (P?: Params) => Op> | Record<string, (P?: Params) => Op>): Api {
   const entries = registry instanceof Map ? [...registry] : Object.entries(registry);
@@ -153,6 +183,7 @@ export function api(registry: Map<string, (P?: Params) => Op> | Record<string, (
   }
   const layouts = (registry as { [TYPES]?: Record<string, TokenLayout> })[TYPES] ?? {};
   out.types = Object.fromEntries(Object.keys(layouts).map((name) => [name, tokenType(registry, name)]));
+  out.provide = (name: string, factory: (P: number[]) => Op) => provide(registry, name, factory);
   return out as Api;
 }
 

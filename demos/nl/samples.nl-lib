@@ -1,6 +1,7 @@
 -- The Cairo samples page's Nile program: gezira's kernels, unmodified, the
 -- demos' vector and span stages, umgeni's parallel rasterizer, and the
--- samples' own fill rule, dashes, clipping and gradients.
+-- samples' own fill rule, dashes, clipping, gradients and image painting
+-- (svg.nl is for the picture the image samples use: the tiger).
 -- One source per line, relative to this file.
 ../../gezira/types.nl
 ../../gezira/bezier.nl
@@ -8,7 +9,9 @@
 ../../gezira/rasterize.nl
 ../../gezira/texture.nl
 ../../gezira/gradient.nl
+../../gezira/filter.nl
 vector.nl
+svg.nl
 spans.nl
 ../../umgeni/nl/rasterize-parallel.nl
 evenodd.nl

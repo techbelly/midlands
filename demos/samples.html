@@ -12,7 +12,6 @@
   .pair { display: flex; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
   .c { flex: 1 1 320px; margin: 0; background: #f6f6f6; border-left: 3px solid #ccc; padding: 0.6rem 0.9rem; font: 11px/1.4 ui-monospace, Menlo, monospace; overflow-x: auto; max-height: 256px; }
   .note { color: #666; font-size: 0.85rem; }
-  .missing { color: #8a5a00; background: #fff6e0; border-radius: 4px; padding: 0.45rem 0.75rem; font-size: 0.9rem; }
   nav a { margin-right: 1rem; }
   .nile { background: #f6f6f3; border-left: 3px solid #c9c4b5; padding: 0.6rem 0.9rem; font: 12px/1.45 ui-monospace, Menlo, monospace; overflow-x: auto; margin: 0.6rem 0; }
   .pipeline { margin: 0.5rem 0; }
@@ -34,7 +33,10 @@
   curves, the glyph outlines from the font) is TypeScript, as it is C on
   Cairo's side; everything from the path on is Nile: gezira's kernels,
   unmodified, and a few more written for these pages (the even-odd rule,
-  dashes, clipping to a shape). Under each picture is the Nile that drew it.
+  dashes, clipping to a shape, painting with an image). Nile has no memory
+  to read, so the one thing the host supplies is <code>ReadImage</code>, the
+  pixel under a point; its image is the tiger, drawn by the same Nile, where
+  Cairo's is a photograph. Under each picture is the Nile that drew it.
 </p>
 <p class="size">The samples use about 800 lines of Nile in all, and 300 lines of TypeScript for paths, text and pixels. The font is Source Serif where Cairo's asks for Sans.</p>
 <p class="note" id="stats">drawing…</p>

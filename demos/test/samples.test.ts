@@ -140,16 +140,21 @@ import { parseTrueType } from '../src/text/ttf.js';
 import { Sheet } from '../src/samples/draw.js';
 import { SCENES } from '../src/samples/scenes.js';
 import { path } from '../src/samples/path.js';
+import { parseSvg } from '../src/vector/svg.js';
+import { drawTiger, fitView } from '../src/vector/tiger.js';
 
 const samples = compileLibraryFile('demos/nl/samples.nl-lib');
 const font = parseTrueType(readFileSync(new URL('../fonts/SourceSerif4.ttf', import.meta.url)));
 const page = () => ({ width: 256, height: 256, data: new Uint8ClampedArray(256 * 256 * 4).fill(255) });
 const px = (img: { data: Uint8ClampedArray }, x: number, y: number) => [...img.data.slice((y * 256 + x) * 4, (y * 256 + x) * 4 + 3)];
 const WHITE = [255, 255, 255];
+// The picture the image samples use: the tiger, drawn by the same Nile.
+const tiger = page();
+drawTiger(tiger, parseSvg(read('demos/tiger.svg'), samples.api), fitView(256, 256), samples.api);
 const render = (id: string) => {
   const scene = SCENES.find((s) => s.id === id)!;
   const img = page();
-  scene.draw!(new Sheet(samples.api, img), font);
+  scene.draw(new Sheet(samples.api, img), font, tiger);
   return img;
 };
 
@@ -166,18 +171,28 @@ describe('the Cairo samples, drawn by Nile', () => {
     expect([last[6], last[7]]).toEqual([0, 0]); // closed back to the start
     expect(path().rectangle(1, 2, 3, 4).build().cubics.length).toBe(4);
   });
-  it('draws every sample that has what it needs, and says what the rest lack', () => {
+  it('draws every sample', () => {
     for (const scene of SCENES) {
-      if (!scene.draw) {
-        expect(scene.missing, scene.id).toBeTruthy();
-        continue;
-      }
       const img = render(scene.id);
       let inked = 0;
       for (let i = 0; i < 256 * 256; i++) if (img.data[i * 4] !== 255 || img.data[i * 4 + 1] !== 255 || img.data[i * 4 + 2] !== 255) inked++;
       expect(inked, scene.id).toBeGreaterThan(200);
     }
-    expect(SCENES.filter((s) => s.draw).length).toBe(16);
+    expect(SCENES.length).toBe(19);
+  });
+  it('image: the tiger, turned 45°, through a process the host supplies', () => {
+    const img = render('image');
+    expect(px(img, 2, 2)).toEqual(WHITE); // the corners are outside the turned image
+    expect(px(img, 128, 128)).not.toEqual(WHITE);
+    // clip image: the tiger at 1:1 inside the circle, nothing outside.
+    const clipped = render('clip_image');
+    expect(px(clipped, 5, 5)).toEqual(WHITE);
+    expect(px(clipped, 128, 128)).toEqual(px(tiger, 128, 128));
+    // imagepattern: five tigers across, so the page is well covered.
+    let inked = 0;
+    const pat = render('imagepattern');
+    for (let i = 0; i < 256 * 256; i++) if (pat.data[i * 4] !== 255 || pat.data[i * 4 + 1] !== 255) inked++;
+    expect(inked).toBeGreaterThan(256 * 256 * 0.5);
   });
   it('arc: a thick black arc from 45° to 180°, and nothing on the other side', () => {
     const img = render('arc');

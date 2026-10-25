@@ -6,7 +6,45 @@
 
 import type { Api } from '../vector/draw.js';
 import { writePixels, type ImgLike } from '../vector/spans.js';
-import type { Path } from './path.js';
+import { path, type Path } from './path.js';
+import type { Op } from '../../../umgeni/src/cpu/runtime.js';
+
+/** An affine matrix as Cairo and gezira write it: (a, b, c, d, e, f). */
+export type Matrix = readonly [number, number, number, number, number, number];
+export const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
+export const translate = (x: number, y: number): Matrix => [1, 0, 0, 1, x, y];
+export const scale = (x: number, y: number): Matrix => [x, 0, 0, y, 0, 0];
+export const rotate = (t: number): Matrix => [Math.cos(t), Math.sin(t), -Math.sin(t), Math.cos(t), 0, 0];
+/** M then N, as Cairo composes: (M ∘ N) applies N first. multiply(M, N) = M ∘ N. */
+export const multiply = (M: Matrix, N: Matrix): Matrix =>
+  [M[0] * N[0] + M[2] * N[1], M[1] * N[0] + M[3] * N[1], M[0] * N[2] + M[2] * N[3], M[1] * N[2] + M[3] * N[3], M[0] * N[4] + M[2] * N[5] + M[4], M[1] * N[4] + M[3] * N[5] + M[5]];
+export const invert = (M: Matrix): Matrix => {
+  const det = M[0] * M[3] - M[1] * M[2];
+  const [a, b, c, d] = [M[3] / det, -M[1] / det, -M[2] / det, M[0] / det];
+  return [a, b, c, d, -(a * M[4] + c * M[5]), -(b * M[4] + d * M[5])];
+};
+
+// ReadImage, the process the host supplies (nl/samples.nl): the pixel
+// under a point, premultiplied, transparent outside the image. The images
+// are kept in a table; a process parameter is a number, so an image is
+// known to Nile by its index.
+export function readImage(images: ImgLike[]): (P: number[]) => Op {
+  return (P) => {
+    const img = images[P[0]];
+    let emit: (t: number[]) => void = () => {};
+    return {
+      push(t) {
+        const x = Math.floor(t[0]), y = Math.floor(t[1]);
+        if (x < 0 || y < 0 || x >= img.width || y >= img.height) return emit([0, 0, 0, 0]);
+        const i = (y * img.width + x) * 4;
+        const a = (img.data[i + 3] as number) / 255;
+        emit([a, (a * (img.data[i] as number)) / 255, (a * (img.data[i + 1] as number)) / 255, (a * (img.data[i + 2] as number)) / 255]);
+      },
+      end() {},
+      setEmit(e) { emit = e; },
+    };
+  };
+}
 
 /** Cairo's order and range: red, green, blue, alpha in 0..1. */
 export type Rgba = readonly [number, number, number, number];
@@ -28,9 +66,11 @@ const nileColor = (c: Rgba) => [c[3], c[0], c[1], c[2]]; // gezira's (a, r, g, b
 export class Sheet {
   private clipSpans: number[][] | null = null;
   private readonly box: { min: number[]; max: number[] };
+  private readonly images: ImgLike[] = [];
 
   constructor(private readonly nile: Api, private readonly img: ImgLike) {
     this.box = { min: [0, 0], max: [img.width, img.height] };
+    nile.provide('ReadImage', readImage(this.images));
   }
 
   fill(path: Path, color: Rgba, rule: Rule = 'winding'): void {
@@ -60,6 +100,19 @@ export class Sheet {
   /** Fill a path with one of the samples' textures (nl/samples.nl). */
   paintTexture(texture: 'PaintSky' | 'PaintSun', path: Path): void {
     writePixels(this.img, this.nile, this.nile[texture](this.box).run(this.flatten(path.cubics)));
+  }
+
+  /** Cairo's paint with an image source: the whole page (within the clip)
+   *  from the image placed by M (image → page), repeated or not. */
+  paintImage(image: ImgLike, M: Matrix, extend: 'none' | 'repeat' = 'none'): void {
+    const img = this.images.indexOf(image) >= 0 ? this.images.indexOf(image) : this.images.push(image) - 1;
+    const page = this.coverage(this.flatten(path().rectangle(0, 0, this.img.width, this.img.height).build().cubics), 'winding');
+    const spans = this.clipSpans ? this.nile.Intersect().run([...page, ...this.clipSpans]).map((p) => [p[0], p[1], p[2], 1]) : page;
+    const Mi = invert(M);
+    const pixels = extend === 'repeat'
+      ? this.nile.PaintImageRepeat({ Mi, D: [image.width, image.height], img }).run(spans)
+      : this.nile.PaintImage({ Mi, img }).run(spans);
+    writePixels(this.img, this.nile, pixels);
   }
 
   private flatten(cubics: number[][]): number[][] {

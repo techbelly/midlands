@@ -8,7 +8,7 @@
 // arguments inlined as closures) and families (mid-stream ⇒, substitute.ts).
 
 import type * as A from './ast.js';
-import type { KernelIR, ModuleIR, ParamSig, PipelineIR, ProcessIR, ScalarExpr, StageIR, TokenLayout } from './ir.js';
+import type { HostProcess, KernelIR, ModuleIR, ParamSig, PipelineIR, ProcessIR, ScalarExpr, StageIR, TokenLayout } from './ir.js';
 import { assembleFamily, SubstError, type Generator } from './substitute.js';
 import { desugar, SugarError } from './semantics/sugar.js';
 import { stageExpr, stageGenerator, stageKernel } from './semantics/staged.js';
@@ -62,6 +62,7 @@ class Elaborator {
   private ops = new Map<string, OpEntry>();
   private streams = new Map<string, StreamSig | null>(); // null: not a plain stream
   private kernels = new Map<string, A.Kernel>();
+  private host: HostProcess[] = []; // declared by signature, supplied by the host
   private generators = new Set<string>(); // no ∀: emit a finite sequence, then pass input through
 
   run(modules: A.Module[]): ElabResult {
@@ -85,6 +86,16 @@ class Elaborator {
     const signatures: Record<string, ParamSig[]> = {};
     const unsupported: { name: string; reason: string }[] = [];
     const templates: string[] = [];
+    // A process type with parameters is a process the host supplies: its
+    // signature is all Nile knows. It takes its parameters by name like any
+    // other, and the generated code holds a place for it (rt.provide).
+    for (const d of decls) {
+      if (d.kind !== 'processTypeDef' || !d.params) continue;
+      const sig = this.streamSig(d.type);
+      if (!sig) throw new ElabError(`'${d.name}' does not have a plain stream type`);
+      signatures[d.name] = d.params.flatMap((g) => g.names.map((name) => ({ name, width: shapeWidth(this.resolveType(g.type)) })));
+      this.host.push({ name: d.name, paramWidth: signatures[d.name].reduce((n, p) => n + p.width, 0), inputWidth: shapeWidth(sig.input), outputWidth: shapeWidth(sig.output) });
+    }
     for (const d of decls) {
       if (d.kind !== 'kernel') continue;
       if (this.isTemplate(d)) {
@@ -107,7 +118,7 @@ class Elaborator {
     // A pipeline is only as good as its stages: anything that names a
     // process that did not compile is unsupported too (transitively), rather
     // than compiling to a reference that fails at run time.
-    const compiled = new Set(processes.map((p) => p.name));
+    const compiled = new Set([...processes.map((p) => p.name), ...this.host.map((h) => h.name)]);
     for (let changed = true; changed;) {
       changed = false;
       for (const p of processes) {
@@ -122,7 +133,7 @@ class Elaborator {
     for (const name of Object.keys(signatures)) if (!compiled.has(name)) delete signatures[name];
     const types: Record<string, TokenLayout> = {};
     for (const [name, shape] of this.types) if (shape.k === 'record') types[name] = tokenLayout(shape);
-    return { ir: { processes: processes.filter((p) => compiled.has(p.name)), signatures, types }, unsupported, templates };
+    return { ir: { processes: processes.filter((p) => compiled.has(p.name)), host: this.host, signatures, types }, unsupported, templates };
   }
 
   contexts(modules: A.Module[], all = false) {

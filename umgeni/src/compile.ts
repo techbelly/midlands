@@ -67,6 +67,7 @@ export function compileLibrary(sources: string[], opts: CompileOptions = {}): Co
   delete (registryObj as Record<string, unknown>).__ops;
   const registry = new Map(Object.entries(registryObj));
   rt.describeTypes(registry, (registryObj as { [rt.TYPES]?: Record<string, rt.TokenLayout> })[rt.TYPES]!);
+  Object.defineProperty(registry, rt.HOSTS, { value: (registryObj as { [rt.HOSTS]?: unknown })[rt.HOSTS] ?? new Map() });
   return { registry, api: rt.api(registry), source, unsupported: elaborated.unsupported, templates: elaborated.templates, ir, modules, ops };
 }
 

@@ -124,12 +124,23 @@ export type ProcessIR = KernelIR | PipelineIR | FusedIR;
 
 export interface ModuleIR {
   processes: ProcessIR[];
+  // Processes the host supplies: declared in Nile by their signature alone
+  // (`ReadImage :: (img : Real) : Point >> Color`), defined by the host at run
+  // time (rt.provide). A pipeline uses one like any stage.
+  host: HostProcess[];
   // Each process's parameters as its Nile signature names them, in order,
   // with their flattened widths: how a host can pass them by name.
   signatures: Record<string, ParamSig[]>;
   // Every named record type's layout: how a host reads or builds tokens by
   // field name.
   types: Record<string, TokenLayout>;
+}
+
+export interface HostProcess {
+  name: string;
+  paramWidth: number;
+  inputWidth: number;
+  outputWidth: number;
 }
 
 export interface ParamSig {

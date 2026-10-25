@@ -23,12 +23,14 @@ root builds `dist/` and serves it; `npm run demo:build` just builds.
   the same picture drawn by Nile, with the Nile that drew it. Paths are built
   in TypeScript ([src/samples/path.ts](src/samples/path.ts), with text as a
   path from the font); fill, stroke, clip and paint are Nile
-  ([src/samples/draw.ts](src/samples/draw.ts)). Three samples that take an
-  image as a source wait for an image primitive. The Nile written for these
-  pages beyond gezira: the even-odd fill rule ([nl/evenodd.nl](nl/evenodd.nl)),
-  dashes and a stroker that caps each piece ([nl/dash.nl](nl/dash.nl)),
-  clipping to a shape and masking ([nl/clip.nl](nl/clip.nl)), and the
-  samples' gradients ([nl/samples.nl](nl/samples.nl)).
+  ([src/samples/draw.ts](src/samples/draw.ts)). The three samples that
+  paint with an image use `ReadImage`, a process the host supplies (Nile has
+  no memory to read); their image is the tiger, drawn by the same Nile. The
+  Nile written for these pages beyond gezira: the even-odd fill rule
+  ([nl/evenodd.nl](nl/evenodd.nl)), dashes and a stroker that caps each
+  piece ([nl/dash.nl](nl/dash.nl)), clipping to a shape and masking
+  ([nl/clip.nl](nl/clip.nl)), and the samples' gradients and image painting
+  ([nl/samples.nl](nl/samples.nl)).
 
 A page imports a Nile library as `import { nile } from './nl/vector.nl-lib'`.
 The `.nl-lib` file lists the `.nl` sources, and the bundler plugin

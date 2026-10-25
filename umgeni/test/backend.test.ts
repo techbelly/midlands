@@ -213,3 +213,35 @@ describe('the library API', () => {
     expect(nile.types.Bezier.make({ A: [1, 2], B: [3, 4], C: [5, 6] })).toEqual([1, 2, 3, 4, 5, 6]);
   });
 });
+
+describe('processes the host supplies', () => {
+  // Declared by signature alone, with parameters: the host defines it.
+  const src = [
+    'Scale :: (k : Real) : Real >> Real',
+    'Twice : Real >> Real',
+    '    ⇒ Scale (2) → Scale (3)',
+    'Shift (d : Real) : Real >> Real',
+    '    ∀ x',
+    '        >> x + d',
+    'Both (d : Real) : Real >> Real',
+    '    ⇒ Shift (d) → Scale (10)',
+  ].join('\n');
+  const scale = (P: number[]) => {
+    let emit: (t: number[]) => void = () => {};
+    return { push: (t: number[]) => emit([t[0] * P[0]]), end() {}, setEmit: (e: (t: number[]) => void) => { emit = e; } };
+  };
+  it('compiles a pipeline that uses one, and names it when it is missing', () => {
+    const library = compileLibrary([src]);
+    expect(library.unsupported).toEqual([]);
+    expect(library.ir.host).toEqual([{ name: 'Scale', paramWidth: 1, inputWidth: 1, outputWidth: 1 }]);
+    expect(() => library.api.Twice().run([[1]])).toThrow(/'Scale' is a process the host supplies/);
+  });
+  it('runs it once provided, by name, among compiled kernels', () => {
+    const library = compileLibrary([src]);
+    library.api.provide('Scale', scale);
+    expect(library.api.Twice().run([[1], [2]])).toEqual([[6], [12]]);
+    expect(library.api.Both({ d: 1 }).run([[1], [2]])).toEqual([[20], [30]]);
+    expect(library.api.Scale({ k: 4 }).run([[2]])).toEqual([[8]]); // its parameters by name, too
+    expect(() => library.api.provide('Shift', scale)).toThrow(/not a process the host supplies/);
+  });
+});

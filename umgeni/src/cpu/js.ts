@@ -299,6 +299,8 @@ export function generate(mod: ModuleIR, opts: CodegenOptions = {}): string {
   return [
     `(rt) => {`,
     `const R = Object.create(null);`,
+    // Processes the host supplies: a place for each, filled by rt.provide.
+    ...mod.host.map((h) => `R[${JSON.stringify(h.name)}] = rt.hostProcess(R, ${JSON.stringify(h.name)});`),
     ...wasmModules,
     ...(opts.countOps ? [`let OPS = 0;`] : []),
     ...defs,
