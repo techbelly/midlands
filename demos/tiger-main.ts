@@ -9,7 +9,7 @@ import { createPresenter } from '../umgeni/src/gpu/present.js';
 import { lowerPipeline } from '../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../umgeni/src/gpu/execute.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
-import { nile, RasterizePixelsIR } from './nl/vector.nl-lib';
+import { nile, nileWasm, RasterizePixelsIR } from './nl/vector.nl-lib';
 import svgSrc from './tiger.svg';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
@@ -68,6 +68,7 @@ function gpuBackEnd(ir: FusedIR, device: GPUDevice, context: GPUCanvasContext): 
 }
 
 const cpu = cpuBackEnd(nile, canvas.getContext('2d')!);
+const wasm = cpuBackEnd(nileWasm, canvas.getContext('2d')!);
 
 // The GPU back end is built on first use, if WebGPU is there.
 let gpu: BackEnd | 'unavailable' | null = null;
@@ -102,17 +103,19 @@ function show(el: HTMLCanvasElement): void {
 // modes; only the back end — rasterize and composite — differs.
 async function draw(): Promise<void> {
   const gpuBack = modeEl.value === 'gpu' ? await ensureGpu() : null;
-  if (!gpuBack) modeEl.value = 'cpu'; // also the fallback when WebGPU is unavailable
+  if (modeEl.value === 'gpu' && !gpuBack) modeEl.value = 'cpu'; // the fallback when WebGPU is unavailable
   show(gpuBack ? canvasGpu : canvas);
-  const backEnd = gpuBack ?? cpu;
+  const isWasm = !gpuBack && modeEl.value === 'wasm';
+  const backEnd = gpuBack ?? (isWasm ? wasm : cpu);
+  const front = isWasm ? nileWasm : nile; // the front half runs as wasm only in the wasm mode
 
   const t0 = performance.now();
-  const paths = tigerPaths(tiger, viewMatrix(), nile, canvas.width, canvas.height);
+  const paths = tigerPaths(tiger, viewMatrix(), front, canvas.width, canvas.height);
   const frontMs = performance.now() - t0;
   const backMs = await backEnd(paths);
   statsEl.textContent =
     `${tiger.paths.length} paths · ${segs.toLocaleString()} cubics · ${z.toFixed(1)}× · ` +
-    `front (CPU Nile) ${frontMs.toFixed(0)} ms + raster & composite (${gpuBack ? 'GPU' : 'CPU'}) ${backMs.toFixed(0)} ms ` +
+    `front (CPU Nile, ${isWasm ? 'wasm' : 'JS'}) ${frontMs.toFixed(0)} ms + raster & composite (${gpuBack ? 'GPU' : isWasm ? 'CPU wasm' : 'CPU JS'}) ${backMs.toFixed(0)} ms ` +
     `= ${(frontMs + backMs).toFixed(0)} ms a frame`;
 }
 

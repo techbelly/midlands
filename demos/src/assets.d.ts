@@ -5,6 +5,7 @@ declare module '*.nl-lib' {
   import type { Api } from '../../umgeni/src/cpu/runtime.js';
   import type { FusedIR } from '../../umgeni/src/ir.js';
   export const nile: Api;
+  export const nileWasm: Api; // the same library, its pipelines compiled to WebAssembly
   export const compileMs: number;
   // One <Name>IR per fused process; only those the pages lower are declared.
   export const RasterizePixelsIR: FusedIR;

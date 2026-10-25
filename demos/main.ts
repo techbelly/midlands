@@ -25,7 +25,7 @@ import { createPresenter, type Presenter } from '../umgeni/src/gpu/present.js';
 import { lowerPipeline } from '../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../umgeni/src/gpu/execute.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
-import { compileMs, nile, RasterizePixelsIR } from './nl/text.nl-lib';
+import { compileMs, nile, nileWasm, RasterizePixelsIR } from './nl/text.nl-lib';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
 import textNl from './nl/text.nl';
@@ -44,6 +44,8 @@ const canvasGpu = document.getElementById('canvasgpu') as HTMLCanvasElement;
 const textEl = document.getElementById('text') as HTMLTextAreaElement;
 const sizeEl = document.getElementById('size') as HTMLInputElement;
 const modeEl = document.getElementById('mode') as HTMLSelectElement;
+// The CPU side runs the library as JavaScript or as WebAssembly; the GPU modes use the JavaScript build for their front half.
+const api = () => (modeEl.value === 'wasm' ? nileWasm : nile);
 const sizeVal = document.getElementById('sizeval')!;
 const stats = document.getElementById('stats')!;
 const ctx2d = canvas2d.getContext('2d')!;
@@ -108,11 +110,11 @@ function paint(buf: ArrayLike<number>): number {
 
 // Laid-out colour runs (Nile layout), each then transformed and clipped (Nile).
 function runs(text: string, { w, lh }: TextSpansParams): ColorRun[] {
-  return colorRuns(nile, nile.TextLayout({ w, lh }), text, currentFont().glyphs);
+  return colorRuns(api(), api().TextLayout({ w, lh }), text, currentFont().glyphs);
 }
 const rgb255 = (r: ColorRun) => (r.color ? [r.color[0] * 255, r.color[1] * 255, r.color[2] * 255] as const : TEXT_COLOR);
 function placed(run: ColorRun, { M, min, max }: TextSpansParams): number[][] {
-  return nile.PlaceBeziers({ M, min, max }).run(run.beziers);
+  return api().PlaceBeziers({ M, min, max }).run(run.beziers);
 }
 
 // CPU front half for the (single-colour) readback path.
@@ -182,13 +184,13 @@ async function render(): Promise<void> {
   let spans = 0;
   const colourRuns = runs(text, params);
   for (const r of colourRuns) {
-    const s = nile.Rasterize().run(placed(r, params));
+    const s = api().Rasterize().run(placed(r, params));
     spans += s.length;
-    paintSpans(img, nile, s, rgb255(r));
+    paintSpans(img, api(), s, rgb255(r));
   }
   ctx2d.putImageData(img, 0, 0);
   stats.textContent =
-    `CPU · compile ${compileMs} ms (build time) · ${colourRuns.length} colour runs → ` +
+    `CPU (${mode === 'wasm' ? 'WebAssembly' : 'JavaScript'}) · compile ${compileMs} ms (build time) · ${colourRuns.length} colour runs → ` +
     `${spans.toLocaleString()} spans · ${(performance.now() - t0).toFixed(1)} ms`;
 }
 

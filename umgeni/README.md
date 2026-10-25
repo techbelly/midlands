@@ -45,9 +45,13 @@ Nile ─Ohm─▶ syntax tree ─sugar.mooi─▶ core Nile ─nile.mooi, staged
   and the runtime implements the three as stages that buffer tokens.
 - **Back ends**:
   - [src/cpu/](src/cpu/): [js.ts](src/cpu/js.ts) writes JavaScript, the
-    reference; [wasm.ts](src/cpu/wasm.ts) writes WebAssembly bytes directly for
-    runs of kernels, and its output is bit for bit the same as the
-    JavaScript's; [runtime.ts](src/cpu/runtime.ts) streams tokens through both.
+    reference. [wasm.ts](src/cpu/wasm.ts) writes a whole pipeline as one
+    WebAssembly module, bytes directly with no assembler: the kernels, and the
+    stages between them that need the whole stream (SortBy, GroupBy, ReduceBy
+    and Reverse, done in place in the module's memory), so tokens only leave
+    linear memory as the final output. Its output is bit for bit the same as
+    the JavaScript's, and about twice as fast on the text benchmark.
+    [runtime.ts](src/cpu/runtime.ts) streams tokens through both.
   - [src/gpu/](src/gpu/): [lower.ts](src/gpu/lower.ts) turns a pipeline into
     a plan of GPU compute passes, applying one rule per declaration in the
     source. A run of kernels becomes one pass, with a thread per token or a

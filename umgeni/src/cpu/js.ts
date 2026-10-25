@@ -5,9 +5,9 @@
 // and returns a runtime Op. The generated source is a first-class artifact:
 // compileProgram exposes it for inspection alongside the executable form.
 
-import { anyStmt, type FusedIR, type FusedStage, type KernelIR, type ModuleIR, type PipelineIR, type ScalarExpr, type Stmt } from '../ir.js';
+import { anyStmt, type FusedIR, type FusedSegment, type FusedStage, type KernelIR, type ModuleIR, type PipelineIR, type ScalarExpr, type Stmt } from '../ir.js';
 import { opCount } from '../passes/cse.js';
-import { compileSegment } from './wasm.js';
+import { compilePipeline, inWasm } from './wasm.js';
 import { renderCond, renderExpr, type Dialect } from '../scalar.js';
 
 export interface CodegenOptions {
@@ -167,7 +167,7 @@ function genPipeline(p: PipelineIR, o: CodegenOptions): string {
 const stmtsFeed = (stmts: Stmt[]) => anyStmt(stmts, (s) => s.k === 'feed');
 
 // Wasm modules are compiled once, when the registry is built; each pipeline
-// instance then instantiates its own.
+// instance then borrows an instance of one (rt.wasmPipeline).
 let wasmModules: string[] = [];
 
 function genSegment(stages: FusedStage[], o: CodegenOptions): string {
@@ -233,16 +233,33 @@ function genSegment(stages: FusedStage[], o: CodegenOptions): string {
   return lines.filter((l) => l !== '').join('\n');
 }
 
+// The wasm backend takes a whole pipeline when every segment is a kernel run
+// or a barrier it knows; otherwise each kernel run alone, with the rest in
+// JS. Kernels with a prologue (seeds) stay in JS either way.
+function genWasm(segments: FusedSegment[], inputWidth: number, paramWidth: number): string {
+  const w = compilePipeline(segments, inputWidth, paramWidth);
+  const name = `W${wasmModules.length}`;
+  const names = segments.map((s) => (s.k === 'kernels' ? s.stages.map((st) => st.name).join(' → ') : s.k)).join(' → ');
+  wasmModules.push(`const ${name} = rt.wasmModule([${w.bytes.join(',')}]); // ${names}`);
+  const layout = { outBase: w.outBase, outWidth: w.outputWidth, inBase: w.inBase, inWidth: w.inputWidth, inTokens: w.inTokens };
+  return `rt.wasmPipeline(${name}, ${JSON.stringify(layout)}, P)`;
+}
+const noSeeds = (s: FusedSegment) => s.k !== 'kernels' || s.stages.every((st) => st.kernel.init.length === 0);
+const inputWidthOf = (p: FusedIR): number => {
+  for (const s of p.segments) {
+    if (s.k === 'kernels') return s.stages[0].kernel.inputWidth;
+    if (s.k === 'reduceBy') return s.width;
+  }
+  throw new Error(`'${p.name}': cannot tell its input width`);
+};
+
 function genFused(p: FusedIR, o: CodegenOptions): string {
+  if (o.target === 'wasm' && p.segments.every((s) => inWasm(s) && noSeeds(s))) {
+    return `R[${JSON.stringify(p.name)}] = (P = []) => ${genWasm(p.segments, inputWidthOf(p), p.paramWidth)};`;
+  }
   const segs = p.segments.map((s) => {
     if (s.k !== 'kernels') return `    ${genBuiltinStage(s, o)},`;
-    if (o.target === 'wasm' && s.stages.every((st) => st.kernel.init.length === 0)) {
-      const w = compileSegment(s.stages, p.paramWidth);
-      const name = `W${wasmModules.length}`;
-      wasmModules.push(`const ${name} = rt.wasmModule([${w.bytes.join(',')}]); // ${s.stages.map((st) => st.name).join(' → ')}`);
-      const layout = { outBase: w.outBase, outWidth: w.outputWidth, inBase: w.inBase, inWidth: w.inputWidth, inTokens: w.inTokens };
-      return `    rt.wasmSegment(${name}, ${JSON.stringify(layout)}, P),`;
-    }
+    if (o.target === 'wasm' && noSeeds(s)) return `    ${genWasm([s], s.stages[0].kernel.inputWidth, p.paramWidth)},`;
     return `    ${genSegment(s.stages, o)},`;
   });
   return [

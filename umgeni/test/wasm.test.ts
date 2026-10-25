@@ -9,7 +9,7 @@ import { fixture, gezira } from './sources.js';
 function both(sources: string[], process: string, cases: { params?: number[]; input: number[][] }[]) {
   const js = compileLibrary(sources);
   const wasm = compileLibrary(sources, { target: 'wasm' });
-  expect(wasm.source).toContain('rt.wasmSegment(');
+  expect(wasm.source).toContain('rt.wasmPipeline(');
   for (const c of cases) {
     const run = (p: typeof js) => {
       const s = makeStreamer(p, process, c.params ?? []);

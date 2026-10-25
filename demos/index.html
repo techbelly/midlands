@@ -45,7 +45,8 @@
 </details>
 <p class="help"><b>How to use:</b> edit the text, drag the size, or pick a font;
   drop a <code>.ttf</code> file onto the page to set the text in it. The renderer
-  menu switches between the CPU and the GPU.</p>
+  menu switches between the CPU (JavaScript or WebAssembly) and the GPU; all
+  three run the same Nile.</p>
 <textarea id="text" rows="5">Each glyph is a handful of curves. They are laid out into lines, transformed to the page, clipped, and turned into coverage spans, one pixel row at a time; the spans are painted in the text's colour. Emoji 🌈 🍩 🐯 are layers of coloured curves, painted in turn.
 A line break starts a new line. 😀🎉</textarea>
 <div class="row">
@@ -57,6 +58,7 @@ A line break starts a new line. 😀🎉</textarea>
   <label>renderer
     <select id="mode">
       <option value="cpu">CPU — Nile compiled to JavaScript</option>
+      <option value="wasm">CPU — Nile compiled to WebAssembly</option>
       <option value="gpu">GPU — WGSL, read back to the CPU</option>
       <option value="gpu0" selected>GPU — WGSL, presented directly</option>
     </select>

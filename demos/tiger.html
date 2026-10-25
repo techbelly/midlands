@@ -41,12 +41,13 @@
 <pre class="nile" id="nile"></pre>
 </details>
 <p class="help"><b>How to use:</b> double-click to zoom in (100%, 200%, 400%,
-  then back), and drag to pan. The renderer menu switches between the CPU and
-  the GPU.</p>
+  then back), and drag to pan. The renderer menu switches between the CPU (JavaScript or
+  WebAssembly) and the GPU; all three run the same Nile.</p>
 <div>
   <label>renderer
     <select id="mode">
       <option value="cpu">CPU — Nile compiled to JavaScript</option>
+      <option value="wasm">CPU — Nile compiled to WebAssembly</option>
       <option value="gpu" selected>GPU — WGSL, composited per path</option>
     </select>
   </label>

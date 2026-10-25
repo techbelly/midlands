@@ -1,18 +1,31 @@
-// WebAssembly backend for fused kernel segments — the same unit fused JS
-// compiles (passes/fuse.ts, js.ts genSegment), with the same shape:
+// WebAssembly backend: a whole fused pipeline as one module, so tokens never
+// leave linear memory until the final output.
 //
-//   stage j          → wasm function st_j(input… : f64)
-//   `>>` to stage j+1 → a direct call st_{j+1}(values…)
-//   `>>` from the last → store into the output buffer (drained by JS)
-//   `<<`             → push onto stage j's LIFO worklist in linear memory;
-//                      st_j pops and runs its body until the list is empty
-//   state, params    → mutable f64 globals (params evaluated once, at init)
+//   stage j of part p   → wasm function st(p,j)(input… : f64)
+//   `>>` to stage j+1    → a direct call st(p,j+1)(values…)
+//   `>>` from a part's   → appended to that part's buffer (the barriers'
+//     last stage            input), or stored in the output buffer the JS
+//                           side drains (the last part)
+//   `<<`                 → pushed onto the stage's LIFO worklist; the stage
+//                           pops and runs its body until the list is empty
+//   a barrier            → in place on the buffer at end of stream: a stable
+//     (SortBy, GroupBy,      radix sort by the key's bits, a reversal, or a
+//     Reverse, ReduceBy)     merge of same-key runs; the buffer then streams
+//                           into the next part
+//   state, params        → mutable f64 globals (params evaluated once, at init)
 //
-// All arithmetic is f64 with IEEE semantics identical to JavaScript's, so a
-// wasm segment's output is bit-identical to the JS backend's — that is the
-// test. The module is emitted directly in the binary format (no assembler).
+// Buffers grow from a bump allocator at the end of memory (memory.grow), and
+// an instance is reused across runs (runtime.ts), so a run allocates nothing.
+//
+// All arithmetic is f64 with IEEE semantics identical to JavaScript's, and
+// every barrier is the same permutation the JS runtime applies, so a wasm
+// pipeline's output is bit-identical to the JS backend's — that is the test.
+// The module is emitted directly in the binary format (no assembler).
+//
+// DupCat and DupZip are not here yet: a pipeline using them keeps its kernel
+// runs in wasm and those two stages in JS (js.ts falls back per segment).
 
-import { anyStmt, type FusedStage, type ScalarExpr, type Stmt } from '../ir.js';
+import { anyStmt, type FusedSegment, type FusedStage, type ScalarExpr, type Stmt } from '../ir.js';
 import { BIN, UN } from '../scalar.js';
 
 // --- a minimal binary encoder ---------------------------------------------------
@@ -27,12 +40,13 @@ const uleb = (n: number): number[] => {
   } while (n !== 0);
   return out;
 };
-const sleb = (n: number): number[] => {
+const sleb = (n: number): number[] => sleb64(BigInt(n));
+const sleb64 = (n: bigint): number[] => {
   const out: number[] = [];
   for (;;) {
-    const b = n & 0x7f;
-    n >>= 7;
-    if ((n === 0 && (b & 0x40) === 0) || (n === -1 && (b & 0x40) !== 0)) return [...out, b];
+    const b = Number(n & 0x7fn);
+    n >>= 7n;
+    if ((n === 0n && (b & 0x40) === 0) || (n === -1n && (b & 0x40) !== 0)) return [...out, b];
     out.push(b | 0x80);
   }
 };
@@ -43,275 +57,522 @@ const section = (id: number, body: number[]): number[] => [id, ...uleb(body.leng
 
 const F64 = 0x7c;
 const I32 = 0x7f;
-const OP = {
-  unreachable: 0x00, block: 0x02, loop: 0x03, if: 0x04, else: 0x05, end: 0x0b, br: 0x0c, brIf: 0x0d,
-  call: 0x10, select: 0x1b, localGet: 0x20, localSet: 0x21, globalGet: 0x23, globalSet: 0x24,
-  f64Load: 0x2b, f64Store: 0x39, i32Const: 0x41, f64Const: 0x44,
-  i32Eqz: 0x45, i32GtU: 0x4b, i32GeU: 0x4f, i32Add: 0x6a, i32Sub: 0x6b, i32Mul: 0x6c, i32And: 0x71, i32Or: 0x72,
-  f64Eq: 0x61, f64Ne: 0x62, f64Lt: 0x63, f64Gt: 0x64, f64Le: 0x65, f64Ge: 0x66,
-  f64Neg: 0x9a, f64Ceil: 0x9b, f64Floor: 0x9c, f64Sqrt: 0x9f,
-  f64Add: 0xa0, f64Sub: 0xa1, f64Mul: 0xa2, f64Div: 0xa3, f64FromI32U: 0xb8,
-} as const;
+const I64 = 0x7e;
 const VOID = 0x40;
-const mem = (offset: number) => [3, ...uleb(offset)]; // align 2^3, offset
+const OP = {
+  unreachable: 0x00, block: 0x02, loop: 0x03, if: 0x04, else: 0x05, end: 0x0b, br: 0x0c, brIf: 0x0d, call: 0x10,
+  drop: 0x1a, select: 0x1b, localGet: 0x20, localSet: 0x21, localTee: 0x22, globalGet: 0x23, globalSet: 0x24,
+  i32Load: 0x28, i64Load: 0x29, f64Load: 0x2b, i32Store: 0x36, i64Store: 0x37, f64Store: 0x39,
+  memorySize: 0x3f, memoryGrow: 0x40, i32Const: 0x41, i64Const: 0x42, f64Const: 0x44,
+  i32Eqz: 0x45, i32Eq: 0x46, i32LtU: 0x49, i32GtU: 0x4b, i32GeU: 0x4f, i64Eqz: 0x50, i64LtS: 0x53, f64Eq: 0x61, f64Ne: 0x62,
+  i32Add: 0x6a, i32Sub: 0x6b, i32Mul: 0x6c, i32DivU: 0x6e, i32Shl: 0x74,
+  i64And: 0x83, i64Or: 0x84, i64Xor: 0x85, i64ShrU: 0x88, f64Add: 0xa0, i32WrapI64: 0xa7, i64ExtendI32U: 0xad,
+  f64ConvertI32U: 0xb8, i64ReinterpretF64: 0xbd,
+} as const;
+const MEMCOPY = [0xfc, 0x0a, 0x00, 0x00]; // memory.copy dest src size
+const MEMFILL = [0xfc, 0x0b, 0x00]; // memory.fill dest byte size
 
-// --- the segment compiler -----------------------------------------------------------
+// Instructions as byte lists.
+const i32c = (n: number) => [OP.i32Const, ...sleb(n)];
+const i64c = (n: bigint) => [OP.i64Const, ...sleb64(BigInt.asIntN(64, n))];
+const f64c = (v: number) => [OP.f64Const, ...f64(v)];
+const get = (i: number) => [OP.localGet, ...uleb(i)];
+const set = (i: number) => [OP.localSet, ...uleb(i)];
+const tee = (i: number) => [OP.localTee, ...uleb(i)];
+const gget = (i: number) => [OP.globalGet, ...uleb(i)];
+const gset = (i: number) => [OP.globalSet, ...uleb(i)];
+const call = (f: number) => [OP.call, ...uleb(f)];
+const ld = (op: number, align: number, off: number) => [op, align, ...uleb(off)];
+const ldI32 = (off = 0) => ld(OP.i32Load, 2, off);
+const stI32 = (off = 0) => ld(OP.i32Store, 2, off);
+const ldI64 = (off = 0) => ld(OP.i64Load, 3, off);
+const stI64 = (off = 0) => ld(OP.i64Store, 3, off);
+const ldF64 = (off = 0) => ld(OP.f64Load, 3, off);
+const stF64 = (off = 0) => ld(OP.f64Store, 3, off);
+const add = [OP.i32Add];
+const sub = [OP.i32Sub];
+const mul = [OP.i32Mul];
+const shl = (n: number) => [...i32c(n), OP.i32Shl];
+const ifThen = (cond: number[], then: number[], els: number[] = []) =>
+  [...cond, OP.if, VOID, ...then, ...(els.length ? [OP.else, ...els] : []), OP.end];
+// A loop that stops when `done` (an i32) holds, checked at the top.
+const loopWhile = (done: number[], body: number[]) => [OP.block, VOID, OP.loop, VOID, ...done, OP.brIf, 1, ...body, OP.br, 0, OP.end, OP.end];
+// for (i = from; i < to; i += step) body
+const forRange = (i: number, from: number[], to: number[], step: number[], body: number[]) =>
+  [...from, ...set(i), ...loopWhile([...get(i), ...to, OP.i32GeU], [...body, ...get(i), ...step, ...add, ...set(i)])];
 
-// Memory layout: [0, PARAMS) pipeline params; the output buffer; one
-// worklist stack per feeding stage; an input buffer for batched pushes.
-// Sizes matter: every pipeline instance gets its own memory, so it must be
-// small (megabytes per instance showed up as GC time). Depth-first feedback
-// keeps worklists shallow (a subdivision leaves one sibling per level);
-// overflow traps rather than corrupting.
+// A function under construction: typed parameters, locals on demand.
+class Fn {
+  locals: number[] = [];
+  code: number[] = [];
+  constructor(readonly params: number[], readonly results: number[] = []) {}
+  local(type: number): number {
+    this.locals.push(type);
+    return this.params.length + this.locals.length - 1;
+  }
+  emit(...parts: number[][]): void {
+    for (const p of parts) this.code.push(...p);
+  }
+  body(): number[] {
+    const b = [...vec(this.locals.map((t) => [1, t])), ...this.code, OP.end];
+    return [...uleb(b.length), ...b];
+  }
+}
+
+// --- the pipeline compiler ----------------------------------------------------------
+
+// Memory layout: [0, PARAMS) pipeline params; the output buffer; the batch
+// input buffer; one worklist stack per feeding stage; then the heap, from
+// which barrier buffers and sort scratch are bump-allocated (memory grows).
 const PAGE = 65536;
 const OUT_TOKENS = 256;
 const IN_TOKENS = 256;
 const STACK_BYTES = 1 << 15;
 
-export interface WasmSegment {
+export type Barrier = Extract<FusedSegment, { k: 'sortBy' | 'groupBy' | 'reduceBy' | 'reverse' }>;
+export const inWasm = (s: FusedSegment): boolean => s.k !== 'dupCat' && s.k !== 'dupZip';
+
+export interface WasmPipeline {
   bytes: Uint8Array;
   inputWidth: number;
   outputWidth: number;
-  paramCount: number; // pipeline params the segment reads
-  outBase: number; // byte offset of the output buffer
-  inBase: number; // byte offset of the batch input buffer
-  inTokens: number; // its capacity in tokens
+  outBase: number;
+  inBase: number;
+  inTokens: number;
 }
 
-export function compileSegment(stages: FusedStage[], pipelineParams: number): WasmSegment {
-  const n = stages.length;
-  const outWidth = stages[n - 1].kernel.outputWidth;
+// A part is a run of kernels; between parts, the barriers applied to the
+// stream, in order. A pipeline that starts or ends with a barrier has an
+// empty part there, whose entry is its emit.
+interface Part {
+  stages: FusedStage[];
+  inputWidth: number;
+  outputWidth: number;
+}
+
+export function compilePipeline(segments: FusedSegment[], inputWidth: number, pipelineParams: number): WasmPipeline {
+  const parts: Part[] = [];
+  const barriers: Barrier[][] = [];
+  let cur: FusedStage[] = [];
+  let partIn = inputWidth;
+  let width = inputWidth;
+  let inBarrier = false;
+  const close = () => {
+    const out = cur.length > 0 ? cur[cur.length - 1].kernel.outputWidth : partIn;
+    parts.push({ stages: cur, inputWidth: partIn, outputWidth: out });
+    width = out;
+    cur = [];
+  };
+  for (const s of segments) {
+    if (s.k === 'identity') continue;
+    if (s.k === 'dupCat' || s.k === 'dupZip') throw new Error(`wasm: ${s.k} is not compiled to wasm yet`);
+    if (s.k === 'kernels') {
+      if (inBarrier) {
+        inBarrier = false;
+        partIn = width;
+      }
+      cur.push(...s.stages);
+      continue;
+    }
+    if (!inBarrier) {
+      close();
+      barriers.push([]);
+      inBarrier = true;
+    }
+    barriers[barriers.length - 1].push(s);
+    if (s.k === 'reduceBy') width = s.width;
+  }
+  if (inBarrier) partIn = width;
+  close();
+  const np = parts.length;
+  const w0 = parts[0].inputWidth;
+  const outWidth = parts[np - 1].outputWidth;
+
+  // The fixed layout.
   const outBase = 8 * pipelineParams;
   const outLimit = outBase + 8 * outWidth * OUT_TOKENS;
-  const feeds = stages.map((s) => anyStmt(s.kernel.body, (x) => x.k === 'feed'));
-  const stackBase: number[] = [];
-  let top = outLimit;
-  for (let j = 0; j < n; j++) {
-    stackBase.push(top);
-    if (feeds[j]) top += STACK_BYTES;
-  }
-  const w0 = stages[0].kernel.inputWidth;
-  const inBase = top;
-  top += 8 * w0 * IN_TOKENS;
-  const pages = Math.ceil(top / PAGE);
+  const inBase = outLimit;
+  let top = inBase + 8 * w0 * IN_TOKENS;
+  const feeding = parts.map((p) => p.stages.map((s) => anyStmt(s.kernel.body, (x) => x.k === 'feed')));
+  const stackBase = parts.map((p, pi) => p.stages.map((_, j) => {
+    const b = top;
+    if (feeding[pi][j]) top += STACK_BYTES;
+    return b;
+  }));
+  const heap0 = top;
+  const pages = Math.ceil((heap0 + PAGE) / PAGE);
 
-  // Globals: OUT pointer (i32), then per stage: SP (i32), params, state (f64).
+  // Globals.
   const globals: { type: number; init: number[] }[] = [];
   const g = (type: number, init: number[]) => globals.push({ type, init }) - 1;
-  const OUTP = g(I32, [OP.i32Const, ...sleb(outBase)]);
-  const sp = stackBase.map((b) => g(I32, [OP.i32Const, ...sleb(b)]));
-  const argG = stages.map((s) => s.args.flat().map(() => g(F64, [OP.f64Const, ...f64(0)])));
-  const stateG = stages.map((s) => s.kernel.stateInit.map(() => g(F64, [OP.f64Const, ...f64(0)])));
+  const OUTP = g(I32, i32c(outBase));
+  const HEAP = g(I32, i32c(heap0));
+  const LIMIT = g(I32, i32c(pages * PAGE));
+  const bufBase = parts.slice(0, -1).map(() => g(I32, i32c(0)));
+  const bufTop = parts.slice(0, -1).map(() => g(I32, i32c(0)));
+  const sp = stackBase.map((bs) => bs.map((b) => g(I32, i32c(b))));
+  const argG = parts.map((p) => p.stages.map((s) => s.args.flat().map(() => g(F64, f64c(0)))));
+  const stateG = parts.map((p) => p.stages.map((s) => s.kernel.stateInit.map(() => g(F64, f64c(0)))));
 
-  // Function indices: 0 = imported drain; then st_0…st_{n-1}, fl_0…, init,
-  // end, push (st_0, returning the output pointer so JS need not ask).
+  // Functions: declared first (so calls can be emitted before bodies exist),
+  // defined below. Index 0 is the imported drain.
+  const sigs: { params: number[]; results: number[] }[] = [];
+  const bodies = new Map<number, Fn>();
+  const declare = (params: number[], results: number[] = []) => sigs.push({ params, results });
+  const define = (index: number, build: (f: Fn) => void) => {
+    const f = new Fn(sigs[index - 1].params, sigs[index - 1].results);
+    build(f);
+    bodies.set(index, f);
+  };
   const DRAIN = 0;
-  const ST = (j: number) => 1 + j;
-  const FL = (j: number) => 1 + n + j;
-  const INIT = 1 + 2 * n;
-  const END = 2 + 2 * n;
-  const PUSH = 3 + 2 * n;
-  const PUSH_ALL = 4 + 2 * n;
+  const ENSURE = declare([I32]); // ensure(bytes): grow until HEAP + bytes fits
+  const ST = parts.map((p) => p.stages.map((s) => declare(Array(s.kernel.inputWidth).fill(F64))));
+  const FL = parts.map((p) => p.stages.map(() => declare([])));
+  const EMIT = parts.map((p) => declare(Array(p.outputWidth).fill(F64))); // a part's last emit
+  const IN = parts.map((p) => declare(Array(p.inputWidth).fill(F64))); // a part's entry
+  const SORT = declare([I32, I32, I32, I32]); // sort(base, top, wb, keyOff)
+  const REVERSE = declare([I32, I32, I32]); // reverse(base, top, wb)
+  const REDUCE = barriers.map((bs) => bs.map((b) => (b.k === 'reduceBy' ? declare([]) : -1)));
+  const INIT = declare([]);
+  const END = declare([], [I32]);
+  const PUSH = declare(Array(w0).fill(F64), [I32]);
+  const PUSH_ALL = declare([I32], [I32]);
 
-  // Types: one per distinct parameter count (all f64, no results).
+  // --- scalar expressions over an environment ---
+  interface Env {
+    param(i: number): number[];
+    state(i: number): number[];
+    input(i: number): number[];
+    local(name: string): number;
+  }
+  const noEnv = (what: string): Env => ({
+    param: () => fail(`a parameter in ${what}`),
+    state: () => fail(`state in ${what}`),
+    input: () => fail(`an input in ${what}`),
+    local: () => fail(`a local in ${what}`),
+  });
+  const fail = (msg: string): never => {
+    throw new Error(`wasm: ${msg}`);
+  };
+  // The value of e, as f64.
+  function num(f: Fn, e: ScalarExpr, env: Env): void {
+    switch (e.k) {
+      case 'const': f.emit(f64c(e.value)); return;
+      case 'param': f.emit(env.param(e.index)); return;
+      case 'state': f.emit(env.state(e.index)); return;
+      case 'input': f.emit(env.input(e.index)); return;
+      case 'local': f.emit(get(env.local(e.name))); return;
+      case 'bin':
+        if (BIN[e.op].cls === 'arith') { num(f, e.a, env); num(f, e.b, env); f.emit([BIN[e.op].wasm]); return; }
+        cond(f, e, env);
+        f.emit([OP.f64ConvertI32U]);
+        return;
+      case 'un':
+        if (UN[e.op].cls === 'logic') { cond(f, e, env); f.emit([OP.f64ConvertI32U]); return; }
+        num(f, e.a, env);
+        f.emit([UN[e.op].wasm]);
+        return;
+      case 'select':
+        num(f, e.then, env); num(f, e.else, env); cond(f, e.cond, env);
+        f.emit([OP.select]);
+        return;
+    }
+  }
+  // The truth of e, as i32.
+  function cond(f: Fn, e: ScalarExpr, env: Env): void {
+    if (e.k === 'bin' && BIN[e.op].cls === 'cmp') { num(f, e.a, env); num(f, e.b, env); f.emit([BIN[e.op].wasm]); return; }
+    if (e.k === 'bin' && BIN[e.op].cls === 'logic') { cond(f, e.a, env); cond(f, e.b, env); f.emit([BIN[e.op].wasm]); return; }
+    if (e.k === 'un' && UN[e.op].cls === 'logic') { cond(f, e.a, env); f.emit([UN[e.op].wasm]); return; }
+    num(f, e, env);
+    f.emit(f64c(0), [OP.f64Ne]);
+  }
+
+  // --- stages ---
+  parts.forEach((part, p) => part.stages.forEach((stage, j) => {
+    const k = stage.kernel;
+    const w = k.inputWidth;
+    const feeds = feeding[p][j];
+    const build = (f: Fn, list: Stmt[], flush: boolean) => {
+      const locals = new Map<string, number>();
+      // A feeding stage's inputs are locals it pops into; otherwise they are its parameters.
+      const inputs = flush ? [] : Array.from({ length: w }, (_, i) => (feeds ? f.local(F64) : i));
+      const env: Env = {
+        param: (i) => gget(argG[p][j][i]),
+        state: (i) => gget(stateG[p][j][i]),
+        input: (i) => (flush ? fail('an input in a flush body') : get(inputs[i])),
+        local: (name) => {
+          if (!locals.has(name)) locals.set(name, f.local(F64));
+          return locals.get(name)!;
+        },
+      };
+      const run = (list: Stmt[]): void => {
+        for (const s of list) {
+          switch (s.k) {
+            case 'let':
+            case 'assign':
+              num(f, s.expr, env);
+              f.emit(set(env.local(s.name)));
+              break;
+            case 'setState':
+              num(f, s.expr, env);
+              f.emit(gset(stateG[p][j][s.index]));
+              break;
+            case 'emit':
+              s.values.forEach((v) => num(f, v, env));
+              f.emit(call(j + 1 < part.stages.length ? ST[p][j + 1] : EMIT[p]));
+              break;
+            case 'feed':
+              s.values.forEach((v, i) => { f.emit(gget(sp[p][j])); num(f, v, env); f.emit(stF64(8 * i)); });
+              f.emit(gget(sp[p][j]), i32c(8 * w), add, gset(sp[p][j]));
+              f.emit(ifThen([...gget(sp[p][j]), ...i32c(stackBase[p][j] + STACK_BYTES), OP.i32GtU], [OP.unreachable]));
+              break;
+            case 'if':
+              cond(f, s.cond, env);
+              f.emit([OP.if, VOID]);
+              run(s.then);
+              if (s.else.length > 0) { f.emit([OP.else]); run(s.else); }
+              f.emit([OP.end]);
+              break;
+          }
+        }
+      };
+      if (feeds && !flush) {
+        // Push the incoming token, then run until the worklist is empty —
+        // depth-first, exactly the JS segment's `while (q.length) q.pop()`.
+        for (let i = 0; i < w; i++) f.emit(gget(sp[p][j]), get(i), stF64(8 * i));
+        f.emit(gget(sp[p][j]), i32c(8 * w), add, gset(sp[p][j]));
+        const pop = [...gget(sp[p][j]), ...i32c(8 * w), ...sub, ...gset(sp[p][j])];
+        for (let i = 0; i < w; i++) pop.push(...gget(sp[p][j]), ...ldF64(8 * i), ...set(inputs[i]));
+        f.emit([OP.block, VOID, OP.loop, VOID], gget(sp[p][j]), i32c(stackBase[p][j]), [OP.i32GtU, OP.i32Eqz, OP.brIf, 1], pop);
+        run(list);
+        f.emit([OP.br, 0, OP.end, OP.end]);
+      } else {
+        run(list);
+      }
+    };
+    define(ST[p][j], (f) => build(f, k.body, false));
+    define(FL[p][j], (f) => build(f, k.epilogue, true));
+  }));
+
+  // ensure(bytes): the heap has `bytes` free above HEAP, growing memory if not.
+  define(ENSURE, (f) => {
+    const need = f.local(I32);
+    f.emit(gget(HEAP), get(0), add, set(need));
+    f.emit(ifThen([...get(need), ...gget(LIMIT), OP.i32GtU], [
+      ...get(need), ...gget(LIMIT), ...sub, ...i32c(PAGE - 1), ...add, ...i32c(PAGE), OP.i32DivU, OP.memoryGrow, 0x00, OP.drop,
+      OP.memorySize, 0x00, ...i32c(PAGE), ...mul, ...gset(LIMIT),
+    ]));
+  });
+
+  // A part's last emit: append to its buffer (the top of the heap), or store
+  // to OUT and hand the buffer to JS when full.
+  parts.forEach((part, p) => define(EMIT[p], (f) => {
+    const w = part.outputWidth;
+    if (p + 1 < np) {
+      f.emit(i32c(8 * w), call(ENSURE));
+      for (let i = 0; i < w; i++) f.emit(gget(bufTop[p]), get(i), stF64(8 * i));
+      f.emit(gget(bufTop[p]), i32c(8 * w), add, gset(bufTop[p]), gget(bufTop[p]), gset(HEAP));
+    } else {
+      for (let i = 0; i < w; i++) f.emit(gget(OUTP), get(i), stF64(8 * i));
+      f.emit(gget(OUTP), i32c(8 * w), add, gset(OUTP));
+      f.emit(ifThen([...gget(OUTP), ...i32c(outLimit), OP.i32GeU], call(DRAIN)));
+    }
+  }));
+
+  // A part's entry: its first stage, or (no stages) its emit.
+  parts.forEach((part, p) => define(IN[p], (f) => {
+    for (let i = 0; i < part.inputWidth; i++) f.emit(get(i));
+    f.emit(call(part.stages.length > 0 ? ST[p][0] : EMIT[p]));
+  }));
+
+  // sort(base, top, wb, keyOff): a stable LSD radix sort of the tokens in
+  // [base, top) by the f64 at keyOff: the key's bits made monotonic (-0 as 0,
+  // negatives flipped), eight 8-bit digits, indices permuted, the tokens
+  // gathered once at the end. Scratch sits above the heap and is dropped.
+  define(SORT, (f) => {
+    const [base, top, wb, keyOff] = [0, 1, 2, 3];
+    const n = f.local(I32), keys = f.local(I32), idxA = f.local(I32), idxB = f.local(I32), counts = f.local(I32), copy = f.local(I32);
+    const i = f.local(I32), d = f.local(I32), c = f.local(I32), t = f.local(I32), bits = f.local(I64), vary = f.local(I64), first = f.local(I64);
+    // The digit of the key at the address on the stack.
+    const digit = [...ldI64(), ...get(d), OP.i64ExtendI32U, OP.i64ShrU, ...i64c(0xffn), OP.i64And, OP.i32WrapI64];
+    const at = (arr: number, idx: number[], shift: number) => [...get(arr), ...idx, ...shl(shift), ...add];
+    f.emit(get(top), get(base), sub, get(wb), [OP.i32DivU], set(n));
+    // Scratch: keys u64[n], idxA i32[n], idxB i32[n], counts i32[256], a copy of the tokens.
+    f.emit(gget(HEAP), set(keys));
+    f.emit(at(keys, get(n), 3), set(idxA));
+    f.emit(at(idxA, get(n), 2), set(idxB));
+    f.emit(at(idxB, get(n), 2), set(counts));
+    f.emit(get(counts), i32c(1024), add, set(copy));
+    f.emit(get(copy), get(top), add, get(base), sub, gget(HEAP), sub, call(ENSURE));
+    // Keys and identity indices; `vary` collects the bits in which any two
+    // keys differ, so passes over digits no key varies in are skipped.
+    f.emit(i64c(0n), set(vary), i64c(0n), set(first));
+    f.emit(forRange(i, i32c(0), get(n), i32c(1), [
+      ...get(base), ...get(i), ...get(wb), ...mul, ...add, ...get(keyOff), ...add, ...ldF64(), ...f64c(0), OP.f64Add, OP.i64ReinterpretF64, ...set(bits),
+      ...get(bits), ...i64c(0n), OP.i64LtS, OP.if, I64, ...get(bits), ...i64c(-1n), OP.i64Xor, OP.else, ...get(bits), ...i64c(1n << 63n), OP.i64Xor, OP.end, ...set(bits),
+      ...ifThen([...get(i), OP.i32Eqz], [...get(bits), ...set(first)]),
+      ...get(vary), ...get(bits), ...get(first), OP.i64Xor, OP.i64Or, ...set(vary),
+      ...at(keys, get(i), 3), ...get(bits), ...stI64(),
+      ...at(idxA, get(i), 2), ...get(i), ...stI32(),
+    ]));
+    f.emit(get(copy), get(base), get(top), get(base), sub, MEMCOPY);
+    // Eight digit passes, least significant first.
+    f.emit(forRange(d, i32c(0), i32c(64), i32c(8), [
+      OP.block, VOID, // skipped when no key varies in this digit
+      ...ifThen([...get(vary), ...get(d), OP.i64ExtendI32U, OP.i64ShrU, ...i64c(0xffn), OP.i64And, OP.i64Eqz], [OP.br, 1]),
+      ...get(counts), ...i32c(0), ...i32c(1024), ...MEMFILL,
+      ...forRange(i, i32c(0), get(n), i32c(1), [
+        ...at(keys, [...at(idxA, get(i), 2), ...ldI32()], 3), ...digit, ...shl(2), ...get(counts), ...add, ...set(c),
+        ...get(c), ...get(c), ...ldI32(), ...i32c(1), ...add, ...stI32(),
+      ]),
+      // Exclusive prefix sums: counts[c] = number of keys with a smaller digit.
+      ...i32c(0), ...set(t),
+      ...forRange(c, i32c(0), i32c(256), i32c(1), [
+        ...at(counts, get(c), 2), ...tee(i), ...ldI32(), ...get(i), ...get(t), ...stI32(), ...get(t), ...add, ...set(t),
+      ]),
+      // Scatter, in order: stable.
+      ...forRange(i, i32c(0), get(n), i32c(1), [
+        ...at(idxA, get(i), 2), ...ldI32(), ...set(c),
+        ...at(keys, get(c), 3), ...digit, ...shl(2), ...get(counts), ...add, ...set(t),
+        ...at(idxB, [...get(t), ...ldI32()], 2), ...get(c), ...stI32(),
+        ...get(t), ...get(t), ...ldI32(), ...i32c(1), ...add, ...stI32(),
+      ]),
+      ...get(idxA), ...get(idxB), ...set(idxA), ...set(idxB),
+      OP.end,
+    ]));
+    // Gather the tokens into their sorted places.
+    f.emit(forRange(i, i32c(0), get(n), i32c(1), [
+      ...get(base), ...get(i), ...get(wb), ...mul, ...add,
+      ...get(copy), ...at(idxA, get(i), 2), ...ldI32(), ...get(wb), ...mul, ...add,
+      ...get(wb), ...MEMCOPY,
+    ]));
+  });
+
+  // reverse(base, top, wb): tokens swapped from both ends, word by word.
+  define(REVERSE, (f) => {
+    const [base, top, wb] = [0, 1, 2];
+    const a = f.local(I32), b = f.local(I32), k = f.local(I32), t = f.local(I64);
+    f.emit(get(base), set(a), get(top), get(wb), sub, set(b));
+    f.emit(loopWhile([...get(a), ...get(b), OP.i32GeU], [
+      ...forRange(k, i32c(0), get(wb), i32c(8), [
+        ...get(a), ...get(k), ...add, ...ldI64(), ...set(t),
+        ...get(a), ...get(k), ...add, ...get(b), ...get(k), ...add, ...ldI64(), ...stI64(),
+        ...get(b), ...get(k), ...add, ...get(t), ...stI64(),
+      ]),
+      ...get(a), ...get(wb), ...add, ...set(a), ...get(b), ...get(wb), ...sub, ...set(b),
+    ]));
+  });
+
+  // reduce: merge adjacent same-key tokens of a buffer in place (the GroupBy
+  // before it made equal keys adjacent); listed fields combine, the others
+  // keep the first token's values.
+  barriers.forEach((bs, p) => bs.forEach((b, i) => {
+    if (b.k !== 'reduceBy') return;
+    define(REDUCE[p][i], (f) => {
+      const wb = 8 * b.width;
+      const rd = f.local(I32), wr = f.local(I32), has = f.local(I32), same = f.local(I32), k = f.local(I32);
+      const ra = f.local(F64), rb = f.local(F64);
+      const env: Env = { ...noEnv('a ReduceBy operator'), local: (name) => (name === '#ra' ? ra : rb) };
+      f.emit(gget(bufBase[p]), set(wr), i32c(0), set(has));
+      const prev = (off: number) => [...get(wr), ...i32c(wb), ...sub, ...ldF64(off)];
+      f.emit(forRange(rd, gget(bufBase[p]), gget(bufTop[p]), i32c(wb), [
+        // same: a token has been written, and every key equals its key
+        ...get(has), ...set(same),
+        ...b.keyIndexes.flatMap((ki) => [
+          ...get(same), OP.if, I32, ...prev(8 * ki), ...get(rd), ...ldF64(8 * ki), OP.f64Eq, OP.else, ...i32c(0), OP.end, ...set(same),
+        ]),
+        ...ifThen(get(same), b.fields.flatMap((fld) => {
+          const op = new Fn([]);
+          num(op, fld.op, env);
+          return [
+            ...prev(8 * fld.index), ...set(ra), ...get(rd), ...ldF64(8 * fld.index), ...set(rb),
+            ...get(wr), ...i32c(wb), ...sub, ...op.code, ...stF64(8 * fld.index),
+          ];
+        }), [
+          ...forRange(k, i32c(0), i32c(wb), i32c(8), [...get(wr), ...get(k), ...add, ...get(rd), ...get(k), ...add, ...ldI64(), ...stI64()]),
+          ...get(wr), ...i32c(wb), ...add, ...set(wr), ...i32c(1), ...set(has),
+        ]),
+      ]));
+      f.emit(get(wr), gset(bufTop[p]));
+    });
+  }));
+
+  // init: reset the allocator, output and worklists; evaluate stage
+  // arguments (over the pipeline params in memory) and state initializers.
+  define(INIT, (f) => {
+    f.emit(i32c(outBase), gset(OUTP), i32c(heap0), gset(HEAP), [OP.memorySize, 0x00], i32c(PAGE), mul, gset(LIMIT));
+    if (np > 1) f.emit(gget(HEAP), gset(bufBase[0]), gget(HEAP), gset(bufTop[0]));
+    parts.forEach((part, p) => part.stages.forEach((_, j) => f.emit(i32c(stackBase[p][j]), gset(sp[p][j]))));
+    const argEnv: Env = { ...noEnv('a stage argument'), param: (i) => [...i32c(0), ...ldF64(8 * i)] };
+    parts.forEach((part, p) => part.stages.forEach((s, j) => {
+      s.args.flat().forEach((a, i) => { num(f, a, argEnv); f.emit(gset(argG[p][j][i])); });
+      const env: Env = { ...noEnv('a state initializer'), param: (i) => gget(argG[p][j][i]), state: (i) => gget(stateG[p][j][i]) };
+      s.kernel.stateInit.forEach((e, i) => { num(f, e, env); f.emit(gset(stateG[p][j][i])); });
+    }));
+  });
+
+  // end(): flush part 0; then, for each barrier group, apply it to the
+  // buffer and stream the buffer into the next part, which is flushed too.
+  define(END, (f) => {
+    const cur = f.local(I32);
+    parts.forEach((part, p) => {
+      if (p > 0) {
+        const wb = 8 * parts[p - 1].outputWidth;
+        const buf = [...gget(bufBase[p - 1]), ...gget(bufTop[p - 1])];
+        barriers[p - 1].forEach((b, i) => {
+          switch (b.k) {
+            case 'sortBy': f.emit(buf, i32c(wb), i32c(8 * b.keyIndex), call(SORT)); break;
+            case 'groupBy': for (const key of [...b.keyIndexes].reverse()) f.emit(buf, i32c(wb), i32c(8 * key), call(SORT)); break;
+            case 'reverse': f.emit(buf, i32c(wb), call(REVERSE)); break;
+            case 'reduceBy': f.emit(call(REDUCE[p - 1][i])); break;
+          }
+        });
+        // The next buffer starts at the heap top, above this one.
+        if (p + 1 < np) f.emit(gget(HEAP), gset(bufBase[p]), gget(HEAP), gset(bufTop[p]));
+        f.emit(forRange(cur, gget(bufBase[p - 1]), gget(bufTop[p - 1]), i32c(wb), [
+          ...Array.from({ length: part.inputWidth }, (_, i) => [...get(cur), ...ldF64(8 * i)]).flat(),
+          ...call(IN[p]),
+        ]));
+      }
+      part.stages.forEach((_, j) => f.emit(call(FL[p][j])));
+    });
+    f.emit(gget(OUTP));
+  });
+
+  // push(token): into part 0; returns the output pointer so JS need not ask.
+  define(PUSH, (f) => {
+    for (let i = 0; i < w0; i++) f.emit(get(i));
+    f.emit(call(IN[0]), gget(OUTP));
+  });
+  // pushAll(n): part 0 over n tokens in the input buffer.
+  define(PUSH_ALL, (f) => {
+    const end = f.local(I32), cur = f.local(I32);
+    f.emit(get(0), i32c(8 * w0), mul, i32c(inBase), add, set(end));
+    f.emit(forRange(cur, i32c(inBase), get(end), i32c(8 * w0), [
+      ...Array.from({ length: w0 }, (_, i) => [...get(cur), ...ldF64(8 * i)]).flat(),
+      ...call(IN[0]),
+    ]));
+    f.emit(gget(OUTP));
+  });
+
+  // Types, deduplicated; then the module.
   const typeOf = new Map<string, number>();
   const types: number[][] = [];
-  const typeFor = (params: number, result: number[] = []) => {
-    const key = `${params}:${result}`;
+  const typeFor = (params: number[], results: number[]) => {
+    const key = `${params}:${results}`;
     if (!typeOf.has(key)) {
       typeOf.set(key, types.length);
-      types.push([0x60, ...uleb(params), ...Array(params).fill(F64), ...uleb(result.length), ...result]);
+      types.push([0x60, ...vec(params.map((t) => [t])), ...vec(results.map((t) => [t]))]);
     }
     return typeOf.get(key)!;
   };
-
-  // One function body. Locals: f64 inputs (params or popped), then named lets.
-  function fn(j: number, body: Stmt[], mode: 'step' | 'flush'): number[] {
-    const k = stages[j].kernel;
-    const w = k.inputWidth;
-    const viaStack = mode === 'step' && feeds[j];
-    const paramCount = mode === 'step' ? w : 0;
-    const locals = new Map<string, number>();
-    const T = (i: number) => (viaStack ? paramCount + i : i); // input i
-    let next = paramCount + (viaStack ? w : 0);
-    const local = (name: string) => {
-      if (!locals.has(name)) locals.set(name, next++);
-      return locals.get(name)!;
-    };
-    const code: number[] = [];
-    const c = (...b: number[]): void => {
-      code.push(...b);
-    };
-
-    const num = (e: ScalarExpr): void => {
-      switch (e.k) {
-        case 'const': return c(OP.f64Const, ...f64(e.value));
-        case 'param': return c(OP.globalGet, ...uleb(argG[j][e.index]));
-        case 'state': return c(OP.globalGet, ...uleb(stateG[j][e.index]));
-        case 'input':
-          if (mode === 'flush') throw new Error('input in a flush body');
-          return c(OP.localGet, ...uleb(T(e.index)));
-        case 'local': return c(OP.localGet, ...uleb(local(e.name)));
-        case 'bin':
-          if (BIN[e.op].cls === 'arith') { num(e.a); num(e.b); return c(BIN[e.op].wasm); }
-          cond(e);
-          return c(OP.f64FromI32U);
-        case 'un':
-          if (UN[e.op].cls === 'logic') { cond(e); return c(OP.f64FromI32U); }
-          num(e.a);
-          return c(UN[e.op].wasm);
-        case 'select':
-          num(e.then); num(e.else); cond(e.cond);
-          return c(OP.select);
-      }
-    };
-    const cond = (e: ScalarExpr): void => {
-      if (e.k === 'bin' && BIN[e.op].cls === 'cmp') { num(e.a); num(e.b); return c(BIN[e.op].wasm); }
-      if (e.k === 'bin' && BIN[e.op].cls === 'logic') { cond(e.a); cond(e.b); return c(BIN[e.op].wasm); }
-      if (e.k === 'un' && UN[e.op].cls === 'logic') { cond(e.a); return c(UN[e.op].wasm); }
-      num(e);
-      c(OP.f64Const, ...f64(0));
-      c(OP.f64Ne);
-    };
-    const stmts = (list: Stmt[]): void => {
-      for (const s of list) {
-        switch (s.k) {
-          case 'let':
-          case 'assign':
-            num(s.expr);
-            c(OP.localSet, ...uleb(local(s.name)));
-            break;
-          case 'setState':
-            num(s.expr);
-            c(OP.globalSet, ...uleb(stateG[j][s.index]));
-            break;
-          case 'emit':
-            if (j + 1 < n) {
-              s.values.forEach(num);
-              c(OP.call, ...uleb(ST(j + 1)));
-            } else {
-              s.values.forEach((v, i) => { c(OP.globalGet, ...uleb(OUTP)); num(v); c(OP.f64Store, ...mem(8 * i)); });
-              c(OP.globalGet, ...uleb(OUTP), OP.i32Const, ...sleb(8 * outWidth), OP.i32Add, OP.globalSet, ...uleb(OUTP));
-              // Full: hand the buffer to JS (which resets OUTP).
-              c(OP.globalGet, ...uleb(OUTP), OP.i32Const, ...sleb(outLimit), OP.i32GeU, OP.if, VOID, OP.call, ...uleb(DRAIN), OP.end);
-            }
-            break;
-          case 'feed':
-            s.values.forEach((v, i) => { c(OP.globalGet, ...uleb(sp[j])); num(v); c(OP.f64Store, ...mem(8 * i)); });
-            c(OP.globalGet, ...uleb(sp[j]), OP.i32Const, ...sleb(8 * w), OP.i32Add, OP.globalSet, ...uleb(sp[j]));
-            c(OP.globalGet, ...uleb(sp[j]), OP.i32Const, ...sleb(stackBase[j] + STACK_BYTES), OP.i32GtU, OP.if, VOID, OP.unreachable, OP.end);
-            break;
-          case 'if':
-            cond(s.cond);
-            c(OP.if, VOID);
-            stmts(s.then);
-            if (s.else.length > 0) { c(OP.else); stmts(s.else); }
-            c(OP.end);
-            break;
-        }
-      }
-    };
-
-    if (viaStack) {
-      // Push the incoming token, then run until the worklist is empty —
-      // depth-first, exactly the JS segment's `while (q.length) q.pop()`.
-      for (let i = 0; i < w; i++) {
-        c(OP.globalGet, ...uleb(sp[j]), OP.localGet, ...uleb(i), OP.f64Store, ...mem(8 * i));
-      }
-      c(OP.globalGet, ...uleb(sp[j]), OP.i32Const, ...sleb(8 * w), OP.i32Add, OP.globalSet, ...uleb(sp[j]));
-      c(OP.block, VOID, OP.loop, VOID);
-      c(OP.globalGet, ...uleb(sp[j]), OP.i32Const, ...sleb(stackBase[j]), OP.i32GtU, OP.i32Eqz, OP.brIf, 1);
-      c(OP.globalGet, ...uleb(sp[j]), OP.i32Const, ...sleb(8 * w), OP.i32Sub, OP.globalSet, ...uleb(sp[j]));
-      for (let i = 0; i < w; i++) {
-        c(OP.globalGet, ...uleb(sp[j]), OP.f64Load, ...mem(8 * i), OP.localSet, ...uleb(T(i)));
-      }
-      stmts(body);
-      c(OP.br, 0, OP.end, OP.end);
-    } else {
-      stmts(body);
-    }
-    c(OP.end);
-    const extra = next - paramCount;
-    return [...uleb(extra > 0 ? 1 : 0), ...(extra > 0 ? [...uleb(extra), F64] : [])].concat(code);
-  }
-
-  // init: evaluate stage arguments (over the pipeline params in memory) and
-  // state initializers, in order.
-  const init: number[] = [];
-  const pipelineExpr = (e: ScalarExpr, j: number): void => {
-    switch (e.k) {
-      case 'const': init.push(OP.f64Const, ...f64(e.value)); return;
-      case 'param': init.push(OP.i32Const, 0, OP.f64Load, ...mem(8 * e.index)); return;
-      case 'bin':
-        if (BIN[e.op].cls === 'arith') { pipelineExpr(e.a, j); pipelineExpr(e.b, j); init.push(BIN[e.op].wasm); return; }
-        break;
-      case 'un':
-        if (UN[e.op].cls !== 'logic') { pipelineExpr(e.a, j); init.push(UN[e.op].wasm); return; }
-        break;
-    }
-    throw new Error(`wasm: unsupported stage argument expression '${e.k}'`);
-  };
-  const stateExpr = (e: ScalarExpr, j: number): void => {
-    switch (e.k) {
-      case 'const': init.push(OP.f64Const, ...f64(e.value)); return;
-      case 'param': init.push(OP.globalGet, ...uleb(argG[j][e.index])); return;
-      case 'state': init.push(OP.globalGet, ...uleb(stateG[j][e.index])); return;
-      case 'bin':
-        if (BIN[e.op].cls === 'arith') { stateExpr(e.a, j); stateExpr(e.b, j); init.push(BIN[e.op].wasm); return; }
-        break;
-      case 'un':
-        if (UN[e.op].cls !== 'logic') { stateExpr(e.a, j); init.push(UN[e.op].wasm); return; }
-        break;
-    }
-    throw new Error(`wasm: unsupported state initializer '${e.k}'`);
-  };
-  stages.forEach((s, j) => {
-    s.args.flat().forEach((a, i) => { pipelineExpr(a, j); init.push(OP.globalSet, ...uleb(argG[j][i])); });
-    s.kernel.stateInit.forEach((e, i) => { stateExpr(e, j); init.push(OP.globalSet, ...uleb(stateG[j][i])); });
+  const drainType = typeFor([], []);
+  const funcTypes = sigs.map((s) => typeFor(s.params, s.results));
+  const funcBodies = sigs.map((_, i) => {
+    const f = bodies.get(i + 1);
+    if (!f) fail(`function ${i + 1} has no body`);
+    return f!.body();
   });
-  init.push(OP.end);
-
-  const end: number[] = [];
-  stages.forEach((_, j) => end.push(OP.call, ...uleb(FL(j))));
-  end.push(OP.globalGet, ...uleb(OUTP), OP.end);
-  const push: number[] = [];
-  for (let i = 0; i < w0; i++) push.push(OP.localGet, ...uleb(i));
-  push.push(OP.call, ...uleb(ST(0)), OP.globalGet, ...uleb(OUTP), OP.end);
-  // pushAll(n): run st_0 over n tokens in the input buffer (local 1 = end
-  // address, local 2 = cursor).
-  const L = (i: number) => uleb(i);
-  const pushAll: number[] = [
-    1, 2, I32, // two i32 locals
-    OP.localGet, ...L(0), OP.i32Const, ...sleb(8 * w0), OP.i32Mul, OP.i32Const, ...sleb(inBase), OP.i32Add, OP.localSet, ...L(1),
-    OP.i32Const, ...sleb(inBase), OP.localSet, ...L(2),
-    OP.block, VOID, OP.loop, VOID,
-    OP.localGet, ...L(2), OP.localGet, ...L(1), OP.i32GeU, OP.brIf, 1,
-    ...Array.from({ length: w0 }, (_, i) => [OP.localGet, ...L(2), OP.f64Load, ...mem(8 * i)]).flat(),
-    OP.call, ...uleb(ST(0)),
-    OP.localGet, ...L(2), OP.i32Const, ...sleb(8 * w0), OP.i32Add, OP.localSet, ...L(2),
-    OP.br, 0, OP.end, OP.end,
-    OP.globalGet, ...uleb(OUTP), OP.end,
-  ];
-
-  const bodies = [
-    ...stages.map((s, j) => fn(j, s.kernel.body, 'step')),
-    ...stages.map((s, j) => fn(j, s.kernel.epilogue, 'flush')),
-    [0, ...init],
-    [0, ...end],
-    [0, ...push],
-    pushAll,
-  ];
-  const pushAllType = types.push([0x60, 1, I32, 1, I32]) - 1;
-  const funcTypes = [
-    ...stages.map((s) => typeFor(s.kernel.inputWidth)),
-    ...stages.map(() => typeFor(0)),
-    typeFor(0),
-    typeFor(0, [I32]),
-    typeFor(w0, [I32]),
-    pushAllType,
-  ];
-  const drainType = typeFor(0);
-
   const bytes = [
     0x00, 0x61, 0x73, 0x6d, 1, 0, 0, 0,
     ...section(1, vec(types)),
@@ -327,15 +588,7 @@ export function compileSegment(stages: FusedStage[], pipelineParams: number): Wa
       [...str('end'), 0x00, ...uleb(END)],
       [...str('out'), 0x03, ...uleb(OUTP)],
     ])),
-    ...section(10, vec(bodies.map((b) => [...uleb(b.length), ...b]))),
+    ...section(10, vec(funcBodies)),
   ];
-  return {
-    bytes: new Uint8Array(bytes),
-    inputWidth: stages[0].kernel.inputWidth,
-    outputWidth: outWidth,
-    paramCount: pipelineParams,
-    outBase,
-    inBase,
-    inTokens: IN_TOKENS,
-  };
+  return { bytes: new Uint8Array(bytes), inputWidth: w0, outputWidth: outWidth, outBase, inBase, inTokens: IN_TOKENS };
 }

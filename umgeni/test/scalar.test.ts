@@ -20,7 +20,7 @@ describe('scalar operators: every backend agrees with the table', () => {
     .map((k) => `P${k} : ${k.startsWith('B') ? '(Real, Real)' : 'Real'} >> Real\n    ⇒ ${k} → (→)\n`);
   const libraries = [{}, { target: 'wasm' as const }, { boolCond: false, cse: false }]
     .map((o) => compileLibrary([...kernels, ...pipes], o));
-  it('exercises the wasm backend', () => expect(libraries[1].source).toContain('rt.wasmSegment('));
+  it('exercises the wasm backend', () => expect(libraries[1].source).toContain('rt.wasmPipeline('));
 
   for (const [name, op] of Object.entries(BIN)) {
     it(`${op.nile} (${name})`, () => {
