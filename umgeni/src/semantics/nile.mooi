@@ -87,9 +87,9 @@ assignTo ρ n v = let c = must (cellsOf ρ n) ("'" ++ n ++ " =' must update a st
 kernel k ρ0 io =
   let layout = stateLayout k ρ0
   in { initial: concatMap (\l -> l.initial) layout
-     , init:    \_ -> execs io (filter (\st -> not (isDecl st)) k.prologue) (phase ρ0 layout)
+     , prologue:    \_ -> execs io (filter (\st -> not (isDecl st)) k.prologue) (phase ρ0 layout)
      , step:    \input -> step k io (phase ρ0 layout) layout input
-     , flush:   \_ -> execs {...io, flush: true} k.epilogue (phase ρ0 layout) }
+     , flush:   \_ -> execs {...io, flush: true} k.flush (phase ρ0 layout) }
 
 -- Prologue declarations, in order: each a state variable with its slots.
 stateLayout k ρ0 = scanState ρ0 0 (filter isDecl k.prologue)

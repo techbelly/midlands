@@ -278,7 +278,7 @@ type Barrier = Extract<FusedSegment, { k: 'sortBy' | 'groupBy' | 'reduceBy' | 'r
 // What this file compiles: kernel runs with no prologue, and the four
 // in-place barriers.
 export const inWasm = (s: FusedSegment): boolean =>
-  s.k === 'kernels' ? s.stages.every((st) => st.kernel.init.length === 0) : s.k !== 'dupCat' && s.k !== 'dupZip';
+  s.k === 'kernels' ? s.stages.every((st) => st.kernel.prologue.length === 0) : s.k !== 'dupCat' && s.k !== 'dupZip';
 
 export interface WasmPipeline {
   bytes: Uint8Array;
@@ -505,7 +505,7 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
       }
     };
     define(s.st, (f) => build(f, k.body, false));
-    define(s.fl, (f) => build(f, k.epilogue, true));
+    define(s.fl, (f) => build(f, k.flush, true));
   }
 
   // ensure(bytes): the heap has `bytes` free above HEAP, growing memory if not.

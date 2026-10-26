@@ -21,9 +21,9 @@ export const cseModule = (mod: ModuleIR): ModuleIR => mapKernels(mod, cseKernel)
 function cseKernel(p: KernelIR): KernelIR {
   return {
     ...p,
-    init: cseRegion(p.init),
+    prologue: cseRegion(p.prologue),
     body: cseRegion(p.body),
-    epilogue: cseRegion(p.epilogue),
+    flush: cseRegion(p.flush),
   };
 }
 

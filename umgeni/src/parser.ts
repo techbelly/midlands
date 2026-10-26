@@ -184,7 +184,7 @@ const astActions: Record<string, (...children: N[]) => unknown> = {
     return { params: null, type: ktype.toAST() };
   },
   KernelBody(_ind, pre, forAlls, post, _ded) {
-    return { prologue: iter(pre), forAlls: iter(forAlls), epilogue: iter(post) };
+    return { prologue: iter(pre), forAlls: iter(forAlls), flush: iter(post) };
   },
   ForAll(_fa, pat, consOpt, withOpt, _eol, blockOpt) {
     const cons = optional<{ pat: unknown; key: string | null } | 'end'>(consOpt);

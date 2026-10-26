@@ -113,7 +113,7 @@ describe('AST shape', () => {
           },
         ],
       }],
-      epilogue: [],
+      flush: [],
     });
   });
 
@@ -166,7 +166,7 @@ describe('AST shape', () => {
     });
     expect(kernel.forAlls[0].body[0].kind).toBe('assign');
     expect(kernel.forAlls[0].body[0].name).toBe('s');
-    expect(kernel.epilogue[0].kind).toBe('out');
+    expect(kernel.flush[0].kind).toBe('out');
   });
 
   it('parses feedback (<<) and forwarding (⇒), including inside if-branches', () => {

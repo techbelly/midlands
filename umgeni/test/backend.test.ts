@@ -4,7 +4,7 @@ import { compileLibrary, makeStreamer } from '../src/compile.js';
 
 
 describe('generated kernels', () => {
-  it('runs a stateful running sum with epilogue', () => {
+  it('runs a stateful running sum with flush', () => {
     const src = [
       'RunningSum : Real >> Real',
       '    s = 0',

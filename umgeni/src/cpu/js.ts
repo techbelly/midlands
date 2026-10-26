@@ -176,7 +176,7 @@ function genSegment(stages: FusedStage[], o: CodegenOptions): string {
     const k = stage.kernel;
     const argJs = stage.args.flat().map((a) => genExpr(a, o, KERNEL_ENV)); // over the op's P
     // A prologue that feeds (a seed) needs the worklist whatever the body does.
-    const shape = stmtsFeed(k.init) ? 'worklist' : stageShape(k.body);
+    const shape = stmtsFeed(k.prologue) ? 'worklist' : stageShape(k.body);
     const feeds = shape !== 'straight';
     const worklist = shape === 'worklist';
     const inputs = Array.from({ length: k.inputWidth }, (_, i) => `i${j}_${i}`);
@@ -192,14 +192,14 @@ function genSegment(stages: FusedStage[], o: CodegenOptions): string {
     lines.push(`  const S${j} = new Float64Array(${k.stateInit.length});`);
     k.stateInit.forEach((e, i) => lines.push(`  S${j}[${i}] = ${genExpr(e, o, env)};`));
     // A prologue runs once, before the first token or at the end if none came.
-    const seeded = k.init.length > 0;
+    const seeded = k.prologue.length > 0;
     const seed = `sd${j}();`;
     if (seeded) {
       lines.push(`  let seeded${j} = false;`);
       lines.push(`  function sd${j}() {`);
       lines.push(`    if (seeded${j}) return;`);
       lines.push(`    seeded${j} = true;`);
-      lines.push(genStmts(k.init, '    ', o, env));
+      lines.push(genStmts(k.prologue, '    ', o, env));
       lines.push(`  }`);
     }
     const params = Array.from({ length: k.inputWidth }, (_, i) => `a${i}`).join(', ');
@@ -233,12 +233,12 @@ function genSegment(stages: FusedStage[], o: CodegenOptions): string {
       lines.push(genStmts(k.body, '    ', o, env));
       lines.push(`  }`);
     }
-    if (k.epilogue.length > 0) {
+    if (k.flush.length > 0) {
       lines.push(`  function fl${j}() {`);
-      lines.push(genStmts(k.epilogue, '    ', o, env));
+      lines.push(genStmts(k.flush, '    ', o, env));
       lines.push(`  }`);
     }
-    ends.push([seeded && seed, worklist && `run${j}();`, k.epilogue.length > 0 && `fl${j}();`].filter(Boolean).join(' '));
+    ends.push([seeded && seed, worklist && `run${j}();`, k.flush.length > 0 && `fl${j}();`].filter(Boolean).join(' '));
   });
 
   const w0 = stages[0].kernel.inputWidth;

@@ -57,7 +57,7 @@ export class Semantics<S> {
   kernel(k: A.Kernel, params: Map<string, Value<S>>, stream: Stream) {
     return this.m.kernel(k, fromMap(params), { ...stream, flush: false }) as {
       initial: S[];
-      init: () => void;
+      prologue: () => void;
       step: (input: Value<S>) => void;
       flush: () => void;
     };

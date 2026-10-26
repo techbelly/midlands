@@ -37,17 +37,17 @@ export type StagedStmt =
   | Exclude<Stmt, { k: 'if' }>
   | { k: 'if'; cond: ScalarExpr; then: StagedStmt[]; else: StagedStmt[] }
   | ForwardStmt;
-export interface StagedKernel extends Omit<KernelIR, 'init' | 'body' | 'epilogue'> {
-  init: StagedStmt[];
+export interface StagedKernel extends Omit<KernelIR, 'prologue' | 'body' | 'flush'> {
+  prologue: StagedStmt[];
   body: StagedStmt[];
-  epilogue: StagedStmt[];
+  flush: StagedStmt[];
 }
 export function plainKernel(k: StagedKernel): KernelIR {
   const plain = (ss: StagedStmt[]): Stmt[] => ss.map((s) => {
     if (s.k === 'forward') throw new Error(`'${k.name}': a mid-stream ⇒ in a kernel not compiled as a family`);
     return s.k === 'if' ? { ...s, then: plain(s.then), else: plain(s.else) } : s;
   });
-  return { ...k, init: plain(k.init), body: plain(k.body), epilogue: plain(k.epilogue) };
+  return { ...k, prologue: plain(k.prologue), body: plain(k.body), flush: plain(k.flush) };
 }
 
 export interface Generator {
@@ -169,15 +169,15 @@ export function assembleFamily(f: Family): (KernelIR | PipelineIR)[] {
       ...args.map((a, i): Stmt => ({ k: 'let', name: `b#${n}#${i}`, expr: a })),
       ...args.map((_, i) => setState(bases[ni] + i, { k: 'local', name: `b#${n}#${i}` })),
       ...m.stateInit.map((e, i) => setState(bases[ni] + m.paramWidth + i, relocate(ni)(e))),
-      block(lower(m.init, ni, atEnd, depth + 1, inner)),
+      block(lower(m.prologue, ni, atEnd, depth + 1, inner)),
       setState(0, c(ni)),
-      ...(atEnd ? [block(lower(m.epilogue, ni, true, depth + 1, inner))] : []),
+      ...(atEnd ? [block(lower(m.flush, ni, true, depth + 1, inner))] : []),
     ];
   }
 
   const same = (x: string) => x;
   for (const m of f.members) {
-    for (const part of [m.init, m.body, m.epilogue]) checkTail(part, true, `'${m.name}' in '${f.root}'`);
+    for (const part of [m.prologue, m.body, m.flush]) checkTail(part, true, `'${m.name}' in '${f.root}'`);
   }
   const inputs = Array.from({ length: f.inputWidth }, (_, i): ScalarExpr => ({ k: 'input', index: i }));
   const params = Array.from({ length: f.paramWidth }, (_, i): ScalarExpr => ({ k: 'param', index: i }));
@@ -193,14 +193,14 @@ export function assembleFamily(f: Family): (KernelIR | PipelineIR)[] {
     k: 'kernel', name: `${f.root}#head`,
     paramWidth: f.paramWidth, inputWidth: f.inputWidth, outputWidth: frameWidth,
     stateInit,
-    init: rootIsGenerator
+    prologue: rootIsGenerator
       ? [{ k: 'emit', values: frame(genIndex.get(f.root)!, params) }]
-      : lower(f.members[0].init, 0, false, 0, same),
+      : lower(f.members[0].prologue, 0, false, 0, same),
     body: dispatch(st(0), [
       { key: PASS, stmts: [{ k: 'emit', values: frame(0, inputs) }] },
       ...f.members.map((m, mi) => ({ key: mi, stmts: lower(m.body, mi, false, 0, same) })),
     ]),
-    epilogue: dispatch(st(0), f.members.map((m, mi) => ({ key: mi, stmts: lower(m.epilogue, mi, true, 0, same) }))),
+    flush: dispatch(st(0), f.members.map((m, mi) => ({ key: mi, stmts: lower(m.flush, mi, true, 0, same) }))),
   };
 
   // --- gen: the frame interpreter. A generator's `⇒` feeds its stages back
@@ -215,7 +215,7 @@ export function assembleFamily(f: Family): (KernelIR | PipelineIR)[] {
   const gen: KernelIR = {
     k: 'kernel', name: `${f.root}#gen`,
     paramWidth: 0, inputWidth: frameWidth, outputWidth: f.outputWidth,
-    stateInit: [], init: [], epilogue: [],
+    stateInit: [], prologue: [], flush: [],
     body: dispatch(tag, [
       { key: 0, stmts: [{ k: 'emit', values: payload }] },
       ...f.generators.map((g, i) => {

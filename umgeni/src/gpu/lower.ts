@@ -178,7 +178,7 @@ interface Stages {
   overflows: boolean; // some stage has a worklist, which can overflow
 }
 
-const writesState = (k: KernelIR) => anyStmt([...k.body, ...k.epilogue], (s) => s.k === 'setState');
+const writesState = (k: KernelIR) => anyStmt([...k.body, ...k.flush], (s) => s.k === 'setState');
 
 // Which output slot carries the input slot `key` unchanged through every emit
 // of the per-token body (null: none does).
@@ -198,8 +198,8 @@ function carried(k: KernelIR, key: number): number | null {
 // carrying it out, for the next stage.
 function admit(k: KernelIR, key: number | null, pipeline: string): number | null {
   const who = `'${k.name}' in '${pipeline}'`;
-  if (k.init.length > 0) throw new LowerError(`${who}: a prologue runs once per stream, which has no parallel lowering`);
-  if (key === null && k.epilogue.length > 0) throw new LowerError(`${who}: a flush body runs once per stream; it needs a segment (GroupBy → ReduceBy before it)`);
+  if (k.prologue.length > 0) throw new LowerError(`${who}: a prologue runs once per stream, which has no parallel lowering`);
+  if (key === null && k.flush.length > 0) throw new LowerError(`${who}: a flush body runs once per stream; it needs a segment (GroupBy → ReduceBy before it)`);
   if (writesState(k)) {
     const a = k.access;
     if (key === null) throw new LowerError(`${who}: carries state across tokens; it needs a declared scan or window over a grouped stream (GroupBy → ReduceBy before it)`);
@@ -286,8 +286,8 @@ function genStages(stages: FusedStage[], width: number, o: PassOptions, majorKey
     } else {
       fns.push(`fn st${j}(${params}) {\n${wgslBody(k.body, '  ', env)}\n}`);
     }
-    if (k.epilogue.length > 0) {
-      out.fns.push(`fn fl${j}() {\n${wgslBody(k.epilogue, '  ', { ...env, input: () => fail('input in a flush body') })}\n}`);
+    if (k.flush.length > 0) {
+      out.fns.push(`fn fl${j}() {\n${wgslBody(k.flush, '  ', { ...env, input: () => fail('input in a flush body') })}\n}`);
       out.flush.push(`  fl${j}();`);
     }
   });

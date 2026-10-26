@@ -92,7 +92,7 @@ describe('tail pass', () => {
   it('leaves prologue feeds alone and changes no output', () => {
     const on = compileLibrary([gezira('types.nl'), gezira('rasterize.nl')]);
     const off = compileLibrary([gezira('types.nl'), gezira('rasterize.nl')], { tail: false });
-    expect([...allStmts(kernel(on, 'RectangleSpans').init)].some((s) => s.k === 'feed' && s.tail)).toBe(false);
+    expect([...allStmts(kernel(on, 'RectangleSpans').prologue)].some((s) => s.k === 'feed' && s.tail)).toBe(false);
     const spans = (lib: typeof on) => run(lib.api.RectangleSpans([1.5, 2.5, 4.5, 5.5]), []);
     expect(spans(on)).toEqual(spans(off));
     const path = [[0.2, 0.3, 5.1, 3.7, 9.8, 1.1], [9.8, 1.1, 4.4, 8.9, 0.2, 0.3]];

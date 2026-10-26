@@ -101,7 +101,7 @@ describe('CombineEdgeSamples ≡ SumByPixel → WindScanline → SpansOfPixels',
       const dec = rt.run(decomposed(), [first]);
       expect(dec).toEqual(ref);
     }
-    // Empty stream: both emit the reference's (0, 0, 0, 1) epilogue span.
+    // Empty stream: both emit the reference's (0, 0, 0, 1) flush span.
     expect(rt.run(decomposed(), [])).toEqual(
       rt.run(library.api.CombineEdgeSamples(), []),
     );

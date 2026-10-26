@@ -2,7 +2,7 @@
 // kernels, one thread per token with no cross-token effects, into a texture
 // shader; everything else goes through gpu/lower.ts.
 //
-//   map: no init body, no epilogue, no feedback, no state writes, and
+//   map: no prologue, no flush, no feedback, no state writes, and
 //        exactly one emit which is the last top-level statement (so every
 //        token produces exactly one output token).
 //
@@ -11,7 +11,7 @@
 import { anyStmt, type KernelIR } from '../ir.js';
 
 export function isMapKernel(k: KernelIR): boolean {
-  if (k.init.length > 0 || k.epilogue.length > 0) return false;
+  if (k.prologue.length > 0 || k.flush.length > 0) return false;
   if (anyStmt(k.body, (s) => s.k === 'feed' || s.k === 'assign' || s.k === 'setState')) return false;
   // The last statement emits, and nothing before it does (not in a branch
   // either): every token emits exactly once.

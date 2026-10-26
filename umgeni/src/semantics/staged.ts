@@ -66,9 +66,9 @@ export function stageKernel(P: Program, { kernel: k, params, stream }: KernelCon
     k: 'kernel', name: k.name, paramWidth: p.width,
     inputWidth: shapeWidth(stream.input), outputWidth: shapeWidth(stream.output),
     stateInit: sem.initial,
-    init: record(sem.init),
+    prologue: record(sem.prologue),
     body: record(() => sem.step(fromSlots(stream.input, 'input', 0))),
-    epilogue: record(sem.flush),
+    flush: record(sem.flush),
     ...(access ? { access } : {}),
   };
 }

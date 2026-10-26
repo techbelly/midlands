@@ -46,7 +46,7 @@ windowsOf k pair end =
   in {kernel: {...k, prologue: k.prologue ++ [typedDecl "prev#" (lit 0) k.type.input, decl "on#" (lit 0)],
                forAlls: [forAll{pattern: varPat{name: "in#"}, cons: null, consKey: null, scan: null,
                                 body: [when (v "on#") step null, update "prev#" input, update "on#" (lit 1)]}],
-               epilogue: (if end == null then [] else [when (v "on#") onEnd null]) ++ k.epilogue},
+               flush: (if end == null then [] else [when (v "on#") onEnd null]) ++ k.flush},
       declared: {window: {key: pair.consKey}}}
 
 -- The input's key field under the arm's pattern: a field of a whole-token

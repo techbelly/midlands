@@ -60,11 +60,11 @@ export interface KernelIR {
   // Non-declaration prologue statements, run once at process start (before
   // any input): seed feeds (RectangleSpans), or even emits (MiterJoin has no
   // ∀ and produces all its output here). Sees params and state, not input.
-  init: Stmt[];
+  prologue: Stmt[];
   // Per-token body. Input pattern names are pre-resolved to 'input' slots.
   body: Stmt[];
   // Flush body, run at end of stream. May emit; must not feed.
-  epilogue: Stmt[];
+  flush: Stmt[];
   // Declared access patterns this kernel was written with. The bodies above
   // are the (already-lowered) sequential semantics; this records the
   // structure so a parallel backend can lower differently.
@@ -233,7 +233,7 @@ export function kernelOpCount(k: KernelIR): number {
       case 'if': return n + opCount(s.cond) + stmts(s.then) + stmts(s.else);
     }
   }, 0);
-  return stmts(k.init) + stmts(k.body) + stmts(k.epilogue) + k.stateInit.reduce((n, e) => n + opCount(e), 0);
+  return stmts(k.prologue) + stmts(k.body) + stmts(k.flush) + k.stateInit.reduce((n, e) => n + opCount(e), 0);
 }
 
 // Every statement, including those nested in if branches.

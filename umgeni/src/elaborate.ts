@@ -299,7 +299,7 @@ class Elaborator {
   // Greatest fixpoint, so mutually recursive generators qualify.
   private classifyGenerators(): void {
     for (const [name, d] of this.kernels) {
-      if (d.forAlls.length === 0 && d.epilogue.length === 0) this.generators.add(name);
+      if (d.forAlls.length === 0 && d.flush.length === 0) this.generators.add(name);
     }
     for (let changed = true; changed;) {
       changed = false;
@@ -411,10 +411,10 @@ function stageNames(stages: StageIR[]): string[] {
 // A body that is just `⇒ pipeline` is a pipeline definition: that pipeline.
 function pipelineBody(d: A.Kernel): A.PipelineElem[] | null {
   const p = d.prologue[0];
-  return d.forAlls.length === 0 && d.epilogue.length === 0 && d.prologue.length === 1 && p.kind === 'forward' ? p.pipeline : null;
+  return d.forAlls.length === 0 && d.flush.length === 0 && d.prologue.length === 1 && p.kind === 'forward' ? p.pipeline : null;
 }
 // Every statement of a process, in order: prologue, each ∀ body, flush body.
-const kernelStmts = (d: A.Kernel): A.Stmt[] => [...d.prologue, ...d.forAlls.flatMap((f) => f.body), ...d.epilogue];
+const kernelStmts = (d: A.Kernel): A.Stmt[] => [...d.prologue, ...d.forAlls.flatMap((f) => f.body), ...d.flush];
 // Every statement, including those nested in if branches.
 function* allStmts(list: A.Stmt[]): IterableIterator<A.Stmt> {
   for (const s of list) {

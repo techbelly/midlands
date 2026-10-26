@@ -68,7 +68,7 @@ export interface Kernel {
   // Zero or more ∀ arms. Plain kernels have one (cons: null); windowed
   // kernels have a `p ∷ q` arm and usually a `p ∷ ∅` end arm.
   forAlls: ForAll[];
-  epilogue: Stmt[];
+  flush: Stmt[];
 }
 export interface ForAll {
   kind: 'forAll';

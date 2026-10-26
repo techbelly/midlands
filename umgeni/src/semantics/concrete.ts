@@ -54,7 +54,7 @@ export function interpretKernel(
   const seed = () => {
     if (!seeded) {
       seeded = true;
-      sem.init();
+      sem.prologue();
     }
   };
   const drain = () => {
