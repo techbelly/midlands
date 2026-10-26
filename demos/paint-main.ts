@@ -7,7 +7,7 @@ import { compileLibrary, type CompiledLibrary } from '../umgeni/src/compile.js';
 import { createPresenter, type Presenter } from '../umgeni/src/gpu/present.js';
 import { lowerPipeline } from '../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../umgeni/src/gpu/execute.js';
-import { lowerTexture } from '../umgeni/src/gpu/texture.js';
+import { lowerTexture, type LoweredTexture } from '../umgeni/src/gpu/texture.js';
 import { requestDevice } from '../umgeni/src/gpu/runtime.js';
 import { PAINT_GLUE, paintShapes } from './src/vector/paint.js';
 import { writePixels } from './src/vector/spans.js';
@@ -97,6 +97,16 @@ async function gpuRenderer(p: CompiledLibrary, paint: string): Promise<Presenter
   return gpu.renderer;
 }
 
+// Where this frame paints: on the GPU with this presenter, or on the CPU,
+// and if the menu asked for the GPU, why not.
+type Where = { renderer: Presenter } | { why: string };
+async function whereToPaint(p: CompiledLibrary, tex: LoweredTexture): Promise<Where> {
+  if (modeEl.value !== 'gpu') return { why: '' };
+  if (!tex.ok) return { why: '  This texture is CPU-only (see the shader panel).' };
+  const renderer = await gpuRenderer(p, tex.wgsl);
+  return renderer ? { renderer } : { why: '  WebGPU unavailable — painted on the CPU.' };
+}
+
 async function render(): Promise<void> {
   if (!library) return;
   const p = library;
@@ -106,32 +116,26 @@ async function render(): Promise<void> {
   const tex = lowerTexture(p.ir, 'Paint');
   shaderEl.textContent = tex.ok ? tex.wgsl : `// Not lowered to the GPU: ${tex.reason}\n// (filters take several samples per point; they paint on the CPU)`;
 
-  let gpuMode = modeEl.value === 'gpu';
-  let note = '';
-  if (gpuMode && !tex.ok) {
-    gpuMode = false;
-    note = '  This texture is CPU-only (see the shader panel).';
-  }
-  const renderer = gpuMode && tex.ok ? await gpuRenderer(p, tex.wgsl) : null;
-  if (gpuMode && !renderer) {
-    gpuMode = false;
-    note = '  WebGPU unavailable — painted on the CPU.';
-  }
-  canvas.style.display = gpuMode ? 'none' : '';
-  canvasGpu.style.display = gpuMode ? '' : 'none';
+  const where = await whereToPaint(p, tex);
+  const onGpu = 'renderer' in where;
+  canvas.style.display = onGpu ? 'none' : '';
+  canvasGpu.style.display = onGpu ? '' : 'none';
+  if ('renderer' in where) paintOnGpu(where.renderer, shapes, geomMs);
+  else paintOnCpu(p, shapes, t0, where.why);
+}
 
-  if (gpuMode && renderer) {
-    const t1 = performance.now();
-    renderer.frame(
-      shapes.map((bs) => ({ tokens: new Float32Array(bs.flat()), n: bs.length, color: [0, 0, 0] as const })),
-      gpuContext!.getCurrentTexture().createView(),
-    );
-    statsEl.textContent = compileStats;
-    statusEl.textContent = `${compileNote}  Geometry ${geomMs.toFixed(0)} ms (CPU Nile); ` +
-      `raster + paint on the GPU, submitted in ${(performance.now() - t1).toFixed(1)} ms, zero fences.`;
-    return;
-  }
+function paintOnGpu(renderer: Presenter, shapes: number[][][], geomMs: number): void {
+  const t1 = performance.now();
+  renderer.frame(
+    shapes.map((bs) => ({ tokens: new Float32Array(bs.flat()), n: bs.length, color: [0, 0, 0] as const })),
+    gpuContext!.getCurrentTexture().createView(),
+  );
+  statsEl.textContent = compileStats;
+  statusEl.textContent = `${compileNote}  Geometry ${geomMs.toFixed(0)} ms (CPU Nile); ` +
+    `raster + paint on the GPU, submitted in ${(performance.now() - t1).toFixed(1)} ms, zero fences.`;
+}
 
+function paintOnCpu(p: CompiledLibrary, shapes: number[][][], t0: number, note: string): void {
   const img = ctx.createImageData(W, H);
   img.data.fill(255);
   let px = 0;
