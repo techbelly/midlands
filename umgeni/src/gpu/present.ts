@@ -76,58 +76,52 @@ export function createPresenter(
   for (const n of names) {
     if (plans[n].extent[0] !== height || plans[n].extent[1] !== width) throw new Error(`plan '${n}' has a different extent from '${names[0]}'`);
   }
-  const { format } = opts;
-  const executors: Record<string, Executor> = {};
-  for (const n of names) executors[n] = createExecutor(device, plans[n], { dynamic: true });
   const uStride = Math.max(256, device.limits.minUniformBufferOffsetAlignment);
   const sAlign = Math.max(256, device.limits.minStorageBufferOffsetAlignment);
-  const planOf = (p: PathBatch): Plan => {
-    const q = plans[p.plan ?? names[0]];
-    if (!q) throw new Error(`no plan '${p.plan}' in this presenter`);
-    return q;
-  };
-  const aligned = (p: PathBatch) => Math.ceil((p.n * planOf(p).inputWidth * 4) / sAlign) * sAlign;
 
-  const layoutC = device.createBindGroupLayout({
-    entries: [
-      { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-      { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-      { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform', hasDynamicOffset: true } },
-    ],
-  });
-  const compositeModule = device.createShaderModule({ code: compositeShader(opts.paint), label: 'present-composite' });
-  const pipeC = device.createRenderPipeline({
-    label: 'present-composite',
-    layout: device.createPipelineLayout({ bindGroupLayouts: [layoutC] }),
-    vertex: { module: compositeModule, entryPoint: 'vs' },
-    fragment: {
-      module: compositeModule,
-      entryPoint: 'fs',
-      targets: [{
-        format,
-        blend: {
-          color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-          alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-        },
-      }],
-    },
-    primitive: { topology: 'triangle-list' },
-  });
+  // A lane: one of the presenter's plans and the executor that runs it. A
+  // path names its lane (or takes the only one).
+  interface Lane { name: string; plan: Plan; executor: Executor }
+  const lanes: Record<string, Lane> = {};
+  for (const n of names) lanes[n] = { name: n, plan: plans[n], executor: createExecutor(device, plans[n], { dynamic: true }) };
+  const laneOf = (p: PathBatch): Lane => {
+    const lane = lanes[p.plan ?? names[0]];
+    if (!lane) throw new Error(`no plan '${p.plan}' in this presenter`);
+    return lane;
+  };
+  const aligned = (p: PathBatch) => Math.ceil((p.n * laneOf(p).plan.inputWidth * 4) / sAlign) * sAlign;
 
   const frameBuf = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   device.queue.writeBuffer(frameBuf, 0, new Uint32Array([width, height, 0, 0]));
   const cov = device.createBuffer({ size: first.cells * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  const compositor = createCompositor(device, opts.format, opts.paint, frameBuf, cov);
 
-  let pathCap = 0;
-  let inCap = 0;
-  let maxPathBytes = 0; // the dynamic INBUF binding needs one fixed bound size
-  let metaBuf: GPUBuffer | null = null;
-  let colorBuf: GPUBuffer | null = null;
-  let inBuf: GPUBuffer | null = null;
-  let groups: Record<string, GPUBindGroup[]> = {};
-  let bindC: GPUBindGroup | null = null;
+  // The per-frame buffers, sized for the largest frame so far and regrown
+  // together: per-path meta and colours at uniform stride, the paths' tokens
+  // at aligned offsets, and the bind groups over them.
+  interface FrameBuffers {
+    pathCap: number;
+    inCap: number;
+    maxPathBytes: number; // the dynamic INBUF binding needs one fixed bound size
+    meta: GPUBuffer;
+    color: GPUBuffer;
+    input: GPUBuffer;
+    groups: Record<string, GPUBindGroup[]>;
+    composite: GPUBindGroup;
+  }
+  let buffers: FrameBuffers | null = null;
+  const allocate = (pathCap: number, inCap: number, maxPathBytes: number): FrameBuffers => {
+    const meta = device.createBuffer({ size: pathCap * uStride, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    const color = device.createBuffer({ size: pathCap * uStride, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    const input = device.createBuffer({ size: inCap, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+    const groups: Record<string, GPUBindGroup[]> = {};
+    for (const n of names) groups[n] = lanes[n].executor.bind({ meta, input, inputSize: maxPathBytes, sink: { COV: cov } });
+    return { pathCap, inCap, maxPathBytes, meta, color, input, groups, composite: compositor.bind(color) };
+  };
+  const release = (b: FrameBuffers) => { for (const buf of [b.meta, b.color, b.input]) buf.destroy(); };
 
-  function ensure(paths: PathBatch[]): void {
+  // Buffers that hold these paths: the current ones if they fit, else larger.
+  function ensure(paths: PathBatch[]): FrameBuffers {
     let needIn = 0;
     let maxBytes = 4096;
     for (const p of paths) {
@@ -138,35 +132,20 @@ export function createPresenter(
     // extend that far past the last offset — not just hold the paths. (Short
     // of this, a large frame fails validation and the whole submission is
     // dropped: the tiger went black at 4× zoom.)
-    maxBytes = Math.max(maxBytes, maxPathBytes);
+    maxBytes = Math.max(maxBytes, buffers?.maxPathBytes ?? 0);
     needIn += maxBytes;
-    if (paths.length <= pathCap && needIn <= inCap && maxBytes <= maxPathBytes) return;
-    pathCap = Math.max(paths.length, pathCap, 64);
-    inCap = Math.max(needIn, inCap * 2, 1 << 20);
-    maxPathBytes = maxBytes;
-    metaBuf?.destroy();
-    colorBuf?.destroy();
-    inBuf?.destroy();
-    metaBuf = device.createBuffer({ size: pathCap * uStride, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    colorBuf = device.createBuffer({ size: pathCap * uStride, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    inBuf = device.createBuffer({ size: inCap, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
-    groups = {};
-    for (const n of names) groups[n] = executors[n].bind({ meta: metaBuf, input: inBuf, inputSize: maxPathBytes, sink: { COV: cov } });
-    bindC = device.createBindGroup({
-      layout: layoutC,
-      entries: [
-        { binding: 0, resource: { buffer: frameBuf } },
-        { binding: 1, resource: { buffer: cov } },
-        { binding: 2, resource: { buffer: colorBuf, size: 16 } },
-      ],
-    });
+    if (buffers && paths.length <= buffers.pathCap && needIn <= buffers.inCap && maxBytes <= buffers.maxPathBytes) return buffers;
+    const old = buffers;
+    buffers = allocate(Math.max(paths.length, old?.pathCap ?? 0, 64), Math.max(needIn, (old?.inCap ?? 0) * 2, 1 << 20), maxBytes);
+    if (old) release(old);
+    return buffers;
   }
 
   // A path's bounding box, as a band of rows and a range of columns, each
   // padded a pixel; or the whole frame.
-  function box(p: PathBatch): { r0: number; r1: number; c0: number; c1: number } {
+  function box(p: PathBatch): Box {
     if (opts.disableBands) return { r0: 0, r1: height, c0: 0, c1: width };
-    const w = planOf(p).inputWidth;
+    const w = laneOf(p).plan.inputWidth;
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     for (let j = 0; j < p.n * w; j += 2) {
       const px = p.tokens[j], py = p.tokens[j + 1];
@@ -183,18 +162,18 @@ export function createPresenter(
   return {
     frame(paths, target) {
       const drawable = paths.filter((p) => p.n > 0);
-      ensure(drawable);
+      const b = ensure(drawable);
       // Upload per-path meta, colours and tokens at aligned offsets.
       const boxes = drawable.map(box);
       const inOffsets: number[] = [];
       let at = 0;
       drawable.forEach((p, i) => {
-        const b = boxes[i];
-        const q = planOf(p);
+        const { r0, r1, c0, c1 } = boxes[i];
+        const { plan } = laneOf(p);
         inOffsets.push(at);
-        device.queue.writeBuffer(metaBuf!, i * uStride, metaWords(p.n, q.extent, { segBase: b.r0, segEnd: b.r1, minBase: b.c0, minEnd: b.c1 }));
-        device.queue.writeBuffer(colorBuf!, i * uStride, new Float32Array([p.color[0], p.color[1], p.color[2], p.color[3] ?? 1]));
-        device.queue.writeBuffer(inBuf!, at, p.tokens, 0, p.n * q.inputWidth);
+        device.queue.writeBuffer(b.meta, i * uStride, metaWords(p.n, plan.extent, { segBase: r0, segEnd: r1, minBase: c0, minEnd: c1 }));
+        device.queue.writeBuffer(b.color, i * uStride, new Float32Array([p.color[0], p.color[1], p.color[2], p.color[3] ?? 1]));
+        device.queue.writeBuffer(b.input, at, p.tokens, 0, p.n * plan.inputWidth);
         at += aligned(p);
       });
 
@@ -208,25 +187,74 @@ export function createPresenter(
       // Each path clears, computes and draws only its own row band: rows
       // outside it hold earlier paths' (or frames') coverage.
       drawable.forEach((p, i) => {
-        const { r0, r1, c0, c1 } = boxes[i];
-        const rows = r1 - r0;
-        if (rows === 0 || c1 === c0) return;
-        const n = p.plan ?? names[0];
-        executors[n].clearGrids(enc, r0 * width, rows * width);
-        enc.clearBuffer(cov, r0 * width * 4, rows * width * 4);
-        executors[n].encode(enc, groups[n], { n: p.n, segments: rows, metaOffset: i * uStride, inputOffset: inOffsets[i] });
-        const rp = enc.beginRenderPass({ colorAttachments: [{ view: target, loadOp: 'load', storeOp: 'store' }] });
-        rp.setPipeline(pipeC);
-        rp.setBindGroup(0, bindC!, [i * uStride]);
-        rp.setScissorRect(c0, r0, c1 - c0, rows);
-        rp.draw(3);
-        rp.end();
+        const bx = boxes[i];
+        const rows = bx.r1 - bx.r0;
+        if (rows === 0 || bx.c1 === bx.c0) return;
+        const { name, executor } = laneOf(p);
+        executor.clearGrids(enc, bx.r0 * width, rows * width);
+        enc.clearBuffer(cov, bx.r0 * width * 4, rows * width * 4);
+        executor.encode(enc, b.groups[name], { n: p.n, segments: rows, metaOffset: i * uStride, inputOffset: inOffsets[i] });
+        compositor.draw(enc, target, b.composite, i * uStride, bx);
       });
       device.queue.submit([enc.finish()]); // one submission, zero fences
     },
     dispose() {
-      for (const b of [frameBuf, cov, metaBuf, colorBuf, inBuf]) b?.destroy();
-      for (const n of names) executors[n].dispose();
+      frameBuf.destroy();
+      cov.destroy();
+      if (buffers) release(buffers);
+      for (const n of names) lanes[n].executor.dispose();
+    },
+  };
+}
+
+interface Box { r0: number; r1: number; c0: number; c1: number }
+
+// The composite pass: a fullscreen draw of the coverage in a path's colour
+// (or paint), blended onto the target and scissored to the path's box.
+function createCompositor(device: GPUDevice, format: GPUTextureFormat, paint: string | undefined, frameBuf: GPUBuffer, cov: GPUBuffer) {
+  const layout = device.createBindGroupLayout({
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+      { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform', hasDynamicOffset: true } },
+    ],
+  });
+  const module = device.createShaderModule({ code: compositeShader(paint), label: 'present-composite' });
+  const pipeline = device.createRenderPipeline({
+    label: 'present-composite',
+    layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+    vertex: { module, entryPoint: 'vs' },
+    fragment: {
+      module,
+      entryPoint: 'fs',
+      targets: [{
+        format,
+        blend: {
+          color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+          alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+        },
+      }],
+    },
+    primitive: { topology: 'triangle-list' },
+  });
+  return {
+    // The bind group over a colour buffer (one colour per path, at a dynamic offset).
+    bind: (color: GPUBuffer): GPUBindGroup =>
+      device.createBindGroup({
+        layout,
+        entries: [
+          { binding: 0, resource: { buffer: frameBuf } },
+          { binding: 1, resource: { buffer: cov } },
+          { binding: 2, resource: { buffer: color, size: 16 } },
+        ],
+      }),
+    draw(enc: GPUCommandEncoder, target: GPUTextureView, bind: GPUBindGroup, colorOffset: number, box: Box): void {
+      const rp = enc.beginRenderPass({ colorAttachments: [{ view: target, loadOp: 'load', storeOp: 'store' }] });
+      rp.setPipeline(pipeline);
+      rp.setBindGroup(0, bind, [colorOffset]);
+      rp.setScissorRect(box.c0, box.r0, box.c1 - box.c0, box.r1 - box.r0);
+      rp.draw(3);
+      rp.end();
     },
   };
 }
