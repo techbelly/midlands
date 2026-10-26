@@ -64,7 +64,6 @@ export interface Stroke {
 /** Why a scene is drawn on the CPU: the page says so beside it. */
 export class CpuOnly extends Error {}
 
-const I = [1, 0, 0, 1, 0, 0];
 const CAP: Record<Cap, number> = { butt: 0, round: -1, square: 1 }; // gezira's c
 const nileColor = (c: Rgba) => [c[3], c[0], c[1], c[2]]; // gezira's (a, r, g, b)
 
@@ -95,9 +94,9 @@ export class Sheet {
     const l = s.join === 'round' ? -1 : s.join === 'bevel' ? 1 : (s.miterLimit ?? 10); // gezira's l
     const c = CAP[s.cap ?? 'butt'];
     const outline = path.subpaths.flatMap((sub) => {
-      if (!s.dash) return this.nile.StrokeOutline({ M: I, w: s.width, l, c }).run(sub);
+      if (!s.dash) return this.nile.StrokeOutline({ M: IDENTITY, w: s.width, l, c }).run(sub);
       const [on1, off1, on2, off2] = dashLengths(s.dash.pattern);
-      return this.nile.DashedStroke({ M: I, w: s.width, l, c, on1, off1, on2, off2, phase: s.dash.offset }).run(sub);
+      return this.nile.DashedStroke({ M: IDENTITY, w: s.width, l, c, on1, off1, on2, off2, phase: s.dash.offset }).run(sub);
     });
     this.target.shade(outline, color, 'winding');
   }
@@ -142,6 +141,7 @@ export class Sheet {
  *  the host writes the pixels Nile produces (spans.ts). */
 export class CpuTarget implements Target {
   private clipSpans: number[][] | null = null;
+  private pageSpans: number[][] | null = null; // the whole page's coverage, once asked for
   private readonly box: { min: number[]; max: number[] };
   private readonly images: ImgLike[] = [];
 
@@ -160,8 +160,7 @@ export class CpuTarget implements Target {
   }
 
   clip(beziers: number[][]): void {
-    const spans = this.coverage(beziers, 'winding');
-    this.clipSpans = this.clipSpans ? this.nile.Intersect().run([...spans, ...this.clipSpans]).map((p) => [p[0], p[1], p[2], 1]) : spans;
+    this.clipSpans = this.withinClip(this.coverage(beziers, 'winding'));
   }
   resetClip(): void {
     this.clipSpans = null;
@@ -172,9 +171,8 @@ export class CpuTarget implements Target {
   }
 
   paintImage(image: ImgLike, M: Matrix, extend: 'none' | 'repeat', pattern: Matrix): void {
-    const img = this.images.indexOf(image) >= 0 ? this.images.indexOf(image) : this.images.push(image) - 1;
-    const page = this.coverage(this.nile.FlattenCubics().run(path().rectangle(0, 0, this.img.width, this.img.height).build().cubics), 'winding');
-    const spans = this.clipSpans ? this.nile.Intersect().run([...page, ...this.clipSpans]).map((p) => [p[0], p[1], p[2], 1]) : page;
+    const img = this.imageIndex(image);
+    const spans = this.withinClip(this.page());
     const pixels = extend === 'repeat'
       ? this.nile.PaintImageRepeat({ M, Mp: pattern, D: [image.width, image.height], img }).run(spans)
       : this.nile.PaintImage({ M, img }).run(spans);
@@ -189,6 +187,24 @@ export class CpuTarget implements Target {
 
   private coverage(beziers: number[][], rule: Rule): number[][] {
     return (rule === 'evenodd' ? this.nile.FillEvenOdd(this.box) : this.nile.FillWinding(this.box)).run(beziers);
+  }
+
+  // Spans inside the clip: Intersect joins two coverage streams pixel by
+  // pixel, so its points come back as one-pixel spans. No clip: the spans.
+  private withinClip(spans: number[][]): number[][] {
+    if (!this.clipSpans) return spans;
+    return this.nile.Intersect().run([...spans, ...this.clipSpans]).map((p) => [p[0], p[1], p[2], 1]);
+  }
+
+  // The whole page as coverage spans, for painting an image over it.
+  private page(): number[][] {
+    return this.pageSpans ??= this.coverage(this.nile.FlattenCubics().run(path().rectangle(0, 0, this.img.width, this.img.height).build().cubics), 'winding');
+  }
+
+  // An image's slot in the host's ReadImage table, adding it on first use.
+  private imageIndex(image: ImgLike): number {
+    const i = this.images.indexOf(image);
+    return i >= 0 ? i : this.images.push(image) - 1;
   }
 }
 

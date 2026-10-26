@@ -5,12 +5,12 @@
 
 import type { Api } from './draw.js';
 
-export type RGB = readonly [number, number, number]; // 0..255
+export type RGB = readonly [number, number, number]; // 0..1
 
 export function hexRGB(hex: string): RGB {
   let h = hex.replace('#', '');
   if (h.length === 3) h = h.split('').map((c) => c + c).join('');
-  return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) as unknown as RGB;
+  return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255) as unknown as RGB;
 }
 
 export interface ImgLike {
@@ -55,6 +55,7 @@ export function writePixels(img: ImgLike, nile: Api, tokens: number[][]): void {
 
 // Coverage spans (flat [x, y, c, l]) painted in an opaque colour: PaintSpans
 // in Nile, then written.
-export function paintSpans(img: ImgLike, nile: Api, spans: number[][], color: RGB): void {
-  writePixels(img, nile, nile.PaintSpans({ C: [1, color[0] / 255, color[1] / 255, color[2] / 255] }).run(spans));
+// `color`: r, g, b in 0..1; a fourth component is ignored (coverage is the alpha).
+export function paintSpans(img: ImgLike, nile: Api, spans: number[][], color: readonly number[]): void {
+  writePixels(img, nile, nile.PaintSpans({ C: [1, color[0], color[1], color[2]] }).run(spans));
 }

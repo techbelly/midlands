@@ -60,7 +60,7 @@ const warmGpuMs = performance.now() - t0;
 const refImg = blankImage(W, H);
 paintPaths(refImg, vector.api, batches.map((b) => ({
   beziers: Array.from({ length: b.n }, (_, i) => [...b.tokens.slice(i * 6, i * 6 + 6)]),
-  color: [b.color[0] * 255, b.color[1] * 255, b.color[2] * 255] as const,
+  color: [b.color[0], b.color[1], b.color[2]] as const,
 })));
 
 const px = await readTexture(device, tex, W, H);

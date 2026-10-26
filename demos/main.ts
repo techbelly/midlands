@@ -15,7 +15,7 @@
 import { colorRuns, fallback, textBeziers, textSpansParams, type ColorRun, type GlyphSource, type TextSpansParams } from './src/text/host.js';
 import { glyphFor as stubGlyph } from './src/text/stubfont.js';
 import { parseTrueType } from './src/text/ttf.js';
-import { paintSpans, type RGB } from './src/vector/spans.js';
+import { paintSpans } from './src/vector/spans.js';
 // Source Serif 4: SIL OFL 1.1 (fonts/OFL.txt)
 import sourceSerif from './fonts/SourceSerif4.ttf';
 // Twemoji Mozilla: CC-BY 4.0 art (fonts/TWEMOJI-LICENSE.md)
@@ -57,7 +57,6 @@ fonts.set('stub', { glyphs: stubGlyph, lineHeight: 1.15 });
 const currentFont = () => fonts.get(fontEl.value) ?? fonts.get('serif')!;
 const TEXT_COLOR = [24 / 255, 24 / 255, 24 / 255] as const;
 const colorOf = (r: ColorRun) => r.color ?? TEXT_COLOR; // 0..1
-const rgb255 = (r: ColorRun): RGB => { const [cr, cg, cb] = colorOf(r); return [cr * 255, cg * 255, cb * 255]; };
 
 // --- the Nile, run on the CPU: the front half every renderer shares ---
 
@@ -96,7 +95,7 @@ function cpuRenderer(api: Api, label: string): Renderer {
       for (const r of colourRuns) {
         const s = api.Rasterize().run(placed(api, r, params));
         spans += s.length;
-        paintSpans(img, api, s, rgb255(r));
+        paintSpans(img, api, s, colorOf(r));
       }
       ctx2d.putImageData(img, 0, 0);
       return {

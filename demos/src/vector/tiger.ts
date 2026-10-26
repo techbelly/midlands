@@ -69,13 +69,9 @@ export function paintPaths(img: ImgLike, nile: Api, paths: TigerPath[]): void {
   for (const p of paths) paintSpans(img, nile, nile.RasterizeParallel().run(p.beziers), p.color);
 }
 
-// The GPU back end's input: the same paths as f32 batches, colours 0..1.
+// The GPU back end's input: the same paths as f32 batches.
 export function toBatches(paths: TigerPath[]): PathBatch[] {
-  return paths.map(({ beziers, color: [r, g, b] }) => ({
-    tokens: new Float32Array(beziers.flat()),
-    n: beziers.length,
-    color: [r / 255, g / 255, b / 255],
-  }));
+  return paths.map(({ beziers, color }) => ({ tokens: new Float32Array(beziers.flat()), n: beziers.length, color }));
 }
 
 // The whole tiger on the CPU, clipped to the canvas. Returns the number of
