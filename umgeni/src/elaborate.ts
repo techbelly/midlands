@@ -8,7 +8,7 @@
 // arguments inlined as closures) and families (mid-stream ⇒, substitute.ts).
 
 import type * as A from './ast.js';
-import type { HostProcess, KernelIR, ModuleIR, ParamSig, PipelineIR, ProcessIR, ScalarExpr, StageIR, TokenLayout } from './ir.js';
+import type { HostProcess, KernelIR, ModuleIR, ParamSig, PipelineIR, ProcessIR, StageIR, TokenLayout } from './ir.js';
 import { assembleFamily, SubstError, type Generator } from './substitute.js';
 import { desugar, SugarError } from './semantics/sugar.js';
 import { elabPipelineStages, type PipelineProgram } from './semantics/pipelines.js';
@@ -55,6 +55,11 @@ export function elaborateProgram(modules: A.Module[]): ElabResult {
   return new Elaborator().run(modules);
 }
 
+type ProcessKind = 'template' | 'pipeline' | 'family' | 'generator' | 'kernel';
+
+// What elaboration reports as unsupported, rather than a bug.
+const isElabError = (e: unknown): e is Error => e instanceof ElabError || e instanceof SubstError || e instanceof SugarError;
+
 class Elaborator {
 
   private types = new Map<string, Shape>();
@@ -83,11 +88,12 @@ class Elaborator {
     const kernels = new Map<string, KernelContext>();
     for (const [name, d] of this.kernels) {
       const sig = this.streamSig(d.type);
-      if (!sig || this.isTemplate(d) || pipelineBody(d) || (!all && (usesSubstitution(d) || this.generators.has(name)))) continue;
+      const kind = this.kindOf(d);
+      if (!sig || !(kind === 'kernel' || (all && (kind === 'family' || kind === 'generator')))) continue;
       try {
         kernels.set(name, { kernel: desugar(d, this.fieldNames).kernel, params: this.paramGroups(d), sig });
-      } catch {
-        // unsupported here; skipped
+      } catch (e) {
+        if (!isElabError(e)) throw e; // unsupported here: skipped
       }
     }
     return { program, kernels };
@@ -132,18 +138,17 @@ class Elaborator {
     const templates: string[] = [];
     for (const d of decls) {
       if (d.kind !== 'kernel') continue;
-      if (this.isTemplate(d)) {
+      const kind = this.kindOf(d);
+      if (kind === 'template') {
         templates.push(d.name);
         continue;
       }
       try {
-        processes.push(...(usesSubstitution(d) ? this.elabFamily(d) : [this.elabProcess(d)]));
+        processes.push(...(kind === 'family' ? this.elabFamily(d) : [this.elabProcess(d)]));
         signatures[d.name] = paramSigs(this.paramGroups(d));
       } catch (e) {
-        if (e instanceof ElabError || e instanceof SubstError || e instanceof SugarError) {
-          unsupported.push({ name: d.name, reason: e.message });
-        }
-        else throw e;
+        if (!isElabError(e)) throw e;
+        unsupported.push({ name: d.name, reason: e.message });
       }
     }
     return { processes, unsupported, templates };
@@ -211,6 +216,21 @@ class Elaborator {
 
   private isTemplate(k: A.Kernel): boolean {
     return (k.params ?? []).some((g) => this.isProcessType(g.type));
+  }
+
+  // What a process definition is, from its shape. A template takes a
+  // process-typed parameter and is instantiated where it is used; a pipeline
+  // definition's whole body is `⇒ …`; a family has a `⇒` anywhere else, so
+  // it is compiled with everything it can become; a generator has no ∀ and
+  // no flush body, emitting a finite sequence before passing input through;
+  // a kernel is the rest. The interpreter handles kernels, and families and
+  // generators only when asked; the compiler handles all but templates.
+  private kindOf(d: A.Kernel): ProcessKind {
+    return this.isTemplate(d) ? 'template'
+      : pipelineBody(d) ? 'pipeline'
+      : usesSubstitution(d) ? 'family'
+      : this.generators.has(d.name) ? 'generator'
+      : 'kernel';
   }
 
   private paramShape(t: A.Type, processName: string): Shape {
@@ -330,7 +350,7 @@ class Elaborator {
       } else {
         members.push(this.elabKernel(k, ksig));
       }
-      for (const t of forwardTargets([...k.prologue, ...k.forAlls.flatMap((f) => f.body), ...k.epilogue])) visit(t);
+      for (const t of forwardTargets(kernelStmts(k))) visit(t);
     };
     visit(d.name);
     return assembleFamily({
@@ -406,8 +426,10 @@ function pipelineBody(d: A.Kernel): A.PipelineElem[] | null {
 }
 // A `⇒` anywhere but as the whole body (the pipeline-definition form).
 function usesSubstitution(d: A.Kernel): boolean {
-  return pipelineBody(d) === null && [d.prologue, ...d.forAlls.map((f) => f.body), d.epilogue].some(hasForward);
+  return pipelineBody(d) === null && hasForward(kernelStmts(d));
 }
+// Every statement of a process, in order: prologue, each ∀ body, flush body.
+const kernelStmts = (d: A.Kernel): A.Stmt[] => [...d.prologue, ...d.forAlls.flatMap((f) => f.body), ...d.epilogue];
 // Every statement, including those nested in if branches.
 function* allStmts(list: A.Stmt[]): IterableIterator<A.Stmt> {
   for (const s of list) {
