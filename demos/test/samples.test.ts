@@ -1,23 +1,18 @@
 // The Cairo samples' Nile (nl/evenodd.nl, …), checked headless.
 import { describe, expect, it } from 'vitest';
-import { compileLibraryFile, librarySources, read } from '../src/sources.js';
+import { compileLibraryFile, librarySourceTexts, read } from '../src/sources.js';
 import { compileLibrary } from '../../umgeni/src/compile.js';
 import type { Api } from '../src/vector/draw.js';
 import { lowerPipeline } from '../../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../../umgeni/src/gpu/execute.js';
 import type { FusedIR } from '../../umgeni/src/ir.js';
+import { sourceSerif, square } from './fixtures.js';
+import { blankImage, inkedPixels } from '../src/vector/spans.js';
+import { quoteNile } from '../src/quote.js';
 
 const library = compileLibraryFile('demos/nl/vector.nl-lib');
 const nile: Api = library.api;
 
-// A square as flat beziers, clockwise or anticlockwise.
-const square = (x0: number, y0: number, x1: number, y1: number, cw = true): number[][] => {
-  const pts = cw ? [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] : [[x0, y0], [x0, y1], [x1, y1], [x1, y0]];
-  return pts.map((p, i) => {
-    const q = pts[(i + 1) % 4];
-    return [p[0], p[1], (p[0] + q[0]) / 2, (p[1] + q[1]) / 2, q[0], q[1]];
-  });
-};
 // Coverage at pixel (x, y) from a span list.
 const coverageAt = (spans: number[][], x: number, y: number): number => {
   let c = 0;
@@ -53,10 +48,8 @@ describe('the even-odd rule (nl/evenodd.nl)', () => {
   });
 });
 
-// A straight segment as a flat bezier, and a flat cubic.
+// A straight segment as a flat bezier.
 const seg = (x0: number, y0: number, x1: number, y1: number): number[] => [x0, y0, (x0 + x1) / 2, (y0 + y1) / 2, x1, y1];
-const cubic = (x0: number, y0: number, x1: number, y1: number): number[] =>
-  [x0, y0, x0 + (x1 - x0) / 3, y0 + (y1 - y0) / 3, x0 + (2 * (x1 - x0)) / 3, y0 + (2 * (y1 - y0)) / 3, x1, y1];
 const chord = (b: number[]) => Math.hypot(b[4] - b[0], b[5] - b[1]);
 const I = [1, 0, 0, 1, 0, 0];
 
@@ -98,7 +91,7 @@ describe('dashes (nl/dash.nl)', () => {
     expect(a).toEqual(b);
   });
   it('dashes a cubic path end to end', () => {
-    const outline = nile.DashedStroke({ M: I, w: 3, l: 4, c: 0, on1: 10, off1: 5, on2: 10, off2: 5, phase: 0 }).run([cubic(0, 10, 90, 10)]);
+    const outline = nile.DashedStroke({ M: I, w: 3, l: 4, c: 0, on1: 10, off1: 5, on2: 10, off2: 5, phase: 0 }).run([lineCubic([0, 10], [90, 10])]);
     const spans = nile.FillBeziers({ min: [0, 0], max: [100, 20] }).run(outline);
     expect(coverageAt(spans, 5, 9)).toBeCloseTo(1, 9);
     expect(coverageAt(spans, 12, 9)).toBeCloseTo(0, 9);
@@ -133,7 +126,7 @@ describe('clipping and masking (nl/clip.nl)', () => {
   it('masks coverage by a texture alpha', () => {
     // MaskSpans takes a texture, so it is instantiated where it is used.
     const fade = 'Fade : CoverageSpan >> CoveragePoint\n    ⇒ MaskSpans (UniformColor ((0.5, 1, 1, 1)))\n';
-    const lib = compileLibrary([...librarySources('demos/nl/vector.nl-lib').map((f) => read(f)), fade]);
+    const lib = compileLibrary([...librarySourceTexts('demos/nl/vector.nl-lib'), fade]);
     expect(lib.unsupported).toEqual([]);
     const pts = lib.api.Fade().run(nile.RasterizeParallel().run(square(0, 0, 4, 4)));
     expect(pts.length).toBe(16);
@@ -158,7 +151,7 @@ describe('matrices (nl/vector.nl)', () => {
     // The inverse is an operator, so it is tested through the process that uses
     // it: Undo composes a map with its inverse and must give the identity.
     const undo = 'Undo : Matrix >> Matrix\n    ∀ M\n        >> M ∘ ⁻¹ M\n';
-    const lib = compileLibrary([...librarySources('demos/nl/vector.nl-lib').map((f) => read(f)), undo]);
+    const lib = compileLibrary([...librarySourceTexts('demos/nl/vector.nl-lib'), undo]);
     expect(lib.unsupported).toEqual([]);
     const [M] = nile.Compose().run(maps);
     const [I] = lib.api.Undo().run([M]);
@@ -167,17 +160,15 @@ describe('matrices (nl/vector.nl)', () => {
 });
 
 // --- the samples page, headless -----------------------------------------------
-import { readFileSync } from 'node:fs';
-import { parseTrueType } from '../src/text/ttf.js';
 import { CpuTarget, Sheet } from '../src/samples/draw.js';
 import { SCENES } from '../src/samples/scenes.js';
-import { path } from '../src/samples/path.js';
+import { lineCubic, path } from '../src/samples/path.js';
 import { parseSvg } from '../src/vector/svg.js';
 import { drawTiger, fitView } from '../src/vector/tiger.js';
 
 const samples = compileLibraryFile('demos/nl/samples.nl-lib');
-const font = parseTrueType(readFileSync(new URL('../fonts/SourceSerif4.ttf', import.meta.url)));
-const page = () => ({ width: 256, height: 256, data: new Uint8ClampedArray(256 * 256 * 4).fill(255) });
+const font = sourceSerif();
+const page = () => blankImage(256, 256);
 const px = (img: { data: Uint8ClampedArray }, x: number, y: number) => [...img.data.slice((y * 256 + x) * 4, (y * 256 + x) * 4 + 3)];
 const WHITE = [255, 255, 255];
 // The picture the image samples use: the tiger, drawn by the same Nile.
@@ -205,12 +196,13 @@ describe('the Cairo samples, drawn by Nile', () => {
   });
   it('draws every sample', () => {
     for (const scene of SCENES) {
-      const img = render(scene.id);
-      let inked = 0;
-      for (let i = 0; i < 256 * 256; i++) if (img.data[i * 4] !== 255 || img.data[i * 4 + 1] !== 255 || img.data[i * 4 + 2] !== 255) inked++;
-      expect(inked, scene.id).toBeGreaterThan(200);
+      expect(inkedPixels(render(scene.id)), scene.id).toBeGreaterThan(200);
     }
     expect(SCENES.length).toBe(20);
+  });
+  it('quotes Nile that exists: every definition a scene names is in the library', () => {
+    const sources = librarySourceTexts('demos/nl/samples.nl-lib');
+    for (const scene of SCENES) expect(quoteNile(sources, scene.nile), scene.id).not.toContain('not found');
   });
   it('image: the tiger, turned 45°, through a process the host supplies', () => {
     const img = render('image');
@@ -221,10 +213,7 @@ describe('the Cairo samples, drawn by Nile', () => {
     expect(px(clipped, 5, 5)).toEqual(WHITE);
     expect(px(clipped, 128, 128)).toEqual(px(tiger, 128, 128));
     // imagepattern: five tigers across, so the page is well covered.
-    let inked = 0;
-    const pat = render('imagepattern');
-    for (let i = 0; i < 256 * 256; i++) if (pat.data[i * 4] !== 255 || pat.data[i * 4 + 1] !== 255) inked++;
-    expect(inked).toBeGreaterThan(256 * 256 * 0.5);
+    expect(inkedPixels(render('imagepattern'))).toBeGreaterThan(256 * 256 * 0.5);
   });
   it('arc: a thick black arc from 45° to 180°, and nothing on the other side', () => {
     const img = render('arc');
@@ -264,8 +253,7 @@ describe('the Cairo samples, drawn by Nile', () => {
 describe('mesh gradients (nl/patch.nl)', () => {
   it('fills a straight-sided patch pixel for pixel, blending the corner colours', () => {
     const img = page();
-    const line = (x0: number, y0: number, x1: number, y1: number) => [x0, y0, x0 + (x1 - x0) / 3, y0 + (y1 - y0) / 3, x0 + (2 * (x1 - x0)) / 3, y0 + (2 * (y1 - y0)) / 3, x1, y1];
-    new Sheet(samples.api, new CpuTarget(samples.api, img)).paintMesh([{ T: line(10, 10, 20, 10), B: line(10, 20, 20, 20), L: line(10, 10, 10, 20), R: line(20, 10, 20, 20), colors: [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1], [1, 1, 1, 1]] }]);
+    new Sheet(samples.api, new CpuTarget(samples.api, img)).paintMesh([{ T: lineCubic([10, 10], [20, 10]), B: lineCubic([10, 20], [20, 20]), L: lineCubic([10, 10], [10, 20]), R: lineCubic([20, 10], [20, 20]), colors: [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1], [1, 1, 1, 1]] }]);
     expect(px(img, 9, 9)).toEqual(WHITE);
     expect(px(img, 20, 15)).toEqual(WHITE);
     const tl = px(img, 10, 10), tr = px(img, 19, 10), bl = px(img, 10, 19);

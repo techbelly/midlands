@@ -22,7 +22,9 @@ export interface Path {
   subpaths: Cubic[][];
 }
 
-const line = (p: Pt, q: Pt): Cubic => [p[0], p[1], p[0] + (q[0] - p[0]) / 3, p[1] + (q[1] - p[1]) / 3, p[0] + (2 * (q[0] - p[0])) / 3, p[1] + (2 * (q[1] - p[1])) / 3, q[0], q[1]];
+// A straight segment as a cubic, its controls at a third and two thirds.
+export const lineCubic = (p: readonly number[], q: readonly number[]): Cubic =>
+  [p[0], p[1], p[0] + (q[0] - p[0]) / 3, p[1] + (q[1] - p[1]) / 3, p[0] + (2 * (q[0] - p[0])) / 3, p[1] + (2 * (q[1] - p[1])) / 3, q[0], q[1]];
 const same = (p: Pt, q: Pt) => p[0] === q[0] && p[1] === q[1];
 
 export class PathBuilder {
@@ -44,7 +46,7 @@ export class PathBuilder {
   }
   lineTo(x: number, y: number): this {
     const p = this.pen(x, y);
-    if (p) this.open!.cubics.push(line(p, [x, y]));
+    if (p) this.open!.cubics.push(lineCubic(p, [x, y]));
     this.current = [x, y];
     return this;
   }
@@ -73,7 +75,7 @@ export class PathBuilder {
   }
   closePath(): this {
     if (this.open && !this.open.closed) {
-      if (this.current && !same(this.current, this.open.start)) this.open.cubics.push(line(this.current, this.open.start));
+      if (this.current && !same(this.current, this.open.start)) this.open.cubics.push(lineCubic(this.current, this.open.start));
       this.open.closed = true;
       this.current = this.open.start;
       this.open = null; // Cairo: a move_to to the start follows, implicitly
@@ -83,7 +85,7 @@ export class PathBuilder {
   build(): Path {
     const drawn = this.subpaths.filter((s) => s.cubics.length > 0);
     return {
-      cubics: drawn.flatMap((s) => (s.closed ? s.cubics : [...s.cubics, line(end(s), s.start)]).filter((c) => !degenerate(c))),
+      cubics: drawn.flatMap((s) => (s.closed ? s.cubics : [...s.cubics, lineCubic(end(s), s.start)]).filter((c) => !degenerate(c))),
       subpaths: drawn.map((s) => s.cubics),
     };
   }

@@ -23,6 +23,15 @@ export interface ImgLike {
 export const blankImage = (width: number, height: number): { width: number; height: number; data: Uint8ClampedArray } =>
   ({ width, height, data: new Uint8ClampedArray(width * height * 4).fill(255) });
 
+// How many pixels are not white: whether, and roughly how much, was drawn.
+export function inkedPixels(img: ImgLike): number {
+  let n = 0;
+  for (let i = 0; i < img.width * img.height * 4; i += 4) {
+    if (img.data[i] !== 255 || img.data[i + 1] !== 255 || img.data[i + 2] !== 255) n++;
+  }
+  return n;
+}
+
 // Composite PaintedPixel tokens (nl/spans.nl) over the image: a colour,
 // premultiplied (a, r, g, b) in 0..1, and a pixel (its centre n + 0.5, so it
 // floors to n) with its coverage c. Field offsets are looked up once.

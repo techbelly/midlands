@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { compileLibraryFile, read } from '../src/sources.js';
 import { strokeOutline } from '../src/vector/draw.js';
-import { paintSpans } from '../src/vector/spans.js';
+import { blankImage, inkedPixels, paintSpans } from '../src/vector/spans.js';
 import { parseSvg, pathCubics, pathSubpaths } from '../src/vector/svg.js';
 import { drawTiger, fitView } from '../src/vector/tiger.js';
 
@@ -34,16 +34,12 @@ describe('the tiger demo, headless', () => {
   it('renders the whole tiger through the compiled pipelines', () => {
     const W = 128;
     const H = 128;
-    const img = { width: W, height: H, data: new Uint8ClampedArray(W * H * 4).fill(255) };
+    const img = blankImage(W, H);
     const t0 = performance.now();
     const paths = drawTiger(img, tiger, fitView(W, H), library.api);
     const ms = performance.now() - t0;
     expect(paths).toBe(240);
-    let colored = 0;
-    for (let i = 0; i < W * H; i++) {
-      const r = img.data[i * 4], g = img.data[i * 4 + 1], b = img.data[i * 4 + 2];
-      if (r !== 255 || g !== 255 || b !== 255) colored++;
-    }
+    const colored = inkedPixels(img);
     // The tiger fills most of the frame.
     expect(colored).toBeGreaterThan(W * H * 0.3);
     // eslint-disable-next-line no-console
@@ -51,7 +47,7 @@ describe('the tiger demo, headless', () => {
   });
 
   it('paints spans as gezira does: one pixel per unit of length, none for 0', () => {
-    const img = { width: 4, height: 1, data: new Uint8ClampedArray(16).fill(255) };
+    const img = blankImage(4, 1);
     // The rasterizer emits a zero-length span between two adjacent edge
     // samples, carrying the interior's coverage; it must paint nothing.
     paintSpans(img, library.api, [[0.5, 0.5, 0.5, 1], [1.5, 0.5, 1, 0], [1.5, 0.5, 0.25, 2]], [0, 0, 0]);
@@ -61,7 +57,7 @@ describe('the tiger demo, headless', () => {
   // Every pixel, pinned: a refactor of any stage (SVG parsing included) must
   // reproduce the tiger exactly.
   it('renders the same tiger, pixel for pixel', () => {
-    const img = { width: 200, height: 200, data: new Uint8ClampedArray(200 * 200 * 4).fill(255) };
+    const img = blankImage(200, 200);
     drawTiger(img, tiger, fitView(200, 200), library.api);
     expect(createHash('sha256').update(img.data).digest('hex')).toMatchSnapshot();
   });

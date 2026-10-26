@@ -3,6 +3,7 @@
 
 import { strokeOutline } from './src/vector/draw.js';
 import { hexRGB, paintSpans } from './src/vector/spans.js';
+import { lineCubic } from './src/samples/path.js';
 import { nile } from './nl/vector.nl-lib';
 import { quoteNile } from './src/quote.js';
 import vectorNl from '../roda/vector.nl';
@@ -24,13 +25,7 @@ const W = canvas.width;
 const H = canvas.height;
 const I = [1, 0, 0, 1, 0, 0];
 
-// A straight segment as a flat cubic (controls at 1/3, 2/3).
-const lc = (p: number[], q: number[]): number[] => {
-  const dx = q[0] - p[0];
-  const dy = q[1] - p[1];
-  return [p[0], p[1], p[0] + dx / 3, p[1] + dy / 3, p[0] + (2 * dx) / 3, p[1] + (2 * dy) / 3, q[0], q[1]];
-};
-const poly = (pts: number[][]): number[][] => pts.slice(0, -1).map((p, i) => lc(p, pts[i + 1]));
+const poly = (pts: number[][]): number[][] => pts.slice(0, -1).map((p, i) => lineCubic(p, pts[i + 1]));
 
 // Sample paths (device space), each one subpath.
 const paths: number[][][] = [

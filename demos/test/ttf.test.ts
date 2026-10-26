@@ -1,12 +1,12 @@
 // The TrueType reader against the bundled Source Serif 4 (OFL, fonts/).
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { parseTrueType } from '../src/text/ttf.js';
 import { compileLibraryFile } from '../src/sources.js';
 import { renderText } from '../src/text/render.js';
 import { colorRuns, fallback, paintCoverage } from '../src/text/host.js';
+import { sourceSerif, twemoji } from './fixtures.js';
 
-const font = parseTrueType(readFileSync(new URL('../fonts/SourceSerif4.ttf', import.meta.url)));
+const font = sourceSerif();
+const library = compileLibraryFile('demos/nl/text.nl-lib');
 
 // Closed contours: each bezier ends where the next begins, except at contour
 // ends; count the contour breaks.
@@ -48,7 +48,6 @@ describe('TrueType reader', () => {
   it('renders through the compiled text pipeline', () => {
     const W = 60;
     const H = 30;
-    const library = compileLibraryFile('demos/nl/text.nl-lib');
     const { spans } = renderText(library, 'Oo', { size: 24, width: W, height: H, margin: 2, lineHeight: font.lineHeight, glyphs: font.glyphFor });
     const cov = paintCoverage(spans, W, H);
     // The capital O's counter is empty, its sides inked, along the mid row.
@@ -59,7 +58,7 @@ describe('TrueType reader', () => {
 });
 
 describe('colour emoji (COLR/CPAL, Twemoji)', () => {
-  const emoji = parseTrueType(readFileSync(new URL('../fonts/Twemoji.Mozilla.ttf', import.meta.url)));
+  const emoji = twemoji();
 
   it('reads colour layers: one colour per bezier, from the palette', () => {
     const tiger = emoji.glyphFor('🐯');
@@ -79,7 +78,6 @@ describe('colour emoji (COLR/CPAL, Twemoji)', () => {
   });
 
   it('lays out into colour runs, one per colour change, in painting order', () => {
-    const library = compileLibraryFile('demos/nl/text.nl-lib');
     const glyphs = fallback(font, emoji);
     const runs = colorRuns(library.api, library.api.TextLayout({ w: 20, lh: font.lineHeight }), 'ab 😀 cd', glyphs);
     expect(runs[0].color).toBeNull(); // 'ab ' in the text colour

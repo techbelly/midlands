@@ -18,20 +18,13 @@ import { appendSink } from '../../umgeni/src/gpu/execute.js';
 import { fusedPipeline } from '../../umgeni/src/ir.js';
 import { paintCoverage } from '../src/text/host.js';
 import { compareCoverage, coveragePlan, requireDevice } from './gpu-check.js';
+import { square } from '../test/fixtures.js';
+import { lineCubic } from '../src/samples/path.js';
 
 const library = compileLibraryFile('demos/nl/samples.nl-lib');
 if (library.unsupported.length > 0) throw new Error(JSON.stringify(library.unsupported));
 const nile = library.api;
 const device = await requireDevice();
-
-// A square as flat beziers, clockwise.
-const square = (x0: number, y0: number, x1: number, y1: number): number[][] => {
-  const pts = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
-  return pts.map((p, i) => {
-    const q = pts[(i + 1) % 4];
-    return [p[0], p[1], (p[0] + q[0]) / 2, (p[1] + q[1]) / 2, q[0], q[1]];
-  });
-};
 
 // Tokens as a map by pixel, for comparing two streams whose order differs.
 const byPixel = (ts: number[][]) => new Map(ts.map((t) => [`${Math.floor(t[0])},${Math.floor(t[1])}`, t]));
@@ -77,9 +70,8 @@ const W = 64, H = 64;
 // fields reduced, coloured pixels out. The sums' order differs, and the grid
 // holds 16.16 fixed point, so colours agree to a tolerance.
 {
-  const line = (x0: number, y0: number, x1: number, y1: number) => [x0, y0, x0 + (x1 - x0) / 3, y0 + (y1 - y0) / 3, x0 + (2 * (x1 - x0)) / 3, y0 + (2 * (y1 - y0)) / 3, x1, y1];
   const { Patch } = nile.types;
-  const patch = Patch.make({ T: line(8, 8, 40, 10), B: line(10, 44, 42, 40), L: line(8, 8, 10, 44), R: line(40, 10, 42, 40), C00: [1, 1, 0, 0], C10: [1, 0, 1, 0], C01: [1, 0, 0, 1], C11: [1, 1, 1, 1], d: 0 });
+  const patch = Patch.make({ T: lineCubic([8, 8], [40, 10]), B: lineCubic([10, 44], [42, 40]), L: lineCubic([8, 8], [10, 44]), R: lineCubic([40, 10], [42, 40]), C00: [1, 1, 0, 0], C10: [1, 0, 1, 0], C01: [1, 0, 0, 1], C11: [1, 1, 1, 1], d: 0 });
   const cpu = nile.MeshPixels().run([patch]);
   const plan = lowerPipeline(fusedPipeline(library.ir, 'MeshPixels'), { extent: [H, W], sink: appendSink(8) });
   const gpu = await readAppended(device, plan, [patch], 8, cpu.length + 1024);

@@ -16,6 +16,7 @@ import { createPresenter, type PathBatch, type Presenter } from '../umgeni/src/g
 import { lowerPipeline } from '../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../umgeni/src/gpu/execute.js';
 import { requestDevice } from '../umgeni/src/gpu/device.js';
+import { blankImage } from './src/vector/spans.js';
 import tigerSvg from './tiger.svg';
 // Source Serif 4: SIL OFL 1.1 (fonts/OFL.txt). Cairo's samples ask for Sans.
 import sourceSerif from './fonts/SourceSerif4.ttf';
@@ -41,7 +42,7 @@ const SIZE = 256;
 const font = parseTrueType(sourceSerif);
 // The picture the image samples use, where Cairo's use a photograph: the
 // tiger, drawn by the same Nile at 256 × 256.
-const tiger = { width: SIZE, height: SIZE, data: new Uint8ClampedArray(SIZE * SIZE * 4).fill(255) };
+const tiger = blankImage(SIZE, SIZE);
 drawTiger(tiger, parseSvg(tigerSvg, nile), fitView(SIZE, SIZE), nile);
 
 const modeEl = document.getElementById('mode') as HTMLSelectElement;

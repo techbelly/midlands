@@ -4,6 +4,7 @@
 // nl/rasterize-parallel.nl + nl/spans.nl + the user's `Paint` + PAINT_GLUE.
 
 import { strokeOutline, type Api } from './draw.js';
+import { lineCubic } from '../samples/path.js';
 
 export const PAINT_GLUE = `
 PaintBeziers (min, max : Point) : Bezier >> PaintedPixel
@@ -20,17 +21,13 @@ const disc = (cx: number, cy: number, r: number): number[][] => {
     [cx, cy - r, cx + k, cy - r, cx + r, cy - k, cx + r, cy],
   ];
 };
-const line = (p: number[], q: number[]): number[] => [
-  p[0], p[1], p[0] + (q[0] - p[0]) / 3, p[1] + (q[1] - p[1]) / 3,
-  p[0] + (2 * (q[0] - p[0])) / 3, p[1] + (2 * (q[1] - p[1])) / 3, q[0], q[1],
-];
 const star = (cx: number, cy: number, r0: number, r1: number): number[][] => {
   const pts = Array.from({ length: 10 }, (_, i) => {
     const a = -Math.PI / 2 + (i * Math.PI) / 5;
     const r = i % 2 === 0 ? r1 : r0;
     return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
   });
-  return pts.map((p, i) => line(p, pts[(i + 1) % 10]));
+  return pts.map((p, i) => lineCubic(p, pts[(i + 1) % 10]));
 };
 const wave = [[40, 255, 120, 175, 200, 335, 280, 255], [280, 255, 330, 205, 370, 220, 400, 250]];
 
