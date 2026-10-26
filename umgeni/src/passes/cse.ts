@@ -14,22 +14,7 @@
 // hoisted to the parent block; an expression duplicated across sibling
 // branches is materialized in each.
 
-import { mapKernels, type KernelIR, type ModuleIR, type ScalarExpr, type Stmt } from '../ir.js';
-
-// Number of operation nodes (bin/un/select) in a tree. Shared with the
-// instrumentation in codegen.
-export function opCount(e: ScalarExpr): number {
-  switch (e.k) {
-    case 'bin':
-      return 1 + opCount(e.a) + opCount(e.b);
-    case 'un':
-      return 1 + opCount(e.a);
-    case 'select':
-      return 1 + opCount(e.cond) + opCount(e.then) + opCount(e.else);
-    default:
-      return 0;
-  }
-}
+import { mapKernels, opCount, operands, withOperands, type KernelIR, type ModuleIR, type ScalarExpr, type Stmt } from '../ir.js';
 
 export const cseModule = (mod: ModuleIR): ModuleIR => mapKernels(mod, cseKernel);
 
@@ -46,25 +31,33 @@ function cseKernel(p: KernelIR): KernelIR {
 // single shared add is not worth a let.
 const MIN_OPS = 2;
 
+// Versions of the mutable names, mixed into value keys: each assignment
+// bumps one, so a read before and after it gets different keys. Both passes
+// walk the same statements from a fresh Epochs, so their keys agree.
+interface Epochs {
+  locals: Map<string, number>; // primed state local -> version
+  state: number;
+}
+const newEpochs = (): Epochs => ({ locals: new Map(), state: 0 });
+function afterStmt(s: Stmt, ep: Epochs): void {
+  if (s.k === 'assign') ep.locals.set(s.name, (ep.locals.get(s.name) ?? 0) + 1);
+  if (s.k === 'setState') ep.state++;
+}
+
 interface Region {
-  epochs: Map<string, number>; // mutable local name -> version
-  stateEpoch: number;
-  counts: Map<string, number>;
+  counts: Map<string, number>; // value key -> occurrences
   fresh: number;
 }
 
 function cseRegion(stmts: Stmt[]): Stmt[] {
-  const region: Region = { epochs: new Map(), stateEpoch: 0, counts: new Map(), fresh: 0 };
-  countStmts(stmts, region);
-  // Reset epochs for the rewrite replay (keys must match the count pass).
-  region.epochs = new Map();
-  region.stateEpoch = 0;
-  return rewriteStmts(stmts, region, [new Map()]);
+  const region: Region = { counts: new Map(), fresh: 0 };
+  countStmts(stmts, region, newEpochs());
+  return rewriteStmts(stmts, region, newEpochs(), [new Map()]);
 }
 
 // --- value keys (canonical, epoch-aware) ---
 
-function key(e: ScalarExpr, r: Region): string {
+function key(e: ScalarExpr, ep: Epochs): string {
   switch (e.k) {
     case 'const':
       return `c${e.value}`;
@@ -73,63 +66,47 @@ function key(e: ScalarExpr, r: Region): string {
     case 'input':
       return `i${e.index}`;
     case 'state':
-      return `s${e.index}@${r.stateEpoch}`;
+      return `s${e.index}@${ep.state}`;
     case 'local':
-      return `l${e.name}@${r.epochs.get(e.name) ?? 0}`;
+      return `l${e.name}@${ep.locals.get(e.name) ?? 0}`;
     case 'bin':
-      return `(${key(e.a, r)}${e.op}${key(e.b, r)})`;
+      return `(${key(e.a, ep)}${e.op}${key(e.b, ep)})`;
     case 'un':
-      return `${e.op}(${key(e.a, r)})`;
+      return `${e.op}(${key(e.a, ep)})`;
     case 'select':
-      return `?(${key(e.cond, r)};${key(e.then, r)};${key(e.else, r)})`;
+      return `?(${key(e.cond, ep)};${key(e.then, ep)};${key(e.else, ep)})`;
   }
-}
-
-function bumpAssign(name: string, r: Region): void {
-  r.epochs.set(name, (r.epochs.get(name) ?? 0) + 1);
 }
 
 // --- pass 1: occurrence counts ---
 
-function countExpr(e: ScalarExpr, r: Region): void {
-  if (e.k === 'bin') {
-    countExpr(e.a, r);
-    countExpr(e.b, r);
-  } else if (e.k === 'un') {
-    countExpr(e.a, r);
-  } else if (e.k === 'select') {
-    countExpr(e.cond, r);
-    countExpr(e.then, r);
-    countExpr(e.else, r);
-  } else {
-    return;
-  }
-  const k = key(e, r);
+function countExpr(e: ScalarExpr, r: Region, ep: Epochs): void {
+  const xs = operands(e);
+  if (xs.length === 0) return;
+  for (const x of xs) countExpr(x, r, ep);
+  const k = key(e, ep);
   r.counts.set(k, (r.counts.get(k) ?? 0) + 1);
 }
 
-function countStmts(stmts: Stmt[], r: Region): void {
+function countStmts(stmts: Stmt[], r: Region, ep: Epochs): void {
   for (const s of stmts) {
     switch (s.k) {
       case 'let':
       case 'assign':
-        countExpr(s.expr, r);
-        if (s.k === 'assign') bumpAssign(s.name, r);
-        break;
       case 'setState':
-        countExpr(s.expr, r);
-        r.stateEpoch++;
+        countExpr(s.expr, r, ep);
         break;
       case 'emit':
       case 'feed':
-        for (const v of s.values) countExpr(v, r);
+        for (const v of s.values) countExpr(v, r, ep);
         break;
       case 'if':
-        countExpr(s.cond, r);
-        countStmts(s.then, r);
-        countStmts(s.else, r);
+        countExpr(s.cond, r, ep);
+        countStmts(s.then, r, ep);
+        countStmts(s.else, r, ep);
         break;
     }
+    afterStmt(s, ep);
   }
 }
 
@@ -145,25 +122,15 @@ function lookup(tables: Table, k: string): string | undefined {
   return undefined;
 }
 
-function rewriteExpr(e: ScalarExpr, r: Region, tables: Table, pending: Stmt[]): ScalarExpr {
-  if (e.k !== 'bin' && e.k !== 'un' && e.k !== 'select') return e;
+function rewriteExpr(e: ScalarExpr, r: Region, ep: Epochs, tables: Table, pending: Stmt[]): ScalarExpr {
+  const xs = operands(e);
+  if (xs.length === 0) return e;
 
-  const k = key(e, r); // key over the ORIGINAL tree — matches the count pass
+  const k = key(e, ep); // key over the ORIGINAL tree — matches the count pass
   const hit = lookup(tables, k);
   if (hit !== undefined) return { k: 'local', name: hit };
 
-  const rewritten: ScalarExpr =
-    e.k === 'bin'
-      ? { ...e, a: rewriteExpr(e.a, r, tables, pending), b: rewriteExpr(e.b, r, tables, pending) }
-      : e.k === 'un'
-        ? { ...e, a: rewriteExpr(e.a, r, tables, pending) }
-        : {
-            ...e,
-            cond: rewriteExpr(e.cond, r, tables, pending),
-            then: rewriteExpr(e.then, r, tables, pending),
-            else: rewriteExpr(e.else, r, tables, pending),
-          };
-
+  const rewritten = withOperands(e, xs.map((x) => rewriteExpr(x, r, ep, tables, pending)));
   if ((r.counts.get(k) ?? 0) >= 2 && opCount(e) >= MIN_OPS) {
     const name = `#cse${r.fresh++}`;
     pending.push({ k: 'let', name, expr: rewritten });
@@ -173,7 +140,7 @@ function rewriteExpr(e: ScalarExpr, r: Region, tables: Table, pending: Stmt[]): 
   return rewritten;
 }
 
-function rewriteStmts(stmts: Stmt[], r: Region, tables: Table): Stmt[] {
+function rewriteStmts(stmts: Stmt[], r: Region, ep: Epochs, tables: Table): Stmt[] {
   const out: Stmt[] = [];
   for (const s of stmts) {
     const pending: Stmt[] = [];
@@ -182,29 +149,27 @@ function rewriteStmts(stmts: Stmt[], r: Region, tables: Table): Stmt[] {
       case 'let':
       case 'assign':
       case 'setState': {
-        next = { ...s, expr: rewriteExpr(s.expr, r, tables, pending) };
+        next = { ...s, expr: rewriteExpr(s.expr, r, ep, tables, pending) };
         break;
       }
       case 'emit':
       case 'feed':
-        next = { ...s, values: s.values.map((v) => rewriteExpr(v, r, tables, pending)) };
+        next = { ...s, values: s.values.map((v) => rewriteExpr(v, r, ep, tables, pending)) };
         break;
       case 'if': {
-        const cond = rewriteExpr(s.cond, r, tables, pending);
+        const cond = rewriteExpr(s.cond, r, ep, tables, pending);
         tables.push(new Map());
-        const then = rewriteStmts(s.then, r, tables);
+        const then = rewriteStmts(s.then, r, ep, tables);
         tables.pop();
         tables.push(new Map());
-        const els = rewriteStmts(s.else, r, tables);
+        const els = rewriteStmts(s.else, r, ep, tables);
         tables.pop();
         next = { k: 'if', cond, then, else: els };
         break;
       }
     }
     out.push(...pending, next);
-    // Replay mutations exactly as the count pass saw them.
-    if (s.k === 'assign') bumpAssign(s.name, r);
-    if (s.k === 'setState') r.stateEpoch++;
+    afterStmt(s, ep);
   }
   return out;
 }

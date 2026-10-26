@@ -11,24 +11,13 @@
 import { compileLibraryFile } from '../src/sources.js';
 import { renderText } from '../src/text/render.js';
 import type { CompileOptions } from '../../umgeni/src/compile.js';
-import { opCount } from '../../umgeni/src/passes/cse.js';
-import type { KernelIR, ScalarExpr, Stmt } from '../../umgeni/src/ir.js';
+import { kernelOpCount } from '../../umgeni/src/ir.js';
 
 const TEXT =
   'THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG. PACK MY BOX WITH FIVE DOZEN JUGS. ' +
   'UMGENI RENDERS THIS PARAGRAPH THROUGH A PIPELINE COMPILED FROM NILE SOURCE, WRAPPING LINES AS IT GOES.';
 const OPTS = { size: 18, width: 880, height: 360, margin: 8 };
 
-function staticOps(k: KernelIR): number {
-  const stmts = (ss: Stmt[]): number => ss.reduce((n, s) => {
-    switch (s.k) {
-      case 'let': case 'assign': case 'setState': return n + opCount(s.expr);
-      case 'emit': case 'feed': return n + s.values.reduce((m, v) => m + opCount(v), 0);
-      case 'if': return n + opCount(s.cond) + stmts(s.then) + stmts(s.else);
-    }
-  }, 0);
-  return stmts(k.init) + stmts(k.body) + stmts(k.epilogue) + k.stateInit.reduce((n: number, e: ScalarExpr) => n + opCount(e), 0);
-}
 
 interface Variant {
   name: string;
@@ -71,7 +60,7 @@ for (const v of VARIANTS) {
 
   // Clean build for size and time.
   const library = compileLibraryFile('demos/nl/text.nl-lib', v.opts);
-  const stat = library.ir.processes.reduce((n, p) => n + (p.k === 'kernel' ? staticOps(p) : 0), 0);
+  const stat = library.ir.processes.reduce((n, p) => n + (p.k === 'kernel' ? kernelOpCount(p) : 0), 0);
   for (let i = 0; i < 5; i++) renderText(library, TEXT, OPTS); // warm-up
   const times = Array.from({ length: 15 }, () => renderText(library, TEXT, OPTS).rasterMs);
 

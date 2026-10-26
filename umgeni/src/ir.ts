@@ -190,14 +190,50 @@ export function mapKernels(mod: ModuleIR, f: (k: KernelIR) => KernelIR): ModuleI
   return { ...mod, processes: mod.processes.map(process) };
 }
 
+// An operation's subexpressions, in order (none for a leaf), and the same
+// operation over new ones. The order is part of the IR's identity: CSE
+// numbers what it shares by walking it.
+export function operands(e: ScalarExpr): ScalarExpr[] {
+  switch (e.k) {
+    case 'bin': return [e.a, e.b];
+    case 'un': return [e.a];
+    case 'select': return [e.cond, e.then, e.else];
+    default: return [];
+  }
+}
+export function withOperands(e: ScalarExpr, xs: ScalarExpr[]): ScalarExpr {
+  switch (e.k) {
+    case 'bin': return { ...e, a: xs[0], b: xs[1] };
+    case 'un': return { ...e, a: xs[0] };
+    case 'select': return { ...e, cond: xs[0], then: xs[1], else: xs[2] };
+    default: return e;
+  }
+}
+
 // Rebuild an expression with each leaf (const/param/state/input/local) mapped.
 export function mapExpr(e: ScalarExpr, leaf: (e: ScalarExpr) => ScalarExpr): ScalarExpr {
-  switch (e.k) {
-    case 'bin': return { ...e, a: mapExpr(e.a, leaf), b: mapExpr(e.b, leaf) };
-    case 'un': return { ...e, a: mapExpr(e.a, leaf) };
-    case 'select': return { ...e, cond: mapExpr(e.cond, leaf), then: mapExpr(e.then, leaf), else: mapExpr(e.else, leaf) };
-    default: return leaf(e);
-  }
+  const xs = operands(e);
+  return xs.length === 0 ? leaf(e) : withOperands(e, xs.map((x) => mapExpr(x, leaf)));
+}
+
+// Operation nodes (bin/un/select) in a tree: what the passes and the
+// instrumentation count as work.
+export function opCount(e: ScalarExpr): number {
+  const xs = operands(e);
+  return xs.length === 0 ? 0 : 1 + xs.reduce((n, x) => n + opCount(x), 0);
+}
+
+// A kernel's static size in operation nodes: statements and state
+// initializers together.
+export function kernelOpCount(k: KernelIR): number {
+  const stmts = (ss: Stmt[]): number => ss.reduce((n, s) => {
+    switch (s.k) {
+      case 'let': case 'assign': case 'setState': return n + opCount(s.expr);
+      case 'emit': case 'feed': return n + s.values.reduce((m, v) => m + opCount(v), 0);
+      case 'if': return n + opCount(s.cond) + stmts(s.then) + stmts(s.else);
+    }
+  }, 0);
+  return stmts(k.init) + stmts(k.body) + stmts(k.epilogue) + k.stateInit.reduce((n, e) => n + opCount(e), 0);
 }
 
 // Every statement, including those nested in if branches.

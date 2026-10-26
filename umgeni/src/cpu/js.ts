@@ -5,8 +5,7 @@
 // and returns a runtime Op. The generated source is a first-class artifact:
 // compileLibrary exposes it for inspection alongside the executable form.
 
-import { anyStmt, inputWidthOf, type FusedIR, type FusedSegment, type FusedStage, type KernelIR, type ModuleIR, type PipelineIR, type ScalarExpr, type Stmt } from '../ir.js';
-import { opCount } from '../passes/cse.js';
+import { anyStmt, inputWidthOf, opCount, type FusedIR, type FusedSegment, type FusedStage, type KernelIR, type ModuleIR, type PipelineIR, type ScalarExpr, type Stmt } from '../ir.js';
 import { compilePipeline, inWasm } from './wasm.js';
 import { stageShape } from '../passes/tail.js';
 import { renderCond, renderExpr, type Dialect } from '../scalar.js';

@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { gezira } from './sources.js';
 import { compileLibrary, makeStreamer } from '../src/compile.js';
-import { opCount } from '../src/passes/cse.js';
-import type { ScalarExpr, Stmt } from '../src/ir.js';
+import { kernelOpCount } from '../src/ir.js';
 import { run } from '../src/cpu/runtime.js';
 import { needsWorklist } from '../src/passes/tail.js';
 import { allStmts, type KernelIR } from '../src/ir.js';
@@ -10,15 +9,7 @@ import { allStmts, type KernelIR } from '../src/ir.js';
 function staticOps(library: ReturnType<typeof compileLibrary>, name: string): number {
   const k = library.ir.processes.find((p) => p.name === name);
   if (!k || k.k !== 'kernel') throw new Error(`no kernel ${name}`);
-  const stmts = (ss: Stmt[]): number => ss.reduce((n, s) => {
-    switch (s.k) {
-      case 'let': case 'assign': case 'setState': return n + opCount(s.expr);
-      case 'emit': case 'feed': return n + s.values.reduce((m, v) => m + opCount(v), 0);
-      case 'if': return n + opCount(s.cond) + stmts(s.then) + stmts(s.else);
-    }
-  }, 0);
-  return stmts(k.init) + stmts(k.body) + stmts(k.epilogue)
-    + k.stateInit.reduce((n: number, e: ScalarExpr) => n + opCount(e), 0);
+  return kernelOpCount(k);
 }
 
 
