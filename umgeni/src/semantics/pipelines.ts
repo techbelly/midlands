@@ -5,7 +5,7 @@
 
 import type * as A from '../ast.js';
 import type { StageIR } from '../ir.js';
-import { ElabError, REAL, type Shape, type Value } from '../values.js';
+import { ElabError, REAL, type Shape, type StreamSig, type Value } from '../values.js';
 import { load } from '../../../mooi/src/mooi.js';
 import { prelude } from '../../../mooi/src/prelude.js';
 import { pipelinesSource, valuesSource } from './source.js';
@@ -15,12 +15,20 @@ const SOURCE = `${valuesSource}\n${pipelinesSource}`;
 // What the equations ask of the program.
 export interface PipelineProgram {
   field(shape: Shape, name: string): { offset: number; shape: Shape };
+  realField(shape: Shape, name: string, what: string): number;
   expr(e: A.Expr, env: Map<string, Value>): Value;
   type(t: A.Type): Shape;
-  stream(name: string): { input: Shape; output: Shape } | null;
+  stream(name: string): StreamSig | null;
   known(name: string): boolean;
-  template(name: string): A.Kernel | null;
+  /** A template by name: its parameters and the pipeline that is its whole
+   *  body (null when its body is something else, which is an error). */
+  template(name: string): Template | null;
   isStream(t: A.Type): boolean;
+}
+export interface Template {
+  name: string;
+  params: A.Param[];
+  pipeline: A.PipelineElem[] | null;
 }
 
 // A process-typed parameter's argument: a pipeline, in the scope it was written in.

@@ -3,8 +3,8 @@
 // produces scalar IR — elaboration as staged interpretation.
 
 import type * as A from '../ast.js';
-import type { KernelIR, ScalarExpr, Stmt } from '../ir.js';
-import type { ForwardStmt, Generator } from '../substitute.js';
+import type { KernelIR, ScalarExpr } from '../ir.js';
+import type { Generator, StagedKernel, StagedStmt } from '../substitute.js';
 import { fromSlots, paramEnv, shapeWidth, type Value } from '../values.js';
 import type { Domain, KernelContext, Program } from './domain.js';
 import { Semantics } from './nile.js';
@@ -12,7 +12,7 @@ import { Semantics } from './nile.js';
 // An IR builder: the domain, plus `record` to capture the statements an
 // action performs.
 export function irDomain() {
-  let block: Stmt[] = [];
+  let block: StagedStmt[] = [];
   const used = new Set<string>();
   // Names are unique per builder (a pattern temp or a re-declared name in one
   // scope must not shadow: JS and WGSL lets are block-scoped).
@@ -22,7 +22,7 @@ export function irDomain() {
     used.add(n);
     return n;
   };
-  const record = (f: () => void): Stmt[] => {
+  const record = (f: () => void): StagedStmt[] => {
     const saved = block;
     block = [];
     f();
@@ -53,12 +53,12 @@ export function irDomain() {
     emit: (values) => void block.push({ k: 'emit', values }),
     feed: (values) => void block.push({ k: 'feed', values }),
     state: (index) => ({ get: () => ({ k: 'state', index }), set: (expr) => void block.push({ k: 'setState', index, expr }) }),
-    forward: (stages) => void block.push({ k: 'forward', stages } satisfies ForwardStmt as unknown as Stmt),
+    forward: (stages) => void block.push({ k: 'forward', stages }),
   };
   return { D, record };
 }
 
-export function stageKernel(P: Program, { kernel: k, params, sig }: KernelContext, access: KernelIR['access']): KernelIR {
+export function stageKernel(P: Program, { kernel: k, params, sig }: KernelContext, access: KernelIR['access']): StagedKernel {
   const { D, record } = irDomain();
   const p = paramEnv(params, (shape, at) => fromSlots(shape, 'param', at));
   const sem = new Semantics(P, D).kernel(k, p.env, sig);

@@ -29,12 +29,31 @@ export interface ForwardStmt {
   k: 'forward';
   stages: ({ name: string; args: ScalarExpr[] } | null)[];
 }
-type AnyStmt = Stmt | ForwardStmt;
+
+// Statements as staging leaves them: the IR's, with ⇒ still among them (at
+// any depth of if). A StagedKernel is a kernel of those; plainKernel is the
+// way back to a KernelIR for a kernel that has no ⇒.
+export type StagedStmt =
+  | Exclude<Stmt, { k: 'if' }>
+  | { k: 'if'; cond: ScalarExpr; then: StagedStmt[]; else: StagedStmt[] }
+  | ForwardStmt;
+export interface StagedKernel extends Omit<KernelIR, 'init' | 'body' | 'epilogue'> {
+  init: StagedStmt[];
+  body: StagedStmt[];
+  epilogue: StagedStmt[];
+}
+export function plainKernel(k: StagedKernel): KernelIR {
+  const plain = (ss: StagedStmt[]): Stmt[] => ss.map((s) => {
+    if (s.k === 'forward') throw new Error(`'${k.name}': a mid-stream ⇒ in a kernel not compiled as a family`);
+    return s.k === 'if' ? { ...s, then: plain(s.then), else: plain(s.else) } : s;
+  });
+  return { ...k, init: plain(k.init), body: plain(k.body), epilogue: plain(k.epilogue) };
+}
 
 export interface Generator {
   name: string;
   paramWidth: number;
-  body: Stmt[]; // params read frame slots input[1..]; may contain ForwardStmt
+  body: StagedStmt[]; // params read frame slots input[1..]
 }
 
 export interface Family {
@@ -42,11 +61,15 @@ export interface Family {
   paramWidth: number;
   inputWidth: number;
   outputWidth: number;
-  members: KernelIR[]; // stream processes it can become; members[0] = root unless root is a generator
+  members: StagedKernel[]; // stream processes it can become; members[0] = root unless root is a generator
   generators: Generator[];
 }
 
 export class SubstError extends Error {}
+
+// Substitution chains (a member becoming a member becoming…) are inlined,
+// so they end somewhere: this deep.
+const MAX_SUBSTITUTION_DEPTH = 8;
 
 const c = (value: number): ScalarExpr => ({ k: 'const', value });
 const st = (index: number): ScalarExpr => ({ k: 'state', index });
@@ -61,7 +84,7 @@ function dispatch(tag: ScalarExpr, arms: { key: number; stmts: Stmt[] }[]): Stmt
 
 // `⇒` ends the process, so nothing may follow it: it must be the last
 // statement of its block, in a block that is itself last, and so on outward.
-function checkTail(stmts: AnyStmt[], tail: boolean, where: string): void {
+function checkTail(stmts: StagedStmt[], tail: boolean, where: string): void {
   stmts.forEach((s, i) => {
     const t = tail && i === stmts.length - 1;
     if (s.k === 'forward' && !t) throw new SubstError(`${where}: statements follow a mid-stream ⇒`);
@@ -100,7 +123,7 @@ export function assembleFamily(f: Family): (KernelIR | PipelineIR)[] {
   let fresh = 0;
   // Rewrite member mi's statements into head space; inlined code gets fresh
   // local names so it can never shadow the code it is spliced into.
-  function lower(stmts: AnyStmt[], mi: number, atEnd: boolean, depth: number, rename: (n: string) => string): Stmt[] {
+  function lower(stmts: StagedStmt[], mi: number, atEnd: boolean, depth: number, rename: (n: string) => string): Stmt[] {
     const r = relocate(mi);
     const rx = (e: ScalarExpr) => mapExpr(r(e), (l) => (l.k === 'local' ? { k: 'local', name: rename(l.name) } : l));
     const where = `'${f.members[mi].name}' in '${f.root}'`;
@@ -116,7 +139,7 @@ export function assembleFamily(f: Family): (KernelIR | PipelineIR)[] {
           then: lower(s.then, mi, atEnd, depth, rename), else: lower(s.else, mi, atEnd, depth, rename),
         }];
         case 'forward': {
-          if (depth > 8) throw new SubstError(`${where}: substitution chain too deep`);
+          if (depth > MAX_SUBSTITUTION_DEPTH) throw new SubstError(`${where}: substitution chain too deep`);
           const stages = s.stages.map((g) => g && { name: g.name, args: g.args.map(rx) });
           const out: Stmt[] = [];
           // Downstream generators run first, last stage first.
@@ -129,22 +152,27 @@ export function assembleFamily(f: Family): (KernelIR | PipelineIR)[] {
           if (genIndex.has(head.name)) return [...out, { k: 'emit', values: genFrame(head, where) }, setState(0, c(PASS))];
           const ni = memberIndex.get(head.name);
           if (ni === undefined) throw new SubstError(`${where}: unknown substitution target '${head.name}'`);
-          // Become member ni: bind its params (via temporaries — the args may
-          // read the very slots being overwritten), initialize its state, run
-          // its prologue; at end of stream it is immediately flushed too.
-          const n = fresh++;
-          const m = f.members[ni];
-          out.push(...head.args.map((a, i): Stmt => ({ k: 'let', name: `b#${n}#${i}`, expr: a })));
-          head.args.forEach((_, i) => out.push(setState(bases[ni] + i, { k: 'local', name: `b#${n}#${i}` })));
-          m.stateInit.forEach((e, i) => out.push(setState(bases[ni] + m.paramWidth + i, relocate(ni)(e))));
-          const inner = (x: string) => `${x}#i${n}`;
-          out.push(block(lower(m.init, ni, atEnd, depth + 1, inner)));
-          out.push(setState(0, c(ni)));
-          if (atEnd) out.push(block(lower(m.epilogue, ni, true, depth + 1, inner)));
-          return out;
+          return [...out, ...become(ni, head.args, atEnd, depth)];
         }
       }
     });
+  }
+
+  // Become member ni: bind its params (via temporaries — the args may read
+  // the very slots being overwritten), initialize its state, run its
+  // prologue; at end of stream it is immediately flushed too.
+  function become(ni: number, args: ScalarExpr[], atEnd: boolean, depth: number): Stmt[] {
+    const n = fresh++;
+    const m = f.members[ni];
+    const inner = (x: string) => `${x}#i${n}`;
+    return [
+      ...args.map((a, i): Stmt => ({ k: 'let', name: `b#${n}#${i}`, expr: a })),
+      ...args.map((_, i) => setState(bases[ni] + i, { k: 'local', name: `b#${n}#${i}` })),
+      ...m.stateInit.map((e, i) => setState(bases[ni] + m.paramWidth + i, relocate(ni)(e))),
+      block(lower(m.init, ni, atEnd, depth + 1, inner)),
+      setState(0, c(ni)),
+      ...(atEnd ? [block(lower(m.epilogue, ni, true, depth + 1, inner))] : []),
+    ];
   }
 
   const same = (x: string) => x;
@@ -177,7 +205,7 @@ export function assembleFamily(f: Family): (KernelIR | PipelineIR)[] {
 
   // --- gen: the frame interpreter. A generator's `⇒` feeds its stages back
   // first-to-last, so the LIFO worklist runs them last-to-first. ---
-  const toFeeds = (stmts: AnyStmt[], where: string): Stmt[] => stmts.flatMap((s): Stmt[] => {
+  const toFeeds = (stmts: StagedStmt[], where: string): Stmt[] => stmts.flatMap((s): Stmt[] => {
     if (s.k === 'if') return [{ ...s, then: toFeeds(s.then, where), else: toFeeds(s.else, where) }];
     if (s.k !== 'forward') return [s];
     return s.stages.flatMap((g): Stmt[] => (g ? [{ k: 'feed', values: genFrame(g, where) }] : []));

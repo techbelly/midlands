@@ -19,6 +19,12 @@ export interface RecordShape {
 }
 export const REAL: Shape = { k: 'real' };
 
+// A process's stream types: what comes in, what goes out.
+export interface StreamSig {
+  input: Shape;
+  output: Shape;
+}
+
 // A record's token layout: each named field by path, at its flattened offset.
 export function tokenLayout(s: RecordShape): TokenLayout {
   const fields: TokenLayout['fields'] = {};
@@ -51,6 +57,14 @@ export function fieldInfo(shape: Shape, name: string): { index: number; offset: 
     offset += shapeWidth(f.shape);
   }
   throw new ElabError(`type '${shape.name ?? '(tuple)'}' has no field '.${name}'`);
+}
+
+// The offset of a field that must be a Real (a sort or group key, a reduced
+// field): `what` names the use in the error.
+export function realField(shape: Shape, name: string, what: string): number {
+  const f = fieldInfo(shape, name);
+  if (f.shape.k !== 'real') throw new ElabError(`${what} '@${name}' must be a Real field`);
+  return f.offset;
 }
 
 export class ElabError extends Error {}

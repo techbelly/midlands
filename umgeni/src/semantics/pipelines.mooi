@@ -11,9 +11,10 @@
 -- parameters, instantiated here: no process is a value at run time).
 --
 -- The host supplies: P.field (a field's offset and shape in a shape),
+-- P.realField (the offset of a field that must be a Real),
 -- P.expr (an argument, staged), P.type, P.stream (a process's stream types,
 -- or null; P.known says whether the name exists), P.template (a template's
--- kernel, or null), P.isStream (a type names a process type), and the
+-- parameters and the pipeline that is its body, or null), P.isStream (a type names a process type), and the
 -- environments: empty, bind, lookupProc, bindProc. Values come from
 -- values.mooi, loaded with this file.
 
@@ -27,7 +28,7 @@ stages c [el, ...rest] s  = let r = stage c el s, more = stages c rest r.stream
                             in {stages: r.stages ++ more.stages, output: more.output}
 
 stage c identityPipeline{} s   = {stages: [{k: "identity"}], stream: s}
-stage c groupBy{keys, stable} s = {stages: [{k: "groupBy", keyIndexes: map (\k -> real s.shape k "GroupBy key") keys, stable: stable}],
+stage c groupBy{keys, stable} s = {stages: [{k: "groupBy", keyIndexes: map (\k -> P.realField s.shape k "GroupBy key") keys, stable: stable}],
                                    stream: {shape: s.shape, unordered: not stable}}
 stage c reduceBy{keys, fields} s =
   {stages: [{k: "reduceBy", width: width s.shape, keyIndexes: map (\k -> (P.field s.shape k).offset) keys, fields: map (reduction c s) fields}],
@@ -43,13 +44,9 @@ reduction c s f | s.unordered && not (commutative f.op) =
 reduction c s f =
   let op = P.expr binOp{op: f.op, left: var{name: "#ra"}, right: var{name: "#rb"}} (bind (bind empty "#ra" (local "#ra")) "#rb" (local "#rb"))
   in if op.k != "scalar" then fail ("ReduceBy operator '" ++ f.op ++ "' must combine Reals")
-     else {index: real s.shape f.name "ReduceBy field", op: op.expr}
+     else {index: P.realField s.shape f.name "ReduceBy field", op: op.expr}
 
 commutative op = member op ["+", "×", "◁", "▷", "∧", "∨"]
-
--- A field that must be a Real: its offset in the token.
-real sh name what = let f = P.field sh name
-                    in if f.shape.k != "real" then fail (what ++ " '@" ++ name ++ "' must be a Real field") else f.offset
 
 -- A stage that reads tokens in arrival order may not follow unordered groups.
 ordered c what s | s.unordered = fail ("'" ++ what ++ "' in '" ++ c.who ++ "' consumes tokens in arrival order after a non-stable GroupBy; use 'GroupBy stable (…)' or reduce the groups first")
@@ -100,12 +97,12 @@ pipelineOf a w                                = fail (w ++ " expects a process h
 -- A template's body is a pipeline; its parameters are bound to the
 -- arguments, a process argument as a closure over the caller's scope, a
 -- value argument fitted to its type.
-instantiate c k args s | length k.forAlls > 0 || length k.prologue != 1 || (head k.prologue).kind != "forward" =
+instantiate c k args s | k.pipeline == null =
   fail ("'" ++ k.name ++ "' takes a process parameter, so it must be a pipeline definition (⇒ …)")
 instantiate c k args s =
-  let names = concatMap (\g -> map (\n -> {name: n, type: g.type}) g.names) (k.params ?? [])
+  let names = concatMap (\g -> map (\n -> {name: n, type: g.type}) g.names) k.params
   in if length args != length names then fail ("'" ++ k.name ++ "' takes " ++ str (length names) ++ " arguments, given " ++ str (length args))
      else let callee = foldl (bindArg c k) {env: empty, procs: noProcs} (zipWith (\p a -> [p, a]) names args)
-          in stages (context c.who callee.env callee.procs) (head k.prologue).pipeline s
+          in stages (context c.who callee.env callee.procs) k.pipeline s
 bindArg c k acc [p, a] | P.isStream p.type = {...acc, procs: bindProc acc.procs p.name {elems: pipelineOf a ("'" ++ k.name ++ "'"), env: c.env, procs: c.procs}}
 bindArg c k acc [p, a] = {...acc, env: bind acc.env p.name (must (fit (P.expr a c.env) (P.type p.type)) ("argument '" ++ p.name ++ "' of '" ++ k.name ++ "' does not fit its parameter"))}
