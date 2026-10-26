@@ -54,8 +54,8 @@ export class Semantics<S> {
   stmts(list: A.Stmt[], env: Map<string, Value<S>>, io: { input: Shape; output: Shape; flush?: boolean }): void {
     this.m.execs({ ...io, flush: io.flush ?? false }, list, fromMap(env));
   }
-  kernel(k: A.Kernel, params: Value<S>[], names: string[], sig: { input: Shape; output: Shape }) {
-    return this.m.kernel(k, params, names, { ...sig, flush: false }) as {
+  kernel(k: A.Kernel, params: Map<string, Value<S>>, sig: { input: Shape; output: Shape }) {
+    return this.m.kernel(k, fromMap(params), { ...sig, flush: false }) as {
       initial: S[];
       init: () => void;
       step: (input: Value<S>) => void;

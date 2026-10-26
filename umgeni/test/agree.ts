@@ -7,7 +7,7 @@ import { parseProgram } from '../src/parser.js';
 import { kernelContexts } from '../src/elaborate.js';
 import { interpretKernel } from '../src/semantics/concrete.js';
 import { run } from '../src/cpu/runtime.js';
-import { shapeWidth } from '../src/values.js';
+import { paramWidth, shapeWidth } from '../src/values.js';
 
 let seed = 1;
 const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
@@ -22,7 +22,7 @@ export function agree(sources: string[]) {
     it(name, () => {
       if (!(name in compiled.api)) return; // not compiled (e.g. part of a family)
       const factory = compiled.api[name];
-      const pw = ctx.params.reduce((n, g) => n + g.names.length * shapeWidth(g.shape), 0);
+      const pw = paramWidth(ctx.params);
       const iw = shapeWidth(ctx.sig.input);
       for (let trial = 0; trial < 12; trial++) {
         const params = Array.from({ length: pw }, value);

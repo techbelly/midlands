@@ -79,16 +79,17 @@ leafName n i k = n ++ "#" ++ str i
 assignTo ρ n v = let c = must (cellsOf ρ n) ("'" ++ n ++ " =' must update a state binding declared before ∀")
                  in eachi (\x i -> (at c.cells i).set x) (leaves (must (fit v c.shape) "a value does not fit the state it updates")); ρ
 
--- A kernel: state declared by its prologue, a step per token, a flush.
-kernel k params names sig =
-  let layout = stateLayout k params names
+-- A kernel, given its parameters bound (ρ0): state declared by its
+-- prologue, a step per token, a flush.
+kernel k ρ0 sig =
+  let layout = stateLayout k ρ0
   in { initial: concatMap (\l -> l.initial) layout
-     , init:    \_ -> execs sig (filter (\st -> not (isDecl st)) k.prologue) (phase params names layout)
-     , step:    \input -> step k sig (phase params names layout) layout input
-     , flush:   \_ -> execs {...sig, flush: true} k.epilogue (phase params names layout) }
+     , init:    \_ -> execs sig (filter (\st -> not (isDecl st)) k.prologue) (phase ρ0 layout)
+     , step:    \input -> step k sig (phase ρ0 layout) layout input
+     , flush:   \_ -> execs {...sig, flush: true} k.epilogue (phase ρ0 layout) }
 
 -- Prologue declarations, in order: each a state variable with its slots.
-stateLayout k params names = scanState (bindAll empty names params) 0 (filter isDecl k.prologue)
+stateLayout k ρ0 = scanState ρ0 0 (filter isDecl k.prologue)
 scanState ρ base []             = []
 scanState ρ base [st, ...rest]  =
   let vars = declared st (ascribe (expr st.value ρ) (st.type ?? null))
@@ -99,8 +100,9 @@ layoutOf [] base                = []
 layoutOf [[n, v], ...rest] base = [{name: n, shape: shapeOf v, base: base, initial: leaves v}] ++ layoutOf rest (base + width (shapeOf v))
 sumWidths vars = sum (map (\[n, v] -> width (shapeOf v)) vars)
 
--- Each phase sees the params and the *current* state.
-phase params names layout = foldl (\ρ l -> bind ρ l.name (tree l.shape (map (\i -> (D.state (l.base + i)).get unit) (range (width l.shape))))) (bindAll empty names params) layout
+-- Each phase sees the params and the *current* state: rebuilt per call,
+-- since on numbers D.state reads the live state.
+phase ρ0 layout = foldl (\ρ l -> bind ρ l.name (tree l.shape (map (\i -> (D.state (l.base + i)).get unit) (range (width l.shape))))) ρ0 layout
 
 -- One token. Primed state: x' is a cell starting from the pattern's x' or
 -- from x, written back to x after the body.

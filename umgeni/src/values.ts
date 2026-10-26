@@ -78,20 +78,26 @@ export function fromExprs<S>(shape: Shape, exprs: S[], base = 0): Value<S> {
   return { k: 'agg', shape, parts };
 }
 
-// One value per parameter name, over consecutive slots; `part` reads a shape
-// at an offset. The names are in group order, as the values are.
-export function paramParts<S>(params: { names: string[]; shape: Shape }[], part: (shape: Shape, at: number) => Value<S>): { names: string[]; parts: Value<S>[]; width: number } {
-  const names: string[] = [];
-  const parts: Value<S>[] = [];
+// A process's parameters: groups of names sharing a shape, in declaration
+// order, laid out over consecutive slots.
+export interface ParamGroup {
+  names: string[];
+  shape: Shape;
+}
+export const paramWidth = (params: ParamGroup[]): number => params.reduce((n, g) => n + g.names.length * shapeWidth(g.shape), 0);
+
+// The parameters as an environment: one value per name, each over its slots;
+// `part` reads a shape at an offset (a param slot, a frame slot, a number).
+export function paramEnv<S>(params: ParamGroup[], part: (shape: Shape, at: number) => Value<S>): { env: Map<string, Value<S>>; width: number } {
+  const env = new Map<string, Value<S>>();
   let width = 0;
   for (const g of params) {
     for (const n of g.names) {
-      names.push(n);
-      parts.push(part(g.shape, width));
+      env.set(n, part(g.shape, width));
       width += shapeWidth(g.shape);
     }
   }
-  return { names, parts, width };
+  return { env, width };
 }
 
 // A value reading a contiguous run of slots (param/state/input).

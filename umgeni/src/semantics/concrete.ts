@@ -5,7 +5,7 @@
 
 import { identity, pipeline, type Op, type Token } from '../cpu/runtime.js';
 import { BIN, UN } from '../scalar.js';
-import { fromExprs, paramParts } from '../values.js';
+import { fromExprs, paramEnv } from '../values.js';
 import type { Domain, KernelContext, Program } from './domain.js';
 import { Semantics } from './nile.js';
 
@@ -47,8 +47,8 @@ export function interpretKernel(
       became.setEmit((t) => emit(t));
     },
   };
-  const p = paramParts(params, (shape, at) => fromExprs(shape, paramValues, at));
-  const sem = new Semantics(P, D).kernel(k, p.parts, p.names, sig);
+  const p = paramEnv(params, (shape, at) => fromExprs(shape, paramValues, at));
+  const sem = new Semantics(P, D).kernel(k, p.env, sig);
   state.push(...sem.initial);
   let seeded = false;
   const seed = () => {

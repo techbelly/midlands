@@ -13,8 +13,8 @@ import { assembleFamily, SubstError, type Generator } from './substitute.js';
 import { desugar, SugarError } from './semantics/sugar.js';
 import { elabPipelineStages, type PipelineProgram } from './semantics/pipelines.js';
 import { stageExpr, stageGenerator, stageKernel } from './semantics/staged.js';
-import type { KernelContext, ParamGroup, Program } from './semantics/domain.js';
-import { ElabError, fieldInfo, fromSlots, REAL, shapeWidth, tokenLayout, type Shape, type Value } from './values.js';
+import type { KernelContext, Program } from './semantics/domain.js';
+import { ElabError, fieldInfo, fromSlots, paramEnv, paramWidth, REAL, shapeWidth, tokenLayout, type ParamGroup, type Shape } from './values.js';
 import { opKey } from './ops.js';
 
 // --- operator tables -----------------------------------------------------------
@@ -27,7 +27,6 @@ interface OpEntry {
 
 // --- the elaborator ------------------------------------------------------------
 
-type Env = Map<string, Value>;
 
 interface StreamSig {
   input: Shape;
@@ -125,8 +124,9 @@ class Elaborator {
     for (const d of decls) {
       if (d.kind !== 'processTypeDef' || !d.params) continue;
       const sig = this.plainSig(d);
-      signatures[d.name] = paramSigs(d.params.map((g) => ({ names: g.names, shape: this.resolveType(g.type) })));
-      this.host.push({ name: d.name, paramWidth: signatures[d.name].reduce((n, p) => n + p.width, 0), inputWidth: shapeWidth(sig.input), outputWidth: shapeWidth(sig.output) });
+      const groups = d.params.map((g) => ({ names: g.names, shape: this.resolveType(g.type) }));
+      signatures[d.name] = paramSigs(groups);
+      this.host.push({ name: d.name, paramWidth: paramWidth(groups), inputWidth: shapeWidth(sig.input), outputWidth: shapeWidth(sig.output) });
     }
   }
 
@@ -245,20 +245,6 @@ class Elaborator {
     return (d.params ?? []).map((g) => ({ names: g.names, shape: this.paramShape(g.type, d.name) }));
   }
 
-  // The parameters as a staged environment: each a value over consecutive
-  // parameter slots.
-  private paramEnv(d: A.Kernel): { env: Env; width: number } {
-    const env: Env = new Map();
-    let width = 0;
-    for (const group of this.paramGroups(d)) {
-      for (const name of group.names) {
-        env.set(name, fromSlots(group.shape, 'param', width));
-        width += shapeWidth(group.shape);
-      }
-    }
-    return { env, width };
-  }
-
   private addOp(d: A.OpDef): void {
     this.ops.set(opKey(d.fixity, d.op, d.closeOp), {
       params: d.params.map((p) => ({ name: p.name, shape: this.resolveType(p.type) })),
@@ -355,7 +341,7 @@ class Elaborator {
     visit(d.name);
     return assembleFamily({
       root: d.name,
-      paramWidth: this.paramEnv(d).width,
+      paramWidth: paramWidth(this.paramGroups(d)),
       inputWidth: shapeWidth(sig.input),
       outputWidth: shapeWidth(sig.output),
       members, generators,
@@ -365,9 +351,9 @@ class Elaborator {
   // --- pipelines ---
 
   private elabPipeline(d: A.Kernel, elems: A.PipelineElem[], sig: StreamSig): PipelineIR {
-    const { env, width: paramWidth } = this.paramEnv(d);
-    const { stages } = elabPipelineStages(this.pipelineProgram, d.name, elems, env, new Map(), sig.input);
-    return { k: 'pipeline', name: d.name, paramWidth, stages };
+    const params = paramEnv(this.paramGroups(d), (shape, at) => fromSlots(shape, 'param', at));
+    const { stages } = elabPipelineStages(this.pipelineProgram, d.name, elems, params.env, new Map(), sig.input);
+    return { k: 'pipeline', name: d.name, paramWidth: params.width, stages };
   }
 
   // What the pipeline semantics (semantics/pipelines.mooi) asks of the program.

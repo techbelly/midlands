@@ -5,7 +5,7 @@
 import type * as A from '../ast.js';
 import type { KernelIR, ScalarExpr, Stmt } from '../ir.js';
 import type { ForwardStmt, Generator } from '../substitute.js';
-import { fromSlots, paramParts, shapeWidth, type Value } from '../values.js';
+import { fromSlots, paramEnv, shapeWidth, type Value } from '../values.js';
 import type { Domain, KernelContext, Program } from './domain.js';
 import { Semantics } from './nile.js';
 
@@ -60,8 +60,8 @@ export function irDomain() {
 
 export function stageKernel(P: Program, { kernel: k, params, sig }: KernelContext, access: KernelIR['access']): KernelIR {
   const { D, record } = irDomain();
-  const p = paramParts(params, (shape, at) => fromSlots(shape, 'param', at));
-  const sem = new Semantics(P, D).kernel(k, p.parts, p.names, sig);
+  const p = paramEnv(params, (shape, at) => fromSlots(shape, 'param', at));
+  const sem = new Semantics(P, D).kernel(k, p.env, sig);
   return {
     k: 'kernel', name: k.name, paramWidth: p.width,
     inputWidth: shapeWidth(sig.input), outputWidth: shapeWidth(sig.output),
@@ -77,9 +77,8 @@ export function stageKernel(P: Program, { kernel: k, params, sig }: KernelContex
 // parameters are the frame's slots after the tag; declarations are locals.
 export function stageGenerator(P: Program, { kernel: k, params, sig }: KernelContext): Generator {
   const { D, record } = irDomain();
-  const p = paramParts(params, (shape, at) => fromSlots(shape, 'input', 1 + at));
-  const env = new Map(p.names.map((n, i) => [n, p.parts[i]]));
-  const body = record(() => new Semantics(P, D).stmts(k.prologue, env, { ...sig, flush: true }));
+  const p = paramEnv(params, (shape, at) => fromSlots(shape, 'input', 1 + at));
+  const body = record(() => new Semantics(P, D).stmts(k.prologue, p.env, { ...sig, flush: true }));
   return { name: k.name, paramWidth: p.width, body };
 }
 

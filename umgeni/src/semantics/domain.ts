@@ -5,7 +5,7 @@
 
 import type * as A from '../ast.js';
 import type { BinOpName, UnOpName } from '../ir.js';
-import type { Shape } from '../values.js';
+import type { ParamGroup, Shape } from '../values.js';
 
 export interface Cell<S> {
   get(): S;
@@ -34,10 +34,6 @@ export interface KernelContext {
   kernel: A.Kernel;
   params: ParamGroup[];
   sig: { input: Shape; output: Shape };
-}
-export interface ParamGroup {
-  names: string[];
-  shape: Shape;
 }
 
 // What the program declares (types, user operators, process parameters).
