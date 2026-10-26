@@ -31,7 +31,7 @@ export interface Domain<S> {
 // A kernel as the semantics runs it: desugared, with its parameter groups
 // and its stream types.
 export interface KernelContext {
-  kernel: A.Kernel;
+  kernel: A.Process;
   params: ParamGroup[];
   stream: Stream;
 }

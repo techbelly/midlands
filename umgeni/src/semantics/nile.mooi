@@ -65,8 +65,8 @@ assignOrBind ρ [n, v]            = bind ρ n v
 
 -- A stage of a mid-stream ⇒: its process and its arguments, fitted.
 stage ρ identityPipeline{} = null
-stage ρ kernelRef{name}    = {name: name, args: []}
-stage ρ kernelApp{name, args} =
+stage ρ stageRef{name}    = {name: name, args: []}
+stage ρ stageApp{name, args} =
   let shapes = must (P.params name) ("⇒ names unknown process " ++ name)
   in {name: name, args: concat (zipWith (\a sh -> fitLeaves (expr a ρ) sh "an argument does not fit its parameter") args shapes)}
 

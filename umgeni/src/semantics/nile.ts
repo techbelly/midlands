@@ -54,7 +54,7 @@ export class Semantics<S> {
   stmts(list: A.Stmt[], env: Map<string, Value<S>>, io: Stream & { flush?: boolean }): void {
     this.m.execs({ ...io, flush: io.flush ?? false }, list, fromMap(env));
   }
-  kernel(k: A.Kernel, params: Map<string, Value<S>>, stream: Stream) {
+  kernel(k: A.Process, params: Map<string, Value<S>>, stream: Stream) {
     return this.m.kernel(k, fromMap(params), { ...stream, flush: false }) as {
       initial: S[];
       prologue: () => void;

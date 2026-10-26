@@ -17,19 +17,19 @@
 Nile {
   Start = TopLevel*
 
-  TopLevel = TypeDef | OpDef | Kernel
+  TopLevel = TypeDef | OpDef | Process
 
   // --- type definitions ---
   TypeDef = ident "<:" AType eol                 -- record
-          | ident "::" (AkType | KType) eol      -- process
+          | ident "::" (ParamProcType | ProcType) eol      -- process
 
   AType = "(" NonemptyListOf<FieldGroup, ","> ")"  -- record
         | "(" NonemptyListOf<AType, ","> ")"       -- tuple
         | ident                                     -- named
   FieldGroup = NonemptyListOf<ident, ","> ":" AType
-  KType = AType ">>" AType   -- stream
+  ProcType = AType ">>" AType   -- stream
         | ident              -- named
-  AkType = "(" NonemptyListOf<FieldGroup, ","> ")" ":" KType
+  ParamProcType = "(" NonemptyListOf<FieldGroup, ","> ")" ":" ProcType
 
   // --- operator definitions ---
   OpDef = OpDefHeader eol OpBody
@@ -39,10 +39,10 @@ Nile {
   OpBody = indent Expr eol dedent
 
   // --- kernels ---
-  Kernel = ident KernelSig eol KernelBody
-  KernelSig = AkType        -- params
-            | ":" KType     -- plain
-  KernelBody = indent Stmt* ForAll* Stmt* dedent
+  Process = ident ProcessSig eol ProcessBody
+  ProcessSig = ParamProcType        -- params
+            | ":" ProcType     -- plain
+  ProcessBody = indent Stmt* ForAll* Stmt* dedent
   ForAll = "∀" Pat ConsPart? WithClause? eol Block?
   ConsPart = "∷" Pat SegBy?   -- pat
            | "∷" "∅"          -- end
@@ -69,20 +69,20 @@ Nile {
       | ident                             -- var
 
   // --- pipelines ---
-  Pipeline = NonemptyListOf<KI, "→">
-  KI = GroupByStage
+  Pipeline = NonemptyListOf<Stage, "→">
+  Stage = GroupByStage
      | ReduceByStage
-     | KIApp
-     | IdentityKI
+     | StageApp
+     | IdentityStage
      | ident                                    -- ref
   GroupByStage = groupByKw stableKw? "(" NonemptyListOf<KeyRef, ","> ")"
   ReduceByStage = reduceByKw "(" NonemptyListOf<KeyRef, ","> ";" NonemptyListOf<FieldReduce, ","> ")"
   FieldReduce = ident "⊕" redOp
   KeyRef = "@" ident
-  KArg = MultiPipeline | KIApp | IdentityKI | Expr
-  MultiPipeline = KI ("→" KI)+
-  KIApp = ident "(" NonemptyListOf<KArg, ","> ")"
-  IdentityKI = "(" "→" ")"
+  StageArg = MultiPipeline | StageApp | IdentityStage | Expr
+  MultiPipeline = Stage ("→" Stage)+
+  StageApp = ident "(" NonemptyListOf<StageArg, ","> ")"
+  IdentityStage = "(" "→" ")"
 
   // --- expressions (precedence low to high) ---
   Expr = OrExpr

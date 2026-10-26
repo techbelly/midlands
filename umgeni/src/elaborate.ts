@@ -67,7 +67,7 @@ class Elaborator {
   private types = new Map<string, Shape>();
   private ops = new Map<string, OpEntry>();
   private streams = new Map<string, Stream | null>(); // null: not a plain stream
-  private kernels = new Map<string, A.Kernel>();
+  private processes = new Map<string, A.Process>();
   private host: HostProcess[] = []; // declared by signature, supplied by the host
   private hostParams = new Map<string, ParamGroup[]>(); // their parameters, for the signatures
   private generators = new Set<string>(); // no ∀: emit a finite sequence, then pass input through
@@ -84,7 +84,7 @@ class Elaborator {
     // alone is the host's to call).
     const signatures: Record<string, ParamSig[]> = {};
     for (const [n, groups] of this.hostParams) signatures[n] = paramSigs(groups);
-    for (const [n, d] of this.kernels) if (compiled.has(n)) signatures[n] = paramSigs(this.paramGroups(d));
+    for (const [n, d] of this.processes) if (compiled.has(n)) signatures[n] = paramSigs(this.paramGroups(d));
     const ir: ModuleIR = { processes: processes.filter((p) => compiled.has(p.name)), host: this.host, signatures, types: this.tokenLayouts() };
     return { ir, unsupported, templates };
   }
@@ -93,7 +93,7 @@ class Elaborator {
     this.declare(modules.flatMap((m) => m.decls));
     const program = this.program;
     const kernels = new Map<string, KernelContext>();
-    for (const [name, d] of this.kernels) {
+    for (const [name, d] of this.processes) {
       const stream = this.streamOf(d.type);
       const { kind } = this.kindOf(d);
       if (!stream || !(kind === 'kernel' || (all && (kind === 'family' || kind === 'generator')))) continue;
@@ -117,9 +117,9 @@ class Elaborator {
       if (d.kind === 'typeDef') continue;
       else if (d.kind === 'opDef') this.addOp(d);
       else if (d.kind === 'processTypeDef') this.streams.set(d.name, this.streamOf(d.type));
-      else if (d.kind === 'kernel') {
+      else if (d.kind === 'process') {
         this.streams.set(d.name, this.streamOf(d.type));
-        this.kernels.set(d.name, d);
+        this.processes.set(d.name, d);
       }
     }
     this.classifyGenerators();
@@ -145,7 +145,7 @@ class Elaborator {
     const unsupported: { name: string; reason: string }[] = [];
     const templates: string[] = [];
     for (const d of decls) {
-      if (d.kind !== 'kernel') continue;
+      if (d.kind !== 'process') continue;
       const c = this.kindOf(d);
       if (c.kind === 'template') {
         templates.push(d.name);
@@ -205,7 +205,7 @@ class Elaborator {
 
   // The stream types of a kernel/process type, or null when it is not a
   // plain stream (we don't elaborate those yet).
-  private streamOf(t: A.KernelType): Stream | null {
+  private streamOf(t: A.ProcessType): Stream | null {
     if (t.kind === 'streamType') {
       return { input: this.resolveType(t.input), output: this.resolveType(t.output) };
     }
@@ -213,7 +213,7 @@ class Elaborator {
   }
 
   // The stream types a process must have to be elaborated.
-  private plainStream(d: { name: string; type: A.KernelType }): Stream {
+  private plainStream(d: { name: string; type: A.ProcessType }): Stream {
     const stream = this.streamOf(d.type);
     if (!stream) throw new ElabError(`'${d.name}' does not have a plain stream type`);
     return stream;
@@ -224,7 +224,7 @@ class Elaborator {
     return t.kind === 'namedType' && this.streams.has(t.name);
   }
 
-  private isTemplate(k: A.Kernel): boolean {
+  private isTemplate(k: A.Process): boolean {
     return (k.params ?? []).some((g) => this.isProcessType(g.type));
   }
 
@@ -235,7 +235,7 @@ class Elaborator {
   // no flush body, emitting a finite sequence before passing input through;
   // a kernel is the rest. The interpreter handles kernels, and families and
   // generators only when asked; the compiler handles all but templates.
-  private kindOf(d: A.Kernel): Classified {
+  private kindOf(d: A.Process): Classified {
     const body = pipelineBody(d);
     return this.isTemplate(d) ? { kind: 'template' }
       : body ? { kind: 'pipeline', body }
@@ -252,7 +252,7 @@ class Elaborator {
   }
 
   // A kernel's parameters, by group, with their shapes.
-  private paramGroups(d: A.Kernel): ParamGroup[] {
+  private paramGroups(d: A.Process): ParamGroup[] {
     return (d.params ?? []).map((g) => ({ names: g.names, shape: this.paramShape(g.type, d.name) }));
   }
 
@@ -272,7 +272,7 @@ class Elaborator {
       type: (t) => this.resolveType(t),
       op: (key) => this.ops.get(key),
       params: (name) => {
-        const k = this.kernels.get(name);
+        const k = this.processes.get(name);
         return k && this.paramGroups(k).flatMap((g) => g.names.map(() => g.shape));
       },
     };
@@ -280,7 +280,7 @@ class Elaborator {
 
   // A kernel, staged: with ⇒ statements still in it if it has any (a
   // family's member); plainKernel checks there are none.
-  private elabKernel(source: A.Kernel, stream: Stream): StagedKernel {
+  private elabKernel(source: A.Process, stream: Stream): StagedKernel {
     // Scans and windows are sugar (sugar.ts); what they declared is kept as
     // `access` metadata for parallel backends.
     const { kernel: d, declared } = desugar(source, this.fieldNames);
@@ -298,13 +298,13 @@ class Elaborator {
   // Generators: no ∀ and no flush body, substituting only into generators.
   // Greatest fixpoint, so mutually recursive generators qualify.
   private classifyGenerators(): void {
-    for (const [name, d] of this.kernels) {
+    for (const [name, d] of this.processes) {
       if (d.forAlls.length === 0 && d.flush.length === 0) this.generators.add(name);
     }
     for (let changed = true; changed;) {
       changed = false;
       for (const name of this.generators) {
-        if (forwardTargets(this.kernels.get(name)!.prologue).some((t) => !this.generators.has(t))) {
+        if (forwardTargets(this.processes.get(name)!.prologue).some((t) => !this.generators.has(t))) {
           this.generators.delete(name);
           changed = true;
         }
@@ -314,13 +314,13 @@ class Elaborator {
 
   // A generator's body for the frame interpreter: params live in the frame
   // (input slots 1…), prologue declarations are plain locals.
-  private elabGenerator(d: A.Kernel): Generator {
+  private elabGenerator(d: A.Process): Generator {
     return stageGenerator(this.program, { kernel: d, params: this.paramGroups(d), stream: this.plainStream(d) });
   }
 
   // Everything `d` can substitute into, transitively: stream processes it may
   // become (members) and generators it may invoke.
-  private elabFamily(d: A.Kernel): (KernelIR | PipelineIR)[] {
+  private elabFamily(d: A.Process): (KernelIR | PipelineIR)[] {
     const stream = this.plainStream(d);
     const members: StagedKernel[] = [];
     const generators: Generator[] = [];
@@ -328,7 +328,7 @@ class Elaborator {
     const visit = (name: string) => {
       if (seen.has(name)) return;
       seen.add(name);
-      const k = this.kernels.get(name)!;
+      const k = this.processes.get(name)!;
       const kstream = this.streamOf(k.type);
       if (!kstream || shapeWidth(kstream.input) !== shapeWidth(stream.input) || shapeWidth(kstream.output) !== shapeWidth(stream.output)) {
         throw new ElabError(`'${name}' cannot stand in for '${d.name}': stream types differ`);
@@ -352,7 +352,7 @@ class Elaborator {
 
   // --- pipelines ---
 
-  private elabPipeline(d: A.Kernel, elems: A.PipelineElem[], stream: Stream): PipelineIR {
+  private elabPipeline(d: A.Process, elems: A.PipelineElem[], stream: Stream): PipelineIR {
     const params = paramEnv(this.paramGroups(d), (shape, at) => fromSlots(shape, 'param', at));
     const { stages } = elabPipelineStages(this.pipelineProgram, d.name, elems, params.env, new Map(), stream.input);
     return { k: 'pipeline', name: d.name, paramWidth: params.width, stages };
@@ -374,7 +374,7 @@ class Elaborator {
       stream: (name) => this.streams.get(name) ?? null,
       known: (name) => this.streams.has(name),
       template: (name) => {
-        const k = this.kernels.get(name);
+        const k = this.processes.get(name);
         return k && this.isTemplate(k) ? { name: k.name, params: k.params ?? [], pipeline: pipelineBody(k) } : null;
       },
       isStream: (t) => this.isProcessType(t),
@@ -409,12 +409,12 @@ function stageNames(stages: StageIR[]): string[] {
 }
 
 // A body that is just `⇒ pipeline` is a pipeline definition: that pipeline.
-function pipelineBody(d: A.Kernel): A.PipelineElem[] | null {
+function pipelineBody(d: A.Process): A.PipelineElem[] | null {
   const p = d.prologue[0];
   return d.forAlls.length === 0 && d.flush.length === 0 && d.prologue.length === 1 && p.kind === 'forward' ? p.pipeline : null;
 }
 // Every statement of a process, in order: prologue, each ∀ body, flush body.
-const kernelStmts = (d: A.Kernel): A.Stmt[] => [...d.prologue, ...d.forAlls.flatMap((f) => f.body), ...d.flush];
+const kernelStmts = (d: A.Process): A.Stmt[] => [...d.prologue, ...d.forAlls.flatMap((f) => f.body), ...d.flush];
 // Every statement, including those nested in if branches.
 function* allStmts(list: A.Stmt[]): IterableIterator<A.Stmt> {
   for (const s of list) {
@@ -429,5 +429,5 @@ const hasForward = (stmts: A.Stmt[]) => [...allStmts(stmts)].some((s) => s.kind 
 // The process names a statement list substitutes into.
 const forwardTargets = (stmts: A.Stmt[]): string[] =>
   [...allStmts(stmts)].flatMap((s) => (s.kind === 'forward' ? s.pipeline : []))
-    .flatMap((e) => (e.kind === 'kernelApp' || e.kind === 'kernelRef' ? [e.name] : []));
+    .flatMap((e) => (e.kind === 'stageApp' || e.kind === 'stageRef' ? [e.name] : []));
 

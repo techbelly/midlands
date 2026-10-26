@@ -59,7 +59,7 @@ describe('gezira corpus', () => {
   it('parses every file', () => {
     const { modules } = parseProgram(CORPUS.map(gezira));
     const names = modules.flatMap((m) =>
-      m.decls.filter((d) => d.kind === 'kernel').map((d) => d.name),
+      m.decls.filter((d) => d.kind === 'process').map((d) => d.name),
     );
     expect(names).toContain('DecomposeBeziers');
     expect(names).toContain('StrokeBezierPath');
@@ -74,7 +74,7 @@ describe('AST shape', () => {
     const src = 'TransformBeziers (M : Matrix) : Bezier >> Bezier\n    ∀ (A, B, C)\n        >> (M ⊗ A, M ⊗ B, M ⊗ C)\n';
     const { module } = parseModule(src, typesTable());
     expect(module.decls[0]).toEqual({
-      kind: 'kernel',
+      kind: 'process',
       name: 'TransformBeziers',
       params: [{ names: ['M'], type: { kind: 'namedType', name: 'Matrix' } }],
       type: {
@@ -184,7 +184,7 @@ describe('AST shape', () => {
     expect(ifStmt.kind).toBe('if');
     expect(ifStmt.then[0].kind).toBe('forward');
     expect(ifStmt.then[0].pipeline).toEqual([
-      { kind: 'kernelApp', name: 'K', args: [{ kind: 'var', name: 'o' }] },
+      { kind: 'stageApp', name: 'K', args: [{ kind: 'var', name: 'o' }] },
       { kind: 'identityPipeline' },
     ]);
     expect(ifStmt.else[0].kind).toBe('in');
@@ -199,11 +199,11 @@ describe('AST shape', () => {
     const fwd: any = (module.decls[0] as any).prologue[0];
     expect(fwd.pipeline[0].args[0]).toEqual({
       kind: 'pipelineArg',
-      elements: [{ kind: 'kernelRef', name: 'Points' }, { kind: 'kernelRef', name: 't' }],
+      elements: [{ kind: 'stageRef', name: 'Points' }, { kind: 'stageRef', name: 't' }],
     });
     expect(fwd.pipeline[0].args[1]).toEqual({ kind: 'var', name: 'Weights' });
     expect(fwd.pipeline[1]).toEqual({
-      kind: 'kernelApp', name: 'Sum', args: [{ kind: 'num', value: 4 }],
+      kind: 'stageApp', name: 'Sum', args: [{ kind: 'num', value: 4 }],
     });
   });
 

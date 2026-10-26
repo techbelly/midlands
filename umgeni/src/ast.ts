@@ -2,7 +2,7 @@
 // `kind` tag. No classes, no methods — downstream passes (IR construction,
 // pretty-printing, inspection) consume it as data.
 
-export type TopLevel = TypeDef | ProcessTypeDef | OpDef | Kernel;
+export type TopLevel = TypeDef | ProcessTypeDef | OpDef | Process;
 
 export interface Module {
   kind: 'module';
@@ -29,7 +29,7 @@ export interface StreamType {
   input: Type;
   output: Type;
 }
-export type KernelType = StreamType | NamedType;
+export type ProcessType = StreamType | NamedType;
 
 // --- top-level declarations ---
 export interface TypeDef {
@@ -41,7 +41,7 @@ export interface ProcessTypeDef {
   kind: 'processTypeDef';
   name: string;
   params: Param[] | null;
-  type: KernelType;
+  type: ProcessType;
 }
 export interface Param {
   names: string[];
@@ -59,11 +59,11 @@ export interface OpDef {
   body: Expr;
 }
 
-export interface Kernel {
-  kind: 'kernel';
+export interface Process {
+  kind: 'process';
   name: string;
   params: Param[] | null;
-  type: KernelType;
+  type: ProcessType;
   prologue: Stmt[];
   // Zero or more ∀ arms. Plain kernels have one (cons: null); windowed
   // kernels have a `p ∷ q` arm and usually a `p ∷ ∅` end arm.
@@ -143,7 +143,7 @@ export interface TuplePattern {
 }
 
 // --- pipelines ---
-export type PipelineElem = KernelApp | KernelRef | IdentityPipeline | GroupByStage | ReduceByStage;
+export type PipelineElem = StageApp | StageRef | IdentityPipeline | GroupByStage | ReduceByStage;
 // GroupBy promises key order only; within-group arrival order is
 // unspecified unless `stable`.
 export interface GroupByStage {
@@ -156,21 +156,21 @@ export interface ReduceByStage {
   keys: string[];
   fields: { name: string; op: string }[];
 }
-export interface KernelApp {
-  kind: 'kernelApp';
+export interface StageApp {
+  kind: 'stageApp';
   name: string;
-  args: KernelArg[];
+  args: StageArg[];
 }
-export interface KernelRef {
-  kind: 'kernelRef';
+export interface StageRef {
+  kind: 'stageRef';
   name: string;
 }
 export interface IdentityPipeline {
   kind: 'identityPipeline';
 }
-export type KernelArg =
+export type StageArg =
   | Expr // includes bare identifiers; param-vs-kernel resolution is semantic
-  | KernelApp
+  | StageApp
   | { kind: 'pipelineArg'; elements: PipelineElem[] };
 
 // --- expressions ---

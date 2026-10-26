@@ -132,13 +132,13 @@ const astActions: Record<string, (...children: N[]) => unknown> = {
   FieldGroup(names, _c, type) {
     return { names: identList(names), type: type.toAST() };
   },
-  KType_stream(input, _a, output) {
+  ProcType_stream(input, _a, output) {
     return { kind: 'streamType', input: input.toAST(), output: output.toAST() };
   },
-  KType_named(name) {
+  ProcType_named(name) {
     return { kind: 'namedType', name: name.sourceString };
   },
-  AkType(_o, groups, _c, _colon, ktype) {
+  ParamProcType(_o, groups, _c, _colon, ktype) {
     return { kind: 'akType', params: list(groups), type: ktype.toAST() };
   },
 
@@ -174,16 +174,16 @@ const astActions: Record<string, (...children: N[]) => unknown> = {
     return expr.toAST();
   },
 
-  // --- kernels ---
-  Kernel(name, sig, _eol, body) {
+  // --- processes ---
+  Process(name, sig, _eol, body) {
     const s = sig.toAST();
     const b = body.toAST();
-    return { kind: 'kernel', name: name.sourceString, params: s.params, type: s.type, ...b };
+    return { kind: 'process', name: name.sourceString, params: s.params, type: s.type, ...b };
   },
-  KernelSig_plain(_c, ktype) {
+  ProcessSig_plain(_c, ktype) {
     return { params: null, type: ktype.toAST() };
   },
-  KernelBody(_ind, pre, forAlls, post, _ded) {
+  ProcessBody(_ind, pre, forAlls, post, _ded) {
     return { prologue: iter(pre), forAlls: iter(forAlls), flush: iter(post) };
   },
   ForAll(_fa, pat, consOpt, withOpt, _eol, blockOpt) {
@@ -271,8 +271,8 @@ const astActions: Record<string, (...children: N[]) => unknown> = {
   Pipeline(elems) {
     return list(elems);
   },
-  KI_ref(name) {
-    return { kind: 'kernelRef', name: name.sourceString };
+  Stage_ref(name) {
+    return { kind: 'stageRef', name: name.sourceString };
   },
   GroupByStage(_kw, stableOpt, _o, keys, _c) {
     return { kind: 'groupBy', keys: list(keys), stable: stableOpt.numChildren > 0 };
@@ -289,10 +289,10 @@ const astActions: Record<string, (...children: N[]) => unknown> = {
   MultiPipeline(first, _arrows, rest) {
     return { kind: 'pipelineArg', elements: [first.toAST(), ...iter(rest)] };
   },
-  KIApp(name, _o, args, _c) {
-    return { kind: 'kernelApp', name: name.sourceString, args: list(args) };
+  StageApp(name, _o, args, _c) {
+    return { kind: 'stageApp', name: name.sourceString, args: list(args) };
   },
-  IdentityKI(_o, _a, _c) {
+  IdentityStage(_o, _a, _c) {
     return { kind: 'identityPipeline' };
   },
 

@@ -19,7 +19,7 @@
     "check:samples": "deno run --allow-read --allow-env --unstable-sloppy-imports demos/tools/check-samples-gpu.ts",
     "check:tiger": "deno run --allow-read --allow-env --unstable-sloppy-imports demos/tools/check-tiger-gpu.ts",
     "check:paint": "deno run --allow-read --allow-env --unstable-sloppy-imports demos/tools/check-paint-gpu.ts",
-    "check:tools": "deno check demos/tools/*.ts"
+    "check:tools": "deno check --unstable-sloppy-imports demos/tools/*.ts"
   },
   "devDependencies": {
     "@types/node": "^26.0.1",

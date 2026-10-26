@@ -16,8 +16,8 @@ export class SugarError extends Error {}
 
 const m = load(sugarSource, prelude((msg) => {
   throw new SugarError(msg);
-})) as { desugar: (k: A.Kernel, fieldsOf: unknown) => { kernel: A.Kernel; declared: Declared } };
+})) as { desugar: (k: A.Process, fieldsOf: unknown) => { kernel: A.Process; declared: Declared } };
 
 // `fieldsOf` names a record type's top-level fields (types are resolved by
 // the elaborator).
-export const desugar = (k: A.Kernel, fieldsOf: (t: A.Type) => string[]) => m.desugar(k, fieldsOf);
+export const desugar = (k: A.Process, fieldsOf: (t: A.Type) => string[]) => m.desugar(k, fieldsOf);

@@ -33,8 +33,8 @@ stage c groupBy{keys, stable} s = {stages: [{k: "groupBy", keyIndexes: map (\k -
 stage c reduceBy{keys, fields} s =
   {stages: [{k: "reduceBy", width: width s.shape, keyIndexes: map (\k -> (P.field s.shape k).offset) keys, fields: map (reduction c s) fields}],
    stream: {shape: s.shape, unordered: false}}
-stage c kernelRef{name} s        = named c name [] s
-stage c kernelApp{name, args} s  = named c name args s
+stage c stageRef{name} s        = named c name [] s
+stage c stageApp{name, args} s  = named c name args s
 
 -- A reduced field: combined by its operator, a scalar expression over the
 -- two values being combined (#ra, #rb): locals the back end names.
@@ -77,7 +77,7 @@ named c name args s | P.stream name == null = fail ("pipeline stage '" ++ name +
 named c name args s = ordered c name s;
                       {stages: [{k: "stage", name: name, args: map (argument c name) args}], stream: {shape: (P.stream name).output, unordered: false}}
 
-argument c name a | a.kind == "pipelineArg" || a.kind == "kernelApp" = fail ("'" ++ c.who ++ "' passes a pipeline to '" ++ name ++ "'; higher-order arguments are not yet supported")
+argument c name a | a.kind == "pipelineArg" || a.kind == "stageApp" = fail ("'" ++ c.who ++ "' passes a pipeline to '" ++ name ++ "'; higher-order arguments are not yet supported")
 argument c name a = leaves (P.expr a c.env)
 
 -- A pipeline spliced in as stages: it leaves its output, in order.
@@ -89,9 +89,9 @@ branches c what args s = map (\a -> stages c (pipelineOf a what) s) args
 
 -- An argument as a pipeline: written out, a single application, or a name.
 pipelineOf a w | a.kind == "pipelineArg"      = a.elements
-pipelineOf a w | a.kind == "kernelApp"        = [a]
+pipelineOf a w | a.kind == "stageApp"        = [a]
 pipelineOf a w | a.kind == "identityPipeline" = [a]
-pipelineOf a w | a.kind == "var"              = [kernelRef{name: a.name}]
+pipelineOf a w | a.kind == "var"              = [stageRef{name: a.name}]
 pipelineOf a w                                = fail (w ++ " expects a process here")
 
 -- A template's body is a pipeline; its parameters are bound to the
