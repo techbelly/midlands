@@ -24,19 +24,11 @@ const library = compileLibrary([
   read('demos/test/fixtures/combine-scan.nl'),
 ]);
 
-function runOp(op: rt.Op, tokens: number[][]): number[][] {
-  const out: number[][] = [];
-  op.setEmit((t) => out.push(t));
-  for (const t of tokens) op.push(t);
-  op.end();
-  return out;
-}
-
 function decomposed(): rt.Op {
   return rt.pipeline([
-    library.registry.get('SumByPixel')!(),
-    library.registry.get('WindScanline')!(),
-    library.registry.get('SpansOfPixels')!(),
+    library.api.SumByPixel(),
+    library.api.WindScanline(),
+    library.api.SpansOfPixels(),
   ]);
 }
 
@@ -80,7 +72,7 @@ function sampleStream(seed: number, count: number): number[][] {
 describe('CombineEdgeSamples ≡ SumByPixel → WindScanline → SpansOfPixels', () => {
   it('compiles the decomposition (plain sequential Nile, no new syntax)', () => {
     for (const name of ['SumByPixel', 'WindScanline', 'SpansOfPixels', 'RasterizeScan']) {
-      expect(library.registry.has(name), name).toBe(true);
+      expect((name in library.api), name).toBe(true);
     }
   });
 
@@ -89,29 +81,29 @@ describe('CombineEdgeSamples ≡ SumByPixel → WindScanline → SpansOfPixels',
       [3.5, 0.5, 0.4, 0.4], [7.5, 0.5, -0.4, -0.4],
       [2.5, 2.5, 0.9, 0.2], [3.5, 2.5, 0.1, 0.8], [9.5, 2.5, -1, -1],
     ];
-    const ref = runOp(library.registry.get('CombineEdgeSamples')!(), samples);
-    const dec = runOp(decomposed(), samples);
+    const ref = rt.run(library.api.CombineEdgeSamples(), samples);
+    const dec = rt.run(decomposed(), samples);
     expect(dec).toEqual(ref);
   });
 
   it('reproduces the reference exactly on random streams (incl. merged pixels)', () => {
     for (const seed of [1, 2, 3, 4, 5]) {
       const samples = sampleStream(seed, 200);
-      const ref = runOp(library.registry.get('CombineEdgeSamples')!(), samples);
-      const dec = runOp(decomposed(), samples);
+      const ref = rt.run(library.api.CombineEdgeSamples(), samples);
+      const dec = rt.run(decomposed(), samples);
       compareSpans(dec, ref, 1e-12);
     }
   });
 
   it('reproduces the reference initial-state artifacts (first sample off-origin)', () => {
     for (const first of [[5.5, 0.5, 0.3, 0.3], [4.5, 3.5, 0.7, 0.7]]) {
-      const ref = runOp(library.registry.get('CombineEdgeSamples')!(), [first]);
-      const dec = runOp(decomposed(), [first]);
+      const ref = rt.run(library.api.CombineEdgeSamples(), [first]);
+      const dec = rt.run(decomposed(), [first]);
       expect(dec).toEqual(ref);
     }
     // Empty stream: both emit the reference's (0, 0, 0, 1) epilogue span.
-    expect(runOp(decomposed(), [])).toEqual(
-      runOp(library.registry.get('CombineEdgeSamples')!(), []),
+    expect(rt.run(decomposed(), [])).toEqual(
+      rt.run(library.api.CombineEdgeSamples(), []),
     );
   });
 
@@ -123,8 +115,8 @@ describe('CombineEdgeSamples ≡ SumByPixel → WindScanline → SpansOfPixels',
     for (const t of textTokens(library.api, 'HELLO WORLD')) front.push(t);
     front.end();
 
-    const ref = runOp(library.registry.get('Rasterize')!(), beziers);
-    const dec = runOp(library.registry.get('RasterizeScan')!(), beziers);
+    const ref = rt.run(library.api.Rasterize(), beziers);
+    const dec = rt.run(library.api.RasterizeScan(), beziers);
     expect(ref.length).toBeGreaterThan(500);
     const maxDiff = compareSpans(dec, ref, 1e-12);
     // Report the actual float-reassociation gap in the test output.

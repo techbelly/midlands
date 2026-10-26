@@ -25,14 +25,6 @@ const SOURCES = [
 ];
 const library = compileLibrary(SOURCES);
 
-function runOp(op: rt.Op, tokens: number[][]): number[][] {
-  const out: number[][] = [];
-  op.setEmit((t) => out.push(t));
-  for (const t of tokens) op.push(t);
-  op.end();
-  return out;
-}
-
 // Drop the reference's leading zero-coverage artifact spans (phantom initial
 // pixel), which the new constructs correctly do not emit.
 function dropArtifacts(spans: number[][]): number[][] {
@@ -44,7 +36,7 @@ function dropArtifacts(spans: number[][]): number[][] {
 describe('the rasterizer in access-patterns Nile (nl/rasterize-parallel.nl)', () => {
   it('compiles: GroupBy, ReduceBy, scan clause, windows', () => {
     expect(library.unsupported).toEqual([]);
-    expect(library.registry.has('RasterizeParallel')).toBe(true);
+    expect(('RasterizeParallel' in library.api)).toBe(true);
     // The declared structure is recorded in the IR for parallel backends.
     const wind = library.ir.processes.find((p) => p.name === 'WindScan');
     expect(wind?.k === 'kernel' && wind.access?.scan).toMatchObject({ key: 1, op: '+', identity: 0 });
@@ -63,7 +55,7 @@ describe('the rasterizer in access-patterns Nile (nl/rasterize-parallel.nl)', ()
     ].join('\n');
     const p = compileLibrary([src]);
     const out: number[][] = [];
-    const op = p.registry.get('SegDiffs')!();
+    const op = p.api.SegDiffs();
     op.setEmit((t) => out.push(t));
     for (const t of [[1, 10], [1, 13], [1, 20], [2, 5], [2, 6]]) op.push(t);
     op.end();
@@ -82,8 +74,8 @@ describe('the rasterizer in access-patterns Nile (nl/rasterize-parallel.nl)', ()
     for (const t of textTokens(library.api, 'QUICK BROWN FOX')) front.push(t);
     front.end();
 
-    const ref = dropArtifacts(runOp(library.registry.get('Rasterize')!(), beziers));
-    const neu = runOp(library.registry.get('RasterizeParallel')!(), beziers);
+    const ref = dropArtifacts(rt.run(library.api.Rasterize(), beziers));
+    const neu = rt.run(library.api.RasterizeParallel(), beziers);
     expect(neu.length).toBe(ref.length);
     let maxDiff = 0;
     for (let i = 0; i < ref.length; i++) {
@@ -108,7 +100,7 @@ describe('the rasterizer in access-patterns Nile (nl/rasterize-parallel.nl)', ()
       '        >> (k, S)',
     ].join('\n');
     const p = compileLibrary([src]);
-    const s = runOp(p.registry.get('RunningV')!(), [[1, 10], [1, 20], [1, 5], [2, 7], [2, 1]]);
+    const s = rt.run(p.api.RunningV(), [[1, 10], [1, 20], [1, 5], [2, 7], [2, 1]]);
     // Exclusive: first of each group sees the identity.
     expect(s).toEqual([[1, 0], [1, 10], [1, 30], [2, 0], [2, 7]]);
   });
@@ -122,9 +114,9 @@ describe('the rasterizer in access-patterns Nile (nl/rasterize-parallel.nl)', ()
       '        >> p × 100',
     ].join('\n');
     const p = compileLibrary([src]);
-    expect(runOp(p.registry.get('Diffs')!(), [[3], [5], [4]])).toEqual([[2], [-1], [400]]);
-    expect(runOp(p.registry.get('Diffs')!(), [[9]])).toEqual([[900]]);
-    expect(runOp(p.registry.get('Diffs')!(), [])).toEqual([]);
+    expect(rt.run(p.api.Diffs(), [[3], [5], [4]])).toEqual([[2], [-1], [400]]);
+    expect(rt.run(p.api.Diffs(), [[9]])).toEqual([[900]]);
+    expect(rt.run(p.api.Diffs(), [])).toEqual([]);
   });
 
   it('rejects an order-sensitive kernel after a plain GroupBy', () => {
@@ -146,7 +138,7 @@ describe('the rasterizer in access-patterns Nile (nl/rasterize-parallel.nl)', ()
     ];
     const p = compileLibrary(src);
     expect(p.unsupported).toEqual([]);
-    expect(p.registry.has('Ok')).toBe(true);
+    expect(('Ok' in p.api)).toBe(true);
   });
 
   it('rejects a non-commutative reduce on unordered groups', () => {

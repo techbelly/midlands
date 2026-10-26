@@ -24,9 +24,8 @@ describe.each([
   if (opts.fuse) it('fuses', () => expect(library.source).toContain('// segment:'));
   for (const c of oracle.cases) {
     it(`${c.process}: ${c.what}`, () => {
-      const factory = library.registry.get(c.process);
-      expect(factory, `umgeni has '${c.process}'`).toBeDefined();
-      expect(run(factory!(c.params), c.input.map((t) => [...t]))).toEqual(c.output);
+      expect(c.process in library.api, `umgeni has '${c.process}'`).toBe(true);
+      expect(run(library.api[c.process](c.params), c.input.map((t) => [...t]))).toEqual(c.output);
     });
   }
 });

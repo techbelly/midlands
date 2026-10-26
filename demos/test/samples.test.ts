@@ -28,7 +28,7 @@ const coverageAt = (spans: number[][], x: number, y: number): number => {
 describe('the even-odd rule (nl/evenodd.nl)', () => {
   it('compiles, and lowers nothing unsupported', () => {
     expect(library.unsupported).toEqual([]);
-    expect(library.registry.has('RasterizeEvenOdd')).toBe(true);
+    expect(('RasterizeEvenOdd' in library.api)).toBe(true);
   });
   it('leaves a doubly-wound region empty where non-zero winding fills it', () => {
     const twice = [...square(2, 2, 12, 12), ...square(4, 4, 10, 10)]; // same direction: winding 2 inside
@@ -63,7 +63,7 @@ const I = [1, 0, 0, 1, 0, 0];
 describe('dashes (nl/dash.nl)', () => {
   it('compiles: DashBeziers and the capped stroker', () => {
     expect(library.unsupported).toEqual([]);
-    for (const n of ['DashBeziers', 'StrokePieces', 'DashedStroke']) expect(library.registry.has(n), n).toBe(true);
+    for (const n of ['DashBeziers', 'StrokePieces', 'DashedStroke']) expect((n in library.api), n).toBe(true);
   });
   it('cuts a line into dashes of the pattern, carrying the phase across beziers', () => {
     // 100 long, on 20 off 10: dashes at 0–20, 30–50, 60–80, 90–100.

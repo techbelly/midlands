@@ -18,7 +18,7 @@ describe('the tiger demo, headless', () => {
   it('compiles the gezira kernels with nothing unsupported', () => {
     expect(library.unsupported).toEqual([]);
     for (const name of ['FillPath', 'StrokeOutline', 'FillBeziers']) {
-      expect(library.registry.has(name), name).toBe(true);
+      expect((name in library.api), name).toBe(true);
     }
   });
 

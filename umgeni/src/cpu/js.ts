@@ -3,7 +3,7 @@
 // The output is a single arrow function `(rt) => { ... return R; }` mapping
 // process names to factories. A factory takes the flattened parameter vector
 // and returns a runtime Op. The generated source is a first-class artifact:
-// compileProgram exposes it for inspection alongside the executable form.
+// compileLibrary exposes it for inspection alongside the executable form.
 
 import { anyStmt, inputWidthOf, type FusedIR, type FusedSegment, type FusedStage, type KernelIR, type ModuleIR, type PipelineIR, type ScalarExpr, type Stmt } from '../ir.js';
 import { opCount } from '../passes/cse.js';
@@ -17,7 +17,7 @@ export interface CodegenOptions {
   // materialize 1/0.
   boolCond?: boolean;
   // Instrument the module with a dynamic IR-operation counter, exposed as
-  // R.__ops(). Counts bin/un/select nodes per executed statement (ternary
+  // rt.opsCounter(R). Counts bin/un/select nodes per executed statement (ternary
   // short-circuiting is not modelled: both arms count).
   countOps?: boolean;
   // Compile fused kernel segments to WebAssembly instead of JS (wasm.ts).
@@ -302,7 +302,7 @@ export function generate(mod: ModuleIR, opts: CodegenOptions = {}): string {
     `rt.nameParams(R, ${JSON.stringify(mod.signatures)});`,
     // …and the token layouts of the program's named types (rt.tokenType).
     `rt.describeTypes(R, ${JSON.stringify(mod.types)});`,
-    ...(opts.countOps ? [`R.__ops = () => OPS;`] : []),
+    ...(opts.countOps ? [`rt.describeOps(R, () => OPS);`] : []),
     `return R;`,
     `}`,
   ].join('\n');

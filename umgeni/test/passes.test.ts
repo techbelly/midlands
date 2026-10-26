@@ -40,7 +40,7 @@ describe('CSE pass', () => {
     expect(cse.source).toContain('__cse'); // a shared let was introduced
     expect(staticOps(cse, 'K')).toBeLessThan(staticOps(plain, 'K'));
     for (const v of [0, 8, 9.5, 12, 20]) {
-      expect(run(cse.registry.get('K')!(), [[v]])).toEqual(run(plain.registry.get('K')!(), [[v]]));
+      expect(run(cse.api.K(), [[v]])).toEqual(run(plain.api.K(), [[v]]));
     }
   });
 
@@ -67,8 +67,8 @@ describe('CSE pass', () => {
     const tokens = Array.from({ length: 10 }, (_, i) => [
       (i * 37) % 11, (i * 53) % 7, (i * 29) % 13, (i * 41) % 5, (i * 61) % 9, (i * 17) % 8,
     ]);
-    expect(run(opt.registry.get('Rasterize')!(), tokens))
-      .toEqual(run(plain.registry.get('Rasterize')!(), tokens));
+    expect(run(opt.api.Rasterize(), tokens))
+      .toEqual(run(plain.api.Rasterize(), tokens));
   });
 });
 
@@ -80,7 +80,7 @@ describe('sort fusion', () => {
     if (!r || r.k !== 'fused') throw new Error('Rasterize should be fused');
     expect(r.segments.filter((s) => s.k === 'sortBy')).toEqual([{ k: 'sortBy', keyIndexes: [1, 0] }]);
     const path = [[0.2, 0.3, 5.1, 3.7, 9.8, 1.1], [9.8, 1.1, 4.4, 8.9, 0.2, 0.3]];
-    expect(run(fused.registry.get('Rasterize')!(), path)).toEqual(run(plain.registry.get('Rasterize')!(), path));
+    expect(run(fused.api.Rasterize(), path)).toEqual(run(plain.api.Rasterize(), path));
   });
 });
 
@@ -102,9 +102,9 @@ describe('tail pass', () => {
     const on = compileLibrary([gezira('types.nl'), gezira('rasterize.nl')]);
     const off = compileLibrary([gezira('types.nl'), gezira('rasterize.nl')], { tail: false });
     expect([...allStmts(kernel(on, 'RectangleSpans').init)].some((s) => s.k === 'feed' && s.tail)).toBe(false);
-    const spans = (lib: typeof on) => run(lib.registry.get('RectangleSpans')!([1.5, 2.5, 4.5, 5.5]), []);
+    const spans = (lib: typeof on) => run(lib.api.RectangleSpans([1.5, 2.5, 4.5, 5.5]), []);
     expect(spans(on)).toEqual(spans(off));
     const path = [[0.2, 0.3, 5.1, 3.7, 9.8, 1.1], [9.8, 1.1, 4.4, 8.9, 0.2, 0.3]];
-    expect(run(on.registry.get('Rasterize')!(), path)).toEqual(run(off.registry.get('Rasterize')!(), path));
+    expect(run(on.api.Rasterize(), path)).toEqual(run(off.api.Rasterize(), path));
   });
 });

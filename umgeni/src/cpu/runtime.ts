@@ -9,6 +9,8 @@
 // depth-first as iteration, not JS recursion). This module supplies the
 // builtin stages, composition, and the boundary to the host.
 
+import type { TokenLayout } from '../ir.js';
+
 export type Token = number[];
 export type Emit = (t: Token) => void;
 
@@ -18,6 +20,10 @@ export type Emit = (t: Token) => void;
 export type Params = number[] | { [name: string]: number | readonly NestedNumbers[] };
 type NestedNumbers = number | readonly NestedNumbers[];
 export type Feed = (t: Token) => void;
+
+// What generated code registers under a process's name: its Op, over its
+// flattened parameters (or named ones, after nameParams).
+export type Factory = (P?: Params) => Op;
 
 export interface Op {
   push(t: Token): void;
@@ -73,9 +79,9 @@ function flattenNamed(what: string, fields: { name: string; width: number }[], n
 // for it, and the host fills the place with a factory taking the flattened
 // parameters (or, through the api, by name).
 export const HOSTS = Symbol.for('midlands.nile.hosts');
-type Slot = { factory: ((P?: Params) => Op) | null };
+type Slot = { factory: Factory | null };
 
-export function hostProcess(R: object, name: string): (P?: Params) => Op {
+export function hostProcess(R: object, name: string): Factory {
   const hosts = ((R as { [HOSTS]?: Map<string, Slot> })[HOSTS] ??= new Map());
   const slot: Slot = { factory: null };
   hosts.set(name, slot);
@@ -93,17 +99,20 @@ export function provide(R: object, name: string, factory: (P: number[]) => Op): 
 
 // --- tokens by field name ----------------------------------------------------
 
-export interface TokenLayout {
-  width: number;
-  fields: Record<string, { at: number; width: number }>;
-}
-
 // Where a registry keeps its library's token layouts (set by generated code).
 export const TYPES = Symbol.for('midlands.nile.types');
 
 export function describeTypes(R: object, types: Record<string, TokenLayout>): void {
   Object.defineProperty(R, TYPES, { value: types });
 }
+
+// Where a registry compiled with countOps keeps its counter of executed IR
+// operations (set by generated code, read by benchmarks).
+export const OPS = Symbol.for('midlands.nile.ops');
+export function describeOps(R: object, count: () => number): void {
+  Object.defineProperty(R, OPS, { value: count });
+}
+export const opsCounter = (R: object): (() => number) | undefined => (R as { [OPS]?: () => number })[OPS];
 
 // A named record type, for reading and building its tokens by field name.
 // Look offsets up once (at) and index tokens with them in hot loops; get and
@@ -164,20 +173,12 @@ export type Api = { readonly [process: string]: ProcessFn } & {
   readonly provide: (name: string, factory: (P: number[]) => Op) => void;
 };
 
-export function api(registry: Map<string, (P?: Params) => Op> | Record<string, (P?: Params) => Op>): Api {
-  const entries = registry instanceof Map ? [...registry] : Object.entries(registry);
+export function api(registry: Record<string, Factory>): Api {
   const out: Record<string, unknown> = {};
-  for (const [name, factory] of entries) {
+  for (const [name, factory] of Object.entries(registry)) {
     out[name] = (P?: Params) => {
       const op = factory(P) as RunnableOp;
-      op.run = (tokens) => {
-        const emitted: Token[] = [];
-        op.setEmit((t) => emitted.push(t));
-        if (op.pushAll) op.pushAll(tokens);
-        else for (const t of tokens) op.push(t);
-        op.end();
-        return emitted;
-      };
+      op.run = (tokens) => run(op, tokens);
       return op;
     };
   }
@@ -511,11 +512,12 @@ export function streamer(op: Op): Streamer {
   };
 }
 
-// Convenience: run a batch of tokens through an op and collect all output.
+// Run a batch of tokens through an op and collect all its output.
 export function run(op: Op, tokens: Token[]): Token[] {
   const out: Token[] = [];
   op.setEmit((t) => out.push(t));
-  for (const t of tokens) op.push(t);
+  if (op.pushAll) op.pushAll(tokens);
+  else for (const t of tokens) op.push(t);
   op.end();
   return out;
 }

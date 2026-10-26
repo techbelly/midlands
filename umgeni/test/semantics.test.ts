@@ -47,7 +47,7 @@ describe('mid-stream ⇒: interpreter ≡ compiler ≡ the 2012 runtime', () => 
     it(process, () => {
       for (const c of oracle.cases.filter((x) => x.process === process)) {
         const got = run(build[process](c.params), c.input.map((t) => [...t]));
-        const want = run(compiled.registry.get(process)!(c.params), c.input.map((t) => [...t]));
+        const want = run(compiled.api[process](c.params), c.input.map((t) => [...t]));
         expect(got.length).toBe(c.output.length);
         got.forEach((t, i) => t.forEach((x, j) => {
           expect(Math.abs(x - c.output[i][j])).toBeLessThan(1e-6); // the 2012 runtime

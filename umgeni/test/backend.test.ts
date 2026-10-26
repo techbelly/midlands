@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { gezira } from './sources.js';
 import { compileLibrary, makeStreamer } from '../src/compile.js';
-import { tokenType } from '../src/cpu/runtime.js';
 
 
 describe('generated kernels', () => {
@@ -91,7 +90,7 @@ describe('generated kernels', () => {
   it('compiles all of stroke.nl: mid-stream ⇒, generators, DupCat, Reverse', () => {
     const library = compileLibrary([gezira('types.nl'), gezira('bezier.nl'), gezira('stroke.nl')]);
     expect(library.unsupported).toEqual([]);
-    expect(library.registry.has('StrokeBezierPath')).toBe(true); // checked vs the original in stroke-oracle.test.ts
+    expect(('StrokeBezierPath' in library.api)).toBe(true); // checked vs the original in stroke-oracle.test.ts
   });
 
   it('reports unsupported constructs honestly instead of miscompiling', () => {
@@ -101,7 +100,7 @@ describe('generated kernels', () => {
     const library = compileLibrary([gezira('types.nl'), gezira('texture.nl'), scanWindow]);
     expect(library.unsupported.map((u) => u.name)).toEqual(['Pick']);
     // Everything else in the same library still compiles.
-    expect(library.registry.has('RepeatTexture')).toBe(true);
+    expect(('RepeatTexture' in library.api)).toBe(true);
     expect(library.templates).toContain('CompositeTextures'); // process-typed: instantiated at use
   });
 });
@@ -185,8 +184,8 @@ describe('token types', () => {
     expect(library.ir.types.Bezier.fields['C.y']).toEqual({ at: 5, width: 1 });
   });
 
-  it('reads and builds tokens by field name, from the registry', () => {
-    const Bezier = tokenType(library.registry, 'Bezier');
+  it('reads and builds tokens by field name, from the api', () => {
+    const Bezier = library.api.types.Bezier;
     const t = Bezier.make({ A: [1, 2], B: [3, 4], C: [5, 6] });
     expect(t).toEqual([1, 2, 3, 4, 5, 6]);
     expect(Bezier.get(t, 'B')).toEqual([3, 4]);
@@ -195,10 +194,10 @@ describe('token types', () => {
   });
 
   it('names what is wrong', () => {
-    const Bezier = tokenType(library.registry, 'Bezier');
+    const Bezier = library.api.types.Bezier;
     expect(() => Bezier.at('D')).toThrow("'D' is not a field of Bezier");
     expect(() => Bezier.make({ A: [1, 2], B: [3, 4] })).toThrow("missing 'C': Bezier has A (2), B (2), C (2)");
-    expect(() => tokenType(library.registry, 'Beziers')).toThrow("no record type named 'Beziers'");
+    expect(library.api.types.Beziers).toBeUndefined();
   });
 });
 

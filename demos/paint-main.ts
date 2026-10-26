@@ -56,7 +56,7 @@ function compile(): boolean {
     const ms = performance.now() - t0;
     // The library compiles completely, so anything unsupported is from the
     // editor (or depends on something there that is).
-    if (p.unsupported.length > 0 || !p.registry.has('PaintBeziers')) {
+    if (p.unsupported.length > 0 || !('PaintBeziers' in p.api)) {
       const why = p.unsupported.map((u) => `${u.name}: ${u.reason}`).join('\n');
       statusEl.textContent = why || 'Define `Paint : Point >> Color`.';
       statusEl.className = 'err';

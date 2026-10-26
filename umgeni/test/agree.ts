@@ -20,8 +20,8 @@ export function agree(sources: string[]) {
   it('covers the kernels', () => expect(kernels.size).toBeGreaterThan(3));
   for (const [name, ctx] of kernels) {
     it(name, () => {
-      const factory = compiled.registry.get(name);
-      if (!factory) return; // not compiled (e.g. part of a family)
+      if (!(name in compiled.api)) return; // not compiled (e.g. part of a family)
+      const factory = compiled.api[name];
       const pw = ctx.params.reduce((n, g) => n + g.names.length * shapeWidth(g.shape), 0);
       const iw = shapeWidth(ctx.sig.input);
       for (let trial = 0; trial < 12; trial++) {
