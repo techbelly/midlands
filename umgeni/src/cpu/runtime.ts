@@ -365,13 +365,18 @@ export function dupZip(a: Op, b: Op): Op {
   };
 }
 
-// A pipeline compiled to WebAssembly (wasm.ts). Each op borrows an instance
-// of the module (its own memory and state) from a pool and returns it at
-// end(), so a run allocates nothing; init() resets it. push() calls straight
-// into the first stage with the token's values, and whatever reached the
-// output buffer is emitted when the call returns (or mid-call, if the buffer
-// fills: the module calls drain).
+// A pipeline's module, compiled once per library (wasm.ts emits the bytes).
 export const wasmModule = (bytes: number[]): WebAssembly.Module => new WebAssembly.Module(Uint8Array.from(bytes));
+
+// Where a wasm pipeline's output and batch-input buffers sit in its memory,
+// and how wide their tokens are: what the host must know to drive it.
+export interface WasmLayout {
+  outBase: number;
+  outWidth: number;
+  inBase: number;
+  inWidth: number;
+  inTokens: number;
+}
 
 interface WasmExports {
   memory: WebAssembly.Memory;
@@ -401,7 +406,13 @@ function tokenReader(width: number): Reader {
   return r;
 }
 
-export function wasmPipeline(module: WebAssembly.Module, layout: { outBase: number; outWidth: number; inBase: number; inWidth: number; inTokens: number }, params: number[]): Op {
+// A pipeline compiled to WebAssembly (wasm.ts). Each op borrows an instance
+// of the module (its own memory and state) from a pool and returns it at
+// end(), so a run allocates nothing; init() resets it. push() calls straight
+// into the first stage with the token's values, and whatever reached the
+// output buffer is emitted when the call returns (or mid-call, if the buffer
+// fills: the module calls drain).
+export function wasmPipeline(module: WebAssembly.Module, layout: WasmLayout, params: number[]): Op {
   const { outBase, outWidth, inBase, inWidth, inTokens } = layout;
   let emit: Emit = () => {};
   const pool = pools.get(module) ?? [];

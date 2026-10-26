@@ -57,7 +57,7 @@ export function compileLibrary(sources: string[], opts: CompileOptions = {}): Co
   if (opts.fuse ?? true) ir = fuseModule(ir);
   if (opts.cse ?? true) ir = cseModule(ir);
   if (opts.tail ?? true) ir = tailModule(ir);
-  const source = generate(ir, { boolCond: opts.boolCond ?? true, countOps: opts.countOps, target: opts.target });
+  const source = generate(ir, { ...opts, boolCond: opts.boolCond ?? true });
   // The generated record: each process's factory by name, and under symbols
   // its token layouts, host-process slots and (with countOps) its counter.
   // eslint-disable-next-line @typescript-eslint/no-implied-eval

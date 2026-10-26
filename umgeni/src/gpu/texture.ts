@@ -12,7 +12,7 @@
 
 import type { FusedSegment, KernelIR, ModuleIR, ProcessIR, StageIR } from '../ir.js';
 import { isMapKernel } from './classify.js';
-import { wgslBody, wgslExpr, type WgslEnv } from './wgsl.js';
+import { paramsOnly, wgslBody, wgslExpr, type WgslEnv } from './wgsl.js';
 
 export type LoweredTexture = { ok: true; wgsl: string } | { ok: false; reason: string };
 
@@ -99,15 +99,5 @@ export function lowerTexture(mod: ModuleIR, name: string): LoweredTexture {
   }
 }
 
-const paramEnv = (params: string[]): WgslEnv => ({
-  param: (i) => params[i],
-  state: () => {
-    throw new NotMap('pipeline state');
-  },
-  input: () => {
-    throw new NotMap('pipeline input');
-  },
-  emit: () => '',
-  feed: () => '',
-});
+const paramEnv = (params: string[]): WgslEnv => paramsOnly((i) => params[i], (what) => { throw new NotMap(`pipeline ${what}`); });
 

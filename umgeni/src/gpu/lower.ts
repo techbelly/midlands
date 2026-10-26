@@ -34,7 +34,7 @@
 
 import { allStmts, anyStmt, inputWidthOf, type FusedIR, type FusedStage, type KernelIR } from '../ir.js';
 import { stageShape } from '../passes/tail.js';
-import { wgslBody, wgslExpr, WORKGROUP_SIZE, type WgslEnv } from './wgsl.js';
+import { paramsOnly, wgslBody, wgslExpr, WORKGROUP_SIZE, type WgslEnv } from './wgsl.js';
 
 export class LowerError extends Error {}
 
@@ -221,7 +221,7 @@ const loopFn = (j: number, params: string, before: string[], top: string[], afte
 // `key`: the input slot carrying the grid's major key (segments passes),
 // checked by admit and followed through the stages.
 function genStages(stages: FusedStage[], width: number, o: PassOptions, majorKey: number | null): Stages {
-  const P: WgslEnv = { param: (i) => `P[${i}u]`, state: () => fail('state'), input: () => fail('input'), emit: () => '', feed: () => '' };
+  const P = paramsOnly((i) => `P[${i}u]`, fail);
   const out: Stages = { decls: [], fns: [], init: [], flush: [], feeds: false };
   const call = (j: number, vals: string[]) => `st${j}(${vals.join(', ')});`;
   if (stages.length === 0) {

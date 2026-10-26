@@ -63,12 +63,14 @@ ${paint ?? ''}
 `;
 
 // The plans' grid is the frame: extent [height, width], their sink COV.
+const isPlan = (p: Plan | Record<string, Plan>): p is Plan => Array.isArray((p as Plan).passes);
+
 export function createPresenter(
   device: GPUDevice,
   plan: Plan | Record<string, Plan>,
   opts: { format: GPUTextureFormat; disableBands?: boolean; paint?: string },
 ): Presenter {
-  const plans: Record<string, Plan> = Array.isArray((plan as Plan).passes) ? { [(plan as Plan).name]: plan as Plan } : (plan as Record<string, Plan>);
+  const plans: Record<string, Plan> = isPlan(plan) ? { [plan.name]: plan } : plan;
   const names = Object.keys(plans);
   if (names.length === 0) throw new Error('a presenter needs at least one plan');
   const first = plans[names[0]];

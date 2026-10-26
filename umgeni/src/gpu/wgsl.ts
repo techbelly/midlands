@@ -29,8 +29,9 @@ function mangle(name: string): string {
 }
 
 // How slot references and emit/feed render inside a shader — the WGSL
-// mirror of the JS codegen's GenEnv. Scaffolds (map dispatch, worklist
-// loops) plug kernel bodies into their own plumbing through this.
+// mirror of the JS codegen's GenEnv. Scaffolds (texture paint functions,
+// the lowering's stage functions) plug kernel bodies into their own plumbing
+// through this.
 export interface WgslEnv {
   param(i: number): string;
   state(i: number): string;
@@ -67,6 +68,11 @@ export const wgslExpr = (e: ScalarExpr, c: WgslEnv): string => expr(e, c);
 
 // Generate a kernel body as WGSL statements against an environment. This is
 // the exported seam: scaffolds wrap it in their own dispatch/worklist code.
+// An environment for an expression over parameters alone (a stage argument,
+// a state initializer): anything else is the caller's error to name.
+export const paramsOnly = (param: (i: number) => string, fail: (what: string) => never): WgslEnv =>
+  ({ param, state: () => fail('state'), input: () => fail('input'), emit: () => '', feed: () => '' });
+
 export function wgslBody(list: Stmt[], indent: string, c: WgslEnv, mutable = assignedNames(list)): string {
   const lines: string[] = [];
   const name = (n: string) => (c.local ? c.local(n) : mangle(n));

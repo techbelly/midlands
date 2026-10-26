@@ -32,6 +32,7 @@
 import { type FusedSegment, type FusedStage, type ScalarExpr, type Stmt } from '../ir.js';
 import { BIN, UN } from '../scalar.js';
 import { stageShape, type StageShape } from '../passes/tail.js';
+import type { WasmLayout } from './runtime.js';
 
 // --- a minimal binary encoder ---------------------------------------------------
 
@@ -143,11 +144,7 @@ export const inWasm = (s: FusedSegment): boolean =>
 
 export interface WasmPipeline {
   bytes: Uint8Array;
-  inputWidth: number;
-  outputWidth: number;
-  outBase: number;
-  inBase: number;
-  inTokens: number;
+  layout: WasmLayout; // what runtime.ts's wasmPipeline needs to drive it
 }
 
 // A run of kernels, and the barriers applied to its output before the next
@@ -657,5 +654,5 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
     ])),
     ...section(10, vec(funcBodies)),
   ];
-  return { bytes: new Uint8Array(bytes), inputWidth: w0, outputWidth: outWidth, outBase, inBase, inTokens: IN_TOKENS };
+  return { bytes: new Uint8Array(bytes), layout: { outBase, outWidth, inBase, inWidth: w0, inTokens: IN_TOKENS } };
 }

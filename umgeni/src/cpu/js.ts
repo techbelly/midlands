@@ -265,8 +265,7 @@ function genWasm(segments: FusedSegment[], inputWidth: number, paramWidth: numbe
   const name = `W${wasmModules.length}`;
   const names = segments.map((s) => (s.k === 'kernels' ? s.stages.map((st) => st.name).join(' → ') : s.k)).join(' → ');
   wasmModules.push(`const ${name} = rt.wasmModule([${w.bytes.join(',')}]); // ${names}`);
-  const layout = { outBase: w.outBase, outWidth: w.outputWidth, inBase: w.inBase, inWidth: w.inputWidth, inTokens: w.inTokens };
-  return `rt.wasmPipeline(${name}, ${JSON.stringify(layout)}, P)`;
+  return `rt.wasmPipeline(${name}, ${JSON.stringify(w.layout)}, P)`;
 }
 
 function genFused(p: FusedIR, o: CodegenOptions, wasmModules: string[]): string {
