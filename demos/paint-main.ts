@@ -13,25 +13,13 @@ import { fusedPipeline } from '../umgeni/src/ir.js';
 import { PAINT_GLUE, paintShapes } from './src/vector/paint.js';
 import { writePixels } from './src/vector/spans.js';
 import { PRESETS } from './paint-presets.js';
-import types from '../gezira/types.nl';
-import bezier from '../gezira/bezier.nl';
-import stroke from '../gezira/stroke.nl';
-import rasterize from '../gezira/rasterize.nl';
-import texture from '../gezira/texture.nl';
-import compositor from '../gezira/compositor.nl';
-import gradient from '../gezira/gradient.nl';
-import filter from '../gezira/filter.nl';
-import vector from '../roda/vector.nl';
-import spans from '../roda/spans.nl';
-import rasterizeParallel from '../roda/rasterize-parallel.nl';
 import { quoteNile } from './src/quote.js';
+import { sources } from './nl/paint.nl-lib';
 
 (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
-  [PAINT_GLUE, texture, rasterize],
+  [PAINT_GLUE, ...sources],
   ['PaintBeziers', 'Rasterize', 'ApplyTexture', 'ExpandSpans'],
 );
-
-const LIBRARY: string[] = [types, bezier, stroke, rasterize, texture, compositor, gradient, filter, vector, spans, rasterizeParallel];
 
 const editor = document.getElementById('src') as HTMLTextAreaElement;
 const presetEl = document.getElementById('preset') as HTMLSelectElement;
@@ -52,7 +40,7 @@ let compileStats = ''; // what it produced
 function compile(): boolean {
   const t0 = performance.now();
   try {
-    const p = compileLibrary([...LIBRARY, editor.value, PAINT_GLUE]);
+    const p = compileLibrary([...sources, editor.value, PAINT_GLUE]);
     const ms = performance.now() - t0;
     // The library compiles completely, so anything unsupported is from the
     // editor (or depends on something there that is).

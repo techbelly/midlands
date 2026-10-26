@@ -1,7 +1,7 @@
 // The paint page's host side, DOM-free (shared with the headless GPU check):
 // the sample shapes and their geometry through compiled Nile (pixels are
-// written by spans.ts writePixels). A paint library is gezira's library + nl/vector.nl +
-// nl/rasterize-parallel.nl + nl/spans.nl + the user's `Paint` + PAINT_GLUE.
+// written by spans.ts writePixels). A paint library is nl/paint.nl-lib + the
+// user's `Paint` + PAINT_GLUE.
 
 import { strokeOutline, type Api } from './draw.js';
 import { lineCubic } from '../samples/path.js';

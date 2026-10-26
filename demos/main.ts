@@ -25,16 +25,12 @@ import { createPresenter, type Presenter } from '../umgeni/src/gpu/present.js';
 import { lowerPipeline } from '../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../umgeni/src/gpu/execute.js';
 import { requestDevice } from '../umgeni/src/gpu/device.js';
-import { compileMs, nile, nileWasm, RasterizePixelsIR } from './nl/text.nl-lib';
+import { compileMs, nile, nileWasm, sources, RasterizePixelsIR } from './nl/text.nl-lib';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
-import textNl from '../roda/text.nl';
-import spansNl from '../roda/spans.nl';
-import rasterizeNl from '../gezira/rasterize.nl';
-import rasterizeParallelNl from '../roda/rasterize-parallel.nl';
 
 (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
-  [textNl, spansNl, rasterizeNl, rasterizeParallelNl],
+  sources,
   ['TextSpans', 'TextBeziers', 'PlaceBeziers', 'TextLayout', 'WordWidths', 'LayoutGlyphs', 'Rasterize', 'RasterizeParallel', 'RasterizePixels', 'PaintSpans'],
 );
 

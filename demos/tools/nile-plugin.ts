@@ -8,13 +8,15 @@
 //   nileWasm     the same, compiled to WebAssembly (pipelines in wasm, run by
 //                the same runtime)
 //   compileMs    how long the compile took (at build time)
+//   sources      the library's Nile source texts, in manifest order: what a
+//                page quotes, and what the paint page compiles with yours
 //   <Name>IR     each fused process's IR as plain data, for the browser's GPU
 //                lowering (e.g. RasterizeParallelIR)
 // Every export is side-effect free, so a page pays only for what it imports.
 
 import type { Plugin } from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { compileLibraryFile, librarySources } from '../src/sources.js';
+import { compileLibraryFile, librarySources, librarySourceTexts } from '../src/sources.js';
 
 export function nilePlugin(root: URL): Plugin {
   return {
@@ -34,6 +36,7 @@ export function nilePlugin(root: URL): Plugin {
           contents: [
             "import * as rt from './umgeni/src/cpu/runtime.js';",
             `export const compileMs = ${compileMs.toFixed(1)};`,
+            `export const sources = ${JSON.stringify(librarySourceTexts(manifest, root))};`,
             `export const nile = /* @__PURE__ */ rt.api(/* @__PURE__ */ (${library.source})(rt));`,
             `export const nileWasm = /* @__PURE__ */ rt.api(/* @__PURE__ */ (${wasm.source})(rt));`,
             ...fused.map((p) => `export const ${p.name}IR = ${JSON.stringify(p)};`),

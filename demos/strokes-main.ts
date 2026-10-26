@@ -4,15 +4,11 @@
 import { strokeOutline } from './src/vector/draw.js';
 import { hexRGB, paintSpans } from './src/vector/spans.js';
 import { lineCubic } from './src/samples/path.js';
-import { nile } from './nl/vector.nl-lib';
+import { nile, sources } from './nl/vector.nl-lib';
 import { quoteNile } from './src/quote.js';
-import vectorNl from '../roda/vector.nl';
-import spansNl from '../roda/spans.nl';
-import strokeNl from '../gezira/stroke.nl';
-import rasterizeNl from '../gezira/rasterize.nl';
 
 (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
-  [vectorNl, spansNl, strokeNl, rasterizeNl],
+  sources,
   ['StrokeOutline', 'StrokeBezierPath', 'FillBeziers', 'Rasterize', 'PaintSpans'],
 );
 

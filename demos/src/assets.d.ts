@@ -7,6 +7,7 @@ declare module '*.nl-lib' {
   export const nile: Api;
   export const nileWasm: Api; // the same library, its pipelines compiled to WebAssembly
   export const compileMs: number;
+  export const sources: string[]; // the library's Nile, in manifest order
   // One <Name>IR per fused process; only those the pages lower are declared.
   export const RasterizePixelsIR: FusedIR;
   export const RasterizePixelsEvenOddIR: FusedIR;

@@ -5,7 +5,7 @@
 // rasterized by RasterizePixels lowered from its IR, and the rest say why
 // they are drawn on the CPU.
 
-import { nile, RasterizePixelsIR, RasterizePixelsEvenOddIR } from './nl/samples.nl-lib';
+import { nile, sources, RasterizePixelsIR, RasterizePixelsEvenOddIR } from './nl/samples.nl-lib';
 import { parseTrueType } from './src/text/ttf.js';
 import { CpuOnly, CpuTarget, GpuTarget, Sheet } from './src/samples/draw.js';
 import { SCENES } from './src/samples/scenes.js';
@@ -20,24 +20,7 @@ import { blankImage } from './src/vector/spans.js';
 import tigerSvg from './tiger.svg';
 // Source Serif 4: SIL OFL 1.1 (fonts/OFL.txt). Cairo's samples ask for Sans.
 import sourceSerif from './fonts/SourceSerif4.ttf';
-import typesNl from '../gezira/types.nl';
-import bezierNl from '../gezira/bezier.nl';
-import strokeNl from '../gezira/stroke.nl';
-import rasterizeNl from '../gezira/rasterize.nl';
-import textureNl from '../gezira/texture.nl';
-import gradientNl from '../gezira/gradient.nl';
-import filterNl from '../gezira/filter.nl';
-import vectorNl from '../roda/vector.nl';
-import spansNl from '../roda/spans.nl';
-import rasterizeParallelNl from '../roda/rasterize-parallel.nl';
-import evenoddNl from '../roda/evenodd.nl';
-import dashNl from '../roda/dash.nl';
-import clipNl from '../roda/clip.nl';
-import imageNl from '../roda/image.nl';
-import samplesNl from './nl/samples.nl';
-import patchNl from '../roda/patch.nl';
 
-const SOURCES = [typesNl, bezierNl, strokeNl, rasterizeNl, textureNl, gradientNl, filterNl, vectorNl, spansNl, rasterizeParallelNl, evenoddNl, dashNl, clipNl, patchNl, imageNl, samplesNl];
 const SIZE = 256;
 const font = parseTrueType(sourceSerif);
 // The picture the image samples use, where Cairo's use a photograph: the
@@ -82,7 +65,7 @@ const cards: Card[] = SCENES.map((scene) => {
   const details = document.createElement('details');
   details.className = 'pipeline';
   details.innerHTML = `<summary>The Nile that draws it</summary><pre class="nile"></pre>`;
-  details.querySelector('pre')!.textContent = quoteNile(SOURCES, scene.nile);
+  details.querySelector('pre')!.textContent = quoteNile(sources, scene.nile);
   card.append(details);
   grid.append(card);
   return { cpu, gpu, where };

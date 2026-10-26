@@ -3,9 +3,9 @@
 // semantics staged, kernel by kernel, bit for bit.
 import { describe } from 'vitest';
 import { agree } from '../../umgeni/test/agree.js';
-import { librarySources, read } from '../src/sources.js';
+import { librarySourceTexts } from '../src/sources.js';
 
-describe('interpreter ≡ compiler, kernel by kernel: text + RasterizeParallel', () => agree(librarySources('demos/nl/text.nl-lib').map((p) => read(p))));
-const vector = librarySources('demos/nl/vector.nl-lib').map((p) => read(p));
-const paint = ['compositor', 'gradient', 'filter'].map((n) => read(`gezira/${n}.nl`));
-describe('interpreter ≡ compiler, kernel by kernel: vector (tiger, strokes, the Cairo samples) + paint', () => agree([...vector, ...paint]));
+describe('interpreter ≡ compiler, kernel by kernel: text + RasterizeParallel', () => agree(librarySourceTexts('demos/nl/text.nl-lib')));
+// The vector and paint libraries share most of gezira: each source once.
+const vectorAndPaint = [...new Set([...librarySourceTexts('demos/nl/vector.nl-lib'), ...librarySourceTexts('demos/nl/paint.nl-lib')])];
+describe('interpreter ≡ compiler, kernel by kernel: vector (tiger, strokes, the Cairo samples) + paint', () => agree(vectorAndPaint));

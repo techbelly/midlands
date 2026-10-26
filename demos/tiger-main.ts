@@ -9,19 +9,13 @@ import { createPresenter } from '../umgeni/src/gpu/present.js';
 import { lowerPipeline } from '../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../umgeni/src/gpu/execute.js';
 import { requestDevice } from '../umgeni/src/gpu/device.js';
-import { nile, nileWasm, RasterizePixelsIR } from './nl/vector.nl-lib';
+import { nile, nileWasm, sources, RasterizePixelsIR } from './nl/vector.nl-lib';
 import svgSrc from './tiger.svg';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
-import svgNl from './nl/svg.nl';
-import vectorNl from '../roda/vector.nl';
-import spansNl from '../roda/spans.nl';
-import strokeNl from '../gezira/stroke.nl';
-import bezierNl from '../gezira/bezier.nl';
-import rasterizeParallelNl from '../roda/rasterize-parallel.nl';
 
 (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
-  [svgNl, vectorNl, spansNl, strokeNl, bezierNl, rasterizeParallelNl],
+  sources,
   ['PathCubics', 'SvgFillBeziers', 'SvgStroke', 'StrokeOutline', 'StrokeBezierPath', 'ClipBeziers', 'RasterizeParallel', 'RasterizePixels', 'PaintSpans'],
 );
 
