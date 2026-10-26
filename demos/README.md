@@ -44,8 +44,7 @@ stats, any extra pipeline panels, and the long description, each in a
 one fixed order with the shared nav, styles and footer, so the pages read
 the same way and cannot drift: title, switcher, demo, the live performance
 line (`#perf`), how to use, the live counts (`#stats`) and the size line,
-the Nile pipeline (`#nile`), description. `samples.html` is a full page of
-its own and is copied as it is.
+the Nile pipeline (`#nile`), description.
 
 A page imports a Nile library as `import { nile } from './nl/vector.nl-lib'`.
 The `.nl-lib` file lists the `.nl` sources (gezira's, roda's, and the page's

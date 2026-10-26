@@ -27,7 +27,8 @@ const tiger = blankImage(SIZE, SIZE);
 drawTiger(tiger, parseSvg(tigerSvg, nile), fitView(SIZE, SIZE), nile);
 
 const modeEl = document.getElementById('mode') as HTMLSelectElement;
-const statsEl = document.getElementById('stats')!;
+const perfEl = document.getElementById('perf')!;
+(document.getElementById('nile') as HTMLElement).textContent = quoteNile(sources, ['FillWinding', 'FillEvenOdd', 'StrokeOutline', 'ClipPaint', 'Intersect', 'RasterizeParallel', 'PaintSpans']);
 const grid = document.getElementById('samples')!;
 
 // A card: the two canvases (one per kind of context; only one is shown), the
@@ -127,7 +128,7 @@ async function draw(): Promise<void> {
   });
   if (g) await g.device.queue.onSubmittedWorkDone();
   const ms = performance.now() - t0;
-  statsEl.textContent = g
+  perfEl.textContent = g
     ? `${SCENES.length} samples, ${onGpu} rasterized on the GPU and ${SCENES.length - onGpu} on the CPU, ${ms.toFixed(0)} ms in all.`
     : `${SCENES.length} samples, ${ms.toFixed(0)} ms in all, on the CPU (JavaScript compiled from Nile).`;
 }

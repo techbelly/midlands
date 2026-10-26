@@ -1,12 +1,11 @@
 // Builds the demos as a static site in demos/dist:
 //   1. bundle tools/nile-plugin.ts (node), which compiles *.nl-lib imports
 //   2. bundle each page's main (browser, iife) -> demos/dist/*-app.js
-//   3. render the pages in demos/pages/ through the shared shell (tools/shell.mjs),
-//      and copy any full page (samples.html) alongside
+//   3. render the pages in demos/pages/ through the shared shell (tools/shell.mjs)
 // Open demos/dist/index.html directly, or serve the folder (GitHub Pages).
 
 import { build } from 'esbuild';
-import { copyFileSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { renderPage } from './shell.mjs';
 import { dirname, join } from 'node:path';
 
@@ -65,5 +64,4 @@ await page('strokes-main.ts', 'strokes-app.js');
 await page('paint-main.ts', 'paint-app.js');
 await page('samples-main.ts', 'samples-app.js');
 for (const f of readdirSync(join(demos, 'pages'))) writeFileSync(join(dist, f), renderPage(f, readFileSync(join(demos, 'pages', f), 'utf8')));
-for (const f of readdirSync(demos)) if (f.endsWith('.html')) copyFileSync(join(demos, f), join(dist, f));
 console.log('demos/dist written — open index.html (text), tiger.html, strokes.html, paint.html, samples.html');
