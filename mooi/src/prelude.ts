@@ -13,7 +13,6 @@ export function prelude(fail: (msg: string) => never): Record<string, unknown> {
     not: (x: unknown) => !x,
     id: (x: unknown) => x,
     str: (x: unknown) => String(x),
-    with: (r: object, k: string, v: unknown) => ({ ...r, [k]: v }),
     map: (f: F, xs: unknown[]) => xs.map((x) => app(f, x)),
     mapi: (f: F, xs: unknown[]) => xs.map((x, i) => app(app(f, x), i)),
     each: (f: F, xs: unknown[]) => void xs.forEach((x) => app(f, x)),

@@ -5,10 +5,10 @@
 import type * as A from '../ast.js';
 import type { BinOpName, UnOpName } from '../ir.js';
 import { BIN, UN } from '../scalar.js';
-import { ElabError, fromExprs, patternNames, REAL, type Shape, type Value } from '../values.js';
+import { ElabError, REAL, type Shape, type Value } from '../values.js';
 import { load } from '../../../mooi/src/mooi.js';
 import { prelude } from '../../../mooi/src/prelude.js';
-import type { Cell, Domain, Program } from './domain.js';
+import type { Domain, Program } from './domain.js';
 import { nileSource, valuesSource } from './source.js';
 
 const SOURCE = `${valuesSource}\n${nileSource}`;
@@ -19,34 +19,23 @@ const fail = (msg: string): never => {
 };
 
 // Environments are persistent: binding makes a child (prototype chain), so
-// threading them through statements costs O(1) per binding. A name is bound
-// to a value, or (x') to the cells standing for it.
-type Binding<S> = Value<S> | { cells: Cell<S>[]; shape: Shape };
-type Env<S> = Record<string, Binding<S>>;
+// threading them through statements costs O(1) per binding. What a name is
+// bound to (a value, or the cells standing for x') is the equations' business.
+type Env<S> = Record<string, unknown>;
 const child = <S>(env: Env<S>): Env<S> => Object.create(env);
 const fromMap = <S>(m: Map<string, Value<S>>): Env<S> => Object.assign(Object.create(null), Object.fromEntries(m));
 
-// What Mooi cannot say itself: the domain, the program, environments.
+// What Mooi cannot say itself: the domain, the program, the builtin
+// operators, and environments.
 function host<S>(D: Domain<S>, P: Program): Record<string, unknown> {
   return {
     ...prelude(fail),
     D, P, R: REAL, empty: Object.create(null),
-    bind: (env: Env<S>, n: string, v: Value<S>) => Object.assign(child(env), { [n]: v }),
-    bindAll: (env: Env<S>, ns: string[], vs: Value<S>[]) => Object.assign(child(env), Object.fromEntries(ns.map((n, i) => [n, vs[i]]))),
-    bindCells: (env: Env<S>, n: string, cells: Cell<S>[], shape: Shape) => Object.assign(child(env), { [n]: { cells, shape } }),
+    bind: (env: Env<S>, n: string, v: unknown) => Object.assign(child(env), { [n]: v }),
+    bindAll: (env: Env<S>, ns: string[], vs: unknown[]) => Object.assign(child(env), Object.fromEntries(ns.map((n, i) => [n, vs[i]]))),
     bound: (env: Env<S>, n: string) => n in env,
-    cellsOf: (env: Env<S>, n: string) => {
-      const v = env[n];
-      return v && 'cells' in v ? v : null;
-    },
-    constCell: (x: S) => ({ get: () => x, set: () => {} }),
-    lookup: (env: Env<S>, n: string) => {
-      const v = (n in env ? env[n] : undefined) ?? fail(`unbound name '${n}'`);
-      return 'cells' in v ? fromExprs(v.shape, v.cells.map((c) => c.get())) : v;
-    },
+    get: (env: Env<S>, n: string) => (n in env ? env[n] : null),
     primed: (n: string) => n.endsWith("'"),
-    patternNames,
-    scalarOf: (v: Value<S>) => (v.k === 'scalar' ? v.expr : fail('an `if` statement condition must be scalar (use .x/.y to pick a component)')),
     builtin: (op: string) => BIN_OF.has(op) || UN_OF.has(op),
     prim: (op: string, xs: S[]) => (xs.length === 2 ? D.bin(BIN_OF.get(op)!, xs[0], xs[1]) : D.un(UN_OF.get(op)!, xs[0])),
   };

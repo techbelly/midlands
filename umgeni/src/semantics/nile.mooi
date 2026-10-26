@@ -4,9 +4,25 @@
 -- compiler's front end (its residue is the scalar IR). The primitives come
 -- from the host: D (the domain: num, bin, un, select, let, cell, branch,
 -- emit, feed, state, forward), P (the program: types, operators, process
--- parameters), prim (a builtin operator on scalars), the value algebra
--- (lift, fit, leaves, tree, tuple, part, destructure, shapeOf, width) and a
--- small prelude (lists, environments).
+-- parameters), prim (a builtin operator on scalars), environments (empty,
+-- bind, bindAll, bound, get) and a small prelude (lists). The value algebra
+-- (lift, fit, leaves, tree, tuple, part, destructure, shapeOf, width) is
+-- values.mooi, loaded with this file.
+
+-- Names are bound to values, or (x') to the cells standing for one, read
+-- afresh each time.
+lookup ρ n = current (must (get ρ n) ("unbound name '" ++ n ++ "'"))
+current b | b.cells != null = tree b.shape (map (\c -> c.get unit) b.cells)
+current b                   = b
+cellsOf ρ n = let b = get ρ n in if b != null && b.cells != null then b else null
+constCell x = {get: \_ -> x, set: \_ -> unit}
+
+scalarOf v | isScalar v = s v
+scalarOf v              = fail "an `if` statement condition must be scalar (use .x/.y to pick a component)"
+
+patternNames varPat{name}       = [name]
+patternNames tuplePat{elements} = concat (map patternNames elements)
+patternNames _                  = []
 
 -- Expressions denote values: trees with scalars at the leaves.
 expr num{value} ρ                 = scalar (D.num value)
@@ -68,7 +84,7 @@ kernel k params names sig =
   in { initial: concat (map (\l -> l.initial) layout)
      , init:    \_ -> execs sig (filter (\st -> not (isDecl st)) k.prologue) (phase params names layout)
      , step:    \input -> step k sig (phase params names layout) layout input
-     , flush:   \_ -> execs (with sig "flush" true) k.epilogue (phase params names layout) }
+     , flush:   \_ -> execs {...sig, flush: true} k.epilogue (phase params names layout) }
 
 -- Prologue declarations, in order: each a state variable with its slots.
 stateLayout k params names = scanState (bindAll empty names params) 0 (filter isDecl k.prologue)
@@ -93,7 +109,7 @@ step k sig ρ layout input =
       ρ1     = foldl (\ρ [n, v] -> bind ρ n v) ρ (destructure fa.pattern input),
       ps     = primedNames fa.body,
       backs  = filter (\b -> b != null) (map (writeBack ρ1 ps) layout),
-      ρ2     = foldl (\ρ b -> if b.fresh then bindCells ρ b.primed b.cells b.slot.shape else ρ) ρ1 backs
+      ρ2     = foldl (\ρ b -> if b.fresh then bind ρ b.primed {cells: b.cells, shape: b.slot.shape} else ρ) ρ1 backs
   in execs sig fa.body ρ2; each (\b -> eachi (\c i -> (D.state (b.slot.base + i)).set (c.get unit)) b.cells) backs
 
 writeBack ρ ps l | member (l.name ++ "'") ps =

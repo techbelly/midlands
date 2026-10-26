@@ -171,7 +171,3 @@ export function destructure<S>(p: A.Pattern, v: Value<S>, out: [string, Value<S>
   return out;
 }
 
-export function patternNames(p: A.Pattern): string[] {
-  return p.kind === 'varPat' ? [p.name] : p.kind === 'tuplePat' ? p.elements.flatMap(patternNames) : [];
-}
-
