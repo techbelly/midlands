@@ -72,8 +72,8 @@ Nile {
   Pipeline = NonemptyListOf<KI, "→">
   KI = GroupByStage
      | ReduceByStage
-     | ident "(" NonemptyListOf<KArg, ","> ")"  -- app
-     | "(" "→" ")"                              -- identity
+     | KIApp
+     | IdentityKI
      | ident                                    -- ref
   GroupByStage = groupByKw stableKw? "(" NonemptyListOf<KeyRef, ","> ")"
   ReduceByStage = reduceByKw "(" NonemptyListOf<KeyRef, ","> ";" NonemptyListOf<FieldReduce, ","> ")"

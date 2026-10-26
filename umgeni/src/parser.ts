@@ -15,33 +15,16 @@ export class ParseError extends Error {
 
 // --- pass 1: scan opDef headers to register prefix/outfix operators ---
 
-interface OpInfo {
-  fixity: 'infix' | 'prefix' | 'outfix';
-  op: string;
-  close: string | null;
-}
-
-const headerSemantics = coreGrammar.createSemantics().addOperation<OpInfo>('opInfo', {
-  OpDefHeader_infix(_o1, _n1, _c1, _t1, _p1, op, _o2, _n2, _c2, _t2, _p2, _c3, _rt) {
-    return { fixity: 'infix' as const, op: op.sourceString, close: null };
-  },
-  OpDefHeader_outfix(open, _o, _n, _c, _t, _p, close, _c2, _rt) {
-    return { fixity: 'outfix' as const, op: open.sourceString, close: close.sourceString };
-  },
-  OpDefHeader_prefix(op, _o, _n, _c, _t, _p, _c2, _rt) {
-    return { fixity: 'prefix' as const, op: op.sourceString, close: null };
-  },
-});
-
 export function scanOpDefs(source: string, table: OpTable): void {
   for (const line of source.split('\n')) {
     if (line === '' || /^\s/.test(line)) continue;
     const m = coreGrammar.match(line.trimEnd(), 'OpDefHeader');
     if (m.failed()) continue;
-    const info = headerSemantics(m).opInfo();
-    if (info.fixity === 'infix') table.infix.add(info.op);
-    else if (info.fixity === 'prefix') table.prefix.add(info.op);
-    else table.outfix.set(info.op, info.close!);
+    // The header's own AST action knows its shape; only the operator is wanted here.
+    const d = grammarForOps(emptyOpTable()).semantics(m).toAST() as Omit<ast.OpDef, 'body'>;
+    if (d.fixity === 'infix') table.infix.add(d.op);
+    else if (d.fixity === 'prefix') table.prefix.add(d.op);
+    else table.outfix.set(d.op, d.closeOp!);
   }
 }
 
@@ -287,12 +270,6 @@ const astActions: Record<string, (...children: N[]) => unknown> = {
   // --- pipelines ---
   Pipeline(elems) {
     return list(elems);
-  },
-  KI_app(name, _o, args, _c) {
-    return { kind: 'kernelApp', name: name.sourceString, args: list(args) };
-  },
-  KI_identity(_o, _a, _c) {
-    return { kind: 'identityPipeline' };
   },
   KI_ref(name) {
     return { kind: 'kernelRef', name: name.sourceString };
