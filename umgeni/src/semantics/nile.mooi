@@ -84,12 +84,12 @@ assignTo ρ n v = let c = must (cellsOf ρ n) ("'" ++ n ++ " =' must update a st
 
 -- A kernel, given its parameters bound (ρ0): state declared by its
 -- prologue, a step per token, a flush.
-kernel k ρ0 sig =
+kernel k ρ0 io =
   let layout = stateLayout k ρ0
   in { initial: concatMap (\l -> l.initial) layout
-     , init:    \_ -> execs sig (filter (\st -> not (isDecl st)) k.prologue) (phase ρ0 layout)
-     , step:    \input -> step k sig (phase ρ0 layout) layout input
-     , flush:   \_ -> execs {...sig, flush: true} k.epilogue (phase ρ0 layout) }
+     , init:    \_ -> execs io (filter (\st -> not (isDecl st)) k.prologue) (phase ρ0 layout)
+     , step:    \input -> step k io (phase ρ0 layout) layout input
+     , flush:   \_ -> execs {...io, flush: true} k.epilogue (phase ρ0 layout) }
 
 -- Prologue declarations, in order: each a state variable with its slots.
 stateLayout k ρ0 = scanState ρ0 0 (filter isDecl k.prologue)
@@ -109,14 +109,14 @@ phase ρ0 layout = foldl (\ρ l -> bind ρ l.name (tree l.shape (map (\i -> (D.s
 
 -- One token. Primed state: x' is a cell starting from the pattern's x' or
 -- from x, written back to x after the body.
-step k sig ρ layout input | length k.forAlls == 0 = if width sig.input == width sig.output then D.emit (leaves input) else unit
-step k sig ρ layout input =
+step k io ρ layout input | length k.forAlls == 0 = if width io.input == width io.output then D.emit (leaves input) else unit
+step k io ρ layout input =
   let fa     = head k.forAlls,
       ρ1     = bindPairs ρ (destructure fa.pattern input),
       ps     = primedNames fa.body,
       backs  = filter (\b -> b != null) (map (writeBack ρ1 ps) layout),
       ρ2     = foldl (\ρ b -> if b.fresh then bind ρ b.primed {cells: b.cells, shape: b.slot.shape} else ρ) ρ1 backs
-  in execs sig fa.body ρ2; each (\b -> eachi (\c i -> (D.state (b.slot.base + i)).set (c.get unit)) b.cells) backs
+  in execs io fa.body ρ2; each (\b -> eachi (\c i -> (D.state (b.slot.base + i)).set (c.get unit)) b.cells) backs
 
 writeBack ρ ps l = writeBackAs ρ ps l (l.name ++ "'")
 writeBackAs ρ ps l p | member p ps =

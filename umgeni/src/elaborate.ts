@@ -14,7 +14,7 @@ import { desugar, SugarError } from './semantics/sugar.js';
 import { elabPipelineStages, type PipelineProgram } from './semantics/pipelines.js';
 import { stageExpr, stageGenerator, stageKernel } from './semantics/staged.js';
 import type { KernelContext, Program } from './semantics/domain.js';
-import { ElabError, fieldInfo, fromSlots, paramEnv, paramWidth, REAL, realField, shapeWidth, tokenLayout, type ParamGroup, type Shape, type StreamSig } from './values.js';
+import { ElabError, fieldInfo, fromSlots, paramEnv, paramWidth, REAL, realField, shapeWidth, tokenLayout, type ParamGroup, type Shape, type Stream } from './values.js';
 import { opKey } from './ops.js';
 
 // A user operator: its parameters' shapes, its result's, and its body.
@@ -66,7 +66,7 @@ class Elaborator {
 
   private types = new Map<string, Shape>();
   private ops = new Map<string, OpEntry>();
-  private streams = new Map<string, StreamSig | null>(); // null: not a plain stream
+  private streams = new Map<string, Stream | null>(); // null: not a plain stream
   private kernels = new Map<string, A.Kernel>();
   private host: HostProcess[] = []; // declared by signature, supplied by the host
   private hostParams = new Map<string, ParamGroup[]>(); // their parameters, for the signatures
@@ -94,11 +94,11 @@ class Elaborator {
     const program = this.program;
     const kernels = new Map<string, KernelContext>();
     for (const [name, d] of this.kernels) {
-      const sig = this.streamSig(d.type);
+      const stream = this.streamOf(d.type);
       const { kind } = this.kindOf(d);
-      if (!sig || !(kind === 'kernel' || (all && (kind === 'family' || kind === 'generator')))) continue;
+      if (!stream || !(kind === 'kernel' || (all && (kind === 'family' || kind === 'generator')))) continue;
       try {
-        kernels.set(name, { kernel: desugar(d, this.fieldNames).kernel, params: this.paramGroups(d), sig });
+        kernels.set(name, { kernel: desugar(d, this.fieldNames).kernel, params: this.paramGroups(d), stream });
       } catch (e) {
         if (!isElabError(e)) throw e; // unsupported here: skipped
       }
@@ -116,9 +116,9 @@ class Elaborator {
     for (const d of decls) {
       if (d.kind === 'typeDef') continue;
       else if (d.kind === 'opDef') this.addOp(d);
-      else if (d.kind === 'processTypeDef') this.streams.set(d.name, this.streamSig(d.type));
+      else if (d.kind === 'processTypeDef') this.streams.set(d.name, this.streamOf(d.type));
       else if (d.kind === 'kernel') {
-        this.streams.set(d.name, this.streamSig(d.type));
+        this.streams.set(d.name, this.streamOf(d.type));
         this.kernels.set(d.name, d);
       }
     }
@@ -131,10 +131,10 @@ class Elaborator {
   private declareHostProcesses(decls: A.TopLevel[]): void {
     for (const d of decls) {
       if (d.kind !== 'processTypeDef' || !d.params) continue;
-      const sig = this.plainSig(d);
+      const stream = this.plainStream(d);
       const groups = d.params.map((g) => ({ names: g.names, shape: this.resolveType(g.type) }));
       this.hostParams.set(d.name, groups);
-      this.host.push({ name: d.name, paramWidth: paramWidth(groups), inputWidth: shapeWidth(sig.input), outputWidth: shapeWidth(sig.output) });
+      this.host.push({ name: d.name, paramWidth: paramWidth(groups), inputWidth: shapeWidth(stream.input), outputWidth: shapeWidth(stream.output) });
     }
   }
 
@@ -154,8 +154,8 @@ class Elaborator {
       try {
         processes.push(...(
           c.kind === 'family' ? this.elabFamily(d)
-          : c.kind === 'pipeline' ? [this.elabPipeline(d, c.body, this.plainSig(d))]
-          : [plainKernel(this.elabKernel(d, this.plainSig(d)))]));
+          : c.kind === 'pipeline' ? [this.elabPipeline(d, c.body, this.plainStream(d))]
+          : [plainKernel(this.elabKernel(d, this.plainStream(d)))]));
       } catch (e) {
         if (!isElabError(e)) throw e;
         unsupported.push({ name: d.name, reason: e.message });
@@ -203,20 +203,20 @@ class Elaborator {
     return shape.k === 'record' ? shape.fields.map((f) => f.name ?? '') : [];
   };
 
-  // The stream signature of a kernel/process type, or null when it is not a
+  // The stream types of a kernel/process type, or null when it is not a
   // plain stream (we don't elaborate those yet).
-  private streamSig(t: A.KernelType): StreamSig | null {
+  private streamOf(t: A.KernelType): Stream | null {
     if (t.kind === 'streamType') {
       return { input: this.resolveType(t.input), output: this.resolveType(t.output) };
     }
     return this.streams.get(t.name) ?? null;
   }
 
-  // The signature a process must have to be elaborated.
-  private plainSig(d: { name: string; type: A.KernelType }): StreamSig {
-    const sig = this.streamSig(d.type);
-    if (!sig) throw new ElabError(`'${d.name}' does not have a plain stream type`);
-    return sig;
+  // The stream types a process must have to be elaborated.
+  private plainStream(d: { name: string; type: A.KernelType }): Stream {
+    const stream = this.streamOf(d.type);
+    if (!stream) throw new ElabError(`'${d.name}' does not have a plain stream type`);
+    return stream;
   }
 
   // A process type names a process: the parameter that makes a template.
@@ -280,17 +280,17 @@ class Elaborator {
 
   // A kernel, staged: with ⇒ statements still in it if it has any (a
   // family's member); plainKernel checks there are none.
-  private elabKernel(source: A.Kernel, sig: StreamSig): StagedKernel {
+  private elabKernel(source: A.Kernel, stream: Stream): StagedKernel {
     // Scans and windows are sugar (sugar.ts); what they declared is kept as
     // `access` metadata for parallel backends.
     const { kernel: d, declared } = desugar(source, this.fieldNames);
-    const key = (name: string, what: string) => realField(sig.input, name, what);
+    const key = (name: string, what: string) => realField(stream.input, name, what);
     const access: KernelIR['access'] =
       declared.scan ? { scan: { ...declared.scan, key: key(declared.scan.key, 'scan key') } }
       : declared.window ? { window: { key: declared.window.key === null ? null : key(declared.window.key, 'window segment key') } }
       : undefined;
     // The kernel is the residue of staging its semantics (semantics/).
-    return stageKernel(this.program, { kernel: d, params: this.paramGroups(d), sig }, access);
+    return stageKernel(this.program, { kernel: d, params: this.paramGroups(d), stream }, access);
   }
 
   // --- substitution (`⇒` mid-stream; see substitute.ts) ---
@@ -315,13 +315,13 @@ class Elaborator {
   // A generator's body for the frame interpreter: params live in the frame
   // (input slots 1…), prologue declarations are plain locals.
   private elabGenerator(d: A.Kernel): Generator {
-    return stageGenerator(this.program, { kernel: d, params: this.paramGroups(d), sig: this.plainSig(d) });
+    return stageGenerator(this.program, { kernel: d, params: this.paramGroups(d), stream: this.plainStream(d) });
   }
 
   // Everything `d` can substitute into, transitively: stream processes it may
   // become (members) and generators it may invoke.
   private elabFamily(d: A.Kernel): (KernelIR | PipelineIR)[] {
-    const sig = this.plainSig(d);
+    const stream = this.plainStream(d);
     const members: StagedKernel[] = [];
     const generators: Generator[] = [];
     const seen = new Set<string>();
@@ -329,14 +329,14 @@ class Elaborator {
       if (seen.has(name)) return;
       seen.add(name);
       const k = this.kernels.get(name)!;
-      const ksig = this.streamSig(k.type);
-      if (!ksig || shapeWidth(ksig.input) !== shapeWidth(sig.input) || shapeWidth(ksig.output) !== shapeWidth(sig.output)) {
+      const kstream = this.streamOf(k.type);
+      if (!kstream || shapeWidth(kstream.input) !== shapeWidth(stream.input) || shapeWidth(kstream.output) !== shapeWidth(stream.output)) {
         throw new ElabError(`'${name}' cannot stand in for '${d.name}': stream types differ`);
       }
       if (this.generators.has(name)) {
         generators.push(this.elabGenerator(k));
       } else {
-        members.push(this.elabKernel(k, ksig));
+        members.push(this.elabKernel(k, kstream));
       }
       for (const t of forwardTargets(kernelStmts(k))) visit(t);
     };
@@ -344,17 +344,17 @@ class Elaborator {
     return assembleFamily({
       root: d.name,
       paramWidth: paramWidth(this.paramGroups(d)),
-      inputWidth: shapeWidth(sig.input),
-      outputWidth: shapeWidth(sig.output),
+      inputWidth: shapeWidth(stream.input),
+      outputWidth: shapeWidth(stream.output),
       members, generators,
     });
   }
 
   // --- pipelines ---
 
-  private elabPipeline(d: A.Kernel, elems: A.PipelineElem[], sig: StreamSig): PipelineIR {
+  private elabPipeline(d: A.Kernel, elems: A.PipelineElem[], stream: Stream): PipelineIR {
     const params = paramEnv(this.paramGroups(d), (shape, at) => fromSlots(shape, 'param', at));
-    const { stages } = elabPipelineStages(this.pipelineProgram, d.name, elems, params.env, new Map(), sig.input);
+    const { stages } = elabPipelineStages(this.pipelineProgram, d.name, elems, params.env, new Map(), stream.input);
     return { k: 'pipeline', name: d.name, paramWidth: params.width, stages };
   }
 

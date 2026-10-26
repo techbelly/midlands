@@ -58,16 +58,16 @@ function irDomain() {
   return { D, record };
 }
 
-export function stageKernel(P: Program, { kernel: k, params, sig }: KernelContext, access: KernelIR['access']): StagedKernel {
+export function stageKernel(P: Program, { kernel: k, params, stream }: KernelContext, access: KernelIR['access']): StagedKernel {
   const { D, record } = irDomain();
   const p = paramEnv(params, (shape, at) => fromSlots(shape, 'param', at));
-  const sem = new Semantics(P, D).kernel(k, p.env, sig);
+  const sem = new Semantics(P, D).kernel(k, p.env, stream);
   return {
     k: 'kernel', name: k.name, paramWidth: p.width,
-    inputWidth: shapeWidth(sig.input), outputWidth: shapeWidth(sig.output),
+    inputWidth: shapeWidth(stream.input), outputWidth: shapeWidth(stream.output),
     stateInit: sem.initial,
     init: record(sem.init),
-    body: record(() => sem.step(fromSlots(sig.input, 'input', 0))),
+    body: record(() => sem.step(fromSlots(stream.input, 'input', 0))),
     epilogue: record(sem.flush),
     ...(access ? { access } : {}),
   };
@@ -75,10 +75,10 @@ export function stageKernel(P: Program, { kernel: k, params, sig }: KernelContex
 
 // A generator's prologue, for the frame interpreter (substitute.ts): its
 // parameters are the frame's slots after the tag; declarations are locals.
-export function stageGenerator(P: Program, { kernel: k, params, sig }: KernelContext): Generator {
+export function stageGenerator(P: Program, { kernel: k, params, stream }: KernelContext): Generator {
   const { D, record } = irDomain();
   const p = paramEnv(params, (shape, at) => fromSlots(shape, 'input', 1 + at));
-  const body = record(() => new Semantics(P, D).stmts(k.prologue, p.env, { ...sig, flush: true }));
+  const body = record(() => new Semantics(P, D).stmts(k.prologue, p.env, { ...stream, flush: true }));
   return { name: k.name, paramWidth: p.width, body };
 }
 

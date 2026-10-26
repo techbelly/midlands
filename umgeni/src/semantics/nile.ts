@@ -5,7 +5,7 @@
 import type * as A from '../ast.js';
 import type { BinOpName, UnOpName } from '../ir.js';
 import { BIN, UN } from '../scalar.js';
-import { ElabError, REAL, type StreamSig, type Value } from '../values.js';
+import { ElabError, REAL, type Stream, type Value } from '../values.js';
 import { load } from '../../../mooi/src/mooi.js';
 import { prelude } from '../../../mooi/src/prelude.js';
 import type { Domain, Program } from './domain.js';
@@ -51,11 +51,11 @@ export class Semantics<S> {
   expr(e: A.Expr, env: Map<string, Value<S>>): Value<S> {
     return this.m.expr(e, fromMap(env)) as Value<S>;
   }
-  stmts(list: A.Stmt[], env: Map<string, Value<S>>, io: StreamSig & { flush?: boolean }): void {
+  stmts(list: A.Stmt[], env: Map<string, Value<S>>, io: Stream & { flush?: boolean }): void {
     this.m.execs({ ...io, flush: io.flush ?? false }, list, fromMap(env));
   }
-  kernel(k: A.Kernel, params: Map<string, Value<S>>, sig: StreamSig) {
-    return this.m.kernel(k, fromMap(params), { ...sig, flush: false }) as {
+  kernel(k: A.Kernel, params: Map<string, Value<S>>, stream: Stream) {
+    return this.m.kernel(k, fromMap(params), { ...stream, flush: false }) as {
       initial: S[];
       init: () => void;
       step: (input: Value<S>) => void;

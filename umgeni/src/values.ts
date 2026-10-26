@@ -20,7 +20,7 @@ interface RecordShape {
 export const REAL: Shape = { k: 'real' };
 
 // A process's stream types: what comes in, what goes out.
-export interface StreamSig {
+export interface Stream {
   input: Shape;
   output: Shape;
 }

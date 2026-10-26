@@ -5,7 +5,7 @@
 
 import type * as A from '../ast.js';
 import type { StageIR } from '../ir.js';
-import { ElabError, REAL, type Shape, type StreamSig, type Value } from '../values.js';
+import { ElabError, REAL, type Shape, type Stream, type Value } from '../values.js';
 import { load } from '../../../mooi/src/mooi.js';
 import { prelude } from '../../../mooi/src/prelude.js';
 import { pipelinesSource, valuesSource } from './source.js';
@@ -18,7 +18,7 @@ export interface PipelineProgram {
   realField(shape: Shape, name: string, what: string): number;
   expr(e: A.Expr, env: Map<string, Value>): Value;
   type(t: A.Type): Shape;
-  stream(name: string): StreamSig | null;
+  stream(name: string): Stream | null;
   known(name: string): boolean;
   /** A template by name: its parameters and the pipeline that is its whole
    *  body (null when its body is something else, which is an error). */

@@ -23,7 +23,7 @@ export function agree(sources: string[]) {
       if (!(name in compiled.api)) return; // not compiled (e.g. part of a family)
       const factory = compiled.api[name];
       const pw = paramWidth(ctx.params);
-      const iw = shapeWidth(ctx.sig.input);
+      const iw = shapeWidth(ctx.stream.input);
       for (let trial = 0; trial < 12; trial++) {
         const params = Array.from({ length: pw }, value);
         const input = Array.from({ length: 1 + (trial % 6) }, () => Array.from({ length: iw }, value));

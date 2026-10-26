@@ -14,7 +14,7 @@ import { Semantics } from './nile.js';
 // pipeline, which receives the rest of the input (no defunctionalization).
 export function interpretKernel(
   P: Program,
-  { kernel: k, params, sig }: KernelContext,
+  { kernel: k, params, stream }: KernelContext,
   paramValues: number[],
   resolve?: (name: string) => KernelContext | undefined,
 ): Op {
@@ -48,7 +48,7 @@ export function interpretKernel(
     },
   };
   const p = paramEnv(params, (shape, at) => fromExprs(shape, paramValues, at));
-  const sem = new Semantics(P, D).kernel(k, p.env, sig);
+  const sem = new Semantics(P, D).kernel(k, p.env, stream);
   state.push(...sem.initial);
   let seeded = false;
   const seed = () => {
@@ -65,7 +65,7 @@ export function interpretKernel(
         for (const t of queue.splice(0).reverse()) became.push(t);
         return;
       }
-      sem.step(fromExprs(sig.input, queue.pop()!));
+      sem.step(fromExprs(stream.input, queue.pop()!));
     }
   };
   return {

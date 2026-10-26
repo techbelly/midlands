@@ -5,7 +5,7 @@
 
 import type * as A from '../ast.js';
 import type { BinOpName, UnOpName } from '../ir.js';
-import type { ParamGroup, Shape, StreamSig } from '../values.js';
+import type { ParamGroup, Shape, Stream } from '../values.js';
 
 export interface Cell<S> {
   get(): S;
@@ -33,7 +33,7 @@ export interface Domain<S> {
 export interface KernelContext {
   kernel: A.Kernel;
   params: ParamGroup[];
-  sig: StreamSig;
+  stream: Stream;
 }
 
 // What the program declares (types, user operators, process parameters).
