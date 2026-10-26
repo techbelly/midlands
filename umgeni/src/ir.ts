@@ -157,6 +157,16 @@ export interface TokenLayout {
 
 // --- folds: the IR is a tree; these are its traversals -------------------------
 
+// Every kernel in a module, rewritten by f: on its own, or inside a fused
+// segment. A pipeline (left unfused only when fusion bailed) holds none.
+export function mapKernels(mod: ModuleIR, f: (k: KernelIR) => KernelIR): ModuleIR {
+  const process = (p: ProcessIR): ProcessIR =>
+    p.k === 'kernel' ? f(p)
+    : p.k === 'fused' ? { ...p, segments: p.segments.map((seg) => (seg.k === 'kernels' ? { ...seg, stages: seg.stages.map((st) => ({ ...st, kernel: f(st.kernel) })) } : seg)) }
+    : p;
+  return { ...mod, processes: mod.processes.map(process) };
+}
+
 // Rebuild an expression with each leaf (const/param/state/input/local) mapped.
 export function mapExpr(e: ScalarExpr, leaf: (e: ScalarExpr) => ScalarExpr): ScalarExpr {
   switch (e.k) {

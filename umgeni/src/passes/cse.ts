@@ -14,7 +14,7 @@
 // hoisted to the parent block; an expression duplicated across sibling
 // branches is materialized in each.
 
-import type { KernelIR, ModuleIR, ProcessIR, ScalarExpr, Stmt } from '../ir.js';
+import { mapKernels, type KernelIR, type ModuleIR, type ScalarExpr, type Stmt } from '../ir.js';
 
 // Number of operation nodes (bin/un/select) in a tree. Shared with the
 // instrumentation in codegen.
@@ -31,23 +31,7 @@ export function opCount(e: ScalarExpr): number {
   }
 }
 
-export function cseModule(mod: ModuleIR): ModuleIR {
-  return { ...mod, processes: mod.processes.map(cseProcess) };
-}
-
-function cseProcess(p: ProcessIR): ProcessIR {
-  if (p.k === 'kernel') return cseKernel(p);
-  if (p.k === 'fused') {
-    return {
-      ...p,
-      segments: p.segments.map((seg) =>
-        seg.k === 'kernels'
-          ? { ...seg, stages: seg.stages.map((st) => ({ ...st, kernel: cseKernel(st.kernel) })) }
-          : seg),
-    };
-  }
-  return p;
-}
+export const cseModule = (mod: ModuleIR): ModuleIR => mapKernels(mod, cseKernel);
 
 function cseKernel(p: KernelIR): KernelIR {
   return {

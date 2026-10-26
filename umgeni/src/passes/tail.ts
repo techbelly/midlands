@@ -10,23 +10,9 @@
 //
 // Only the per-token body is marked: a prologue's feeds run before the loop.
 
-import { anyStmt, type KernelIR, type ModuleIR, type ProcessIR, type Stmt } from '../ir.js';
+import { anyStmt, mapKernels, type KernelIR, type ModuleIR, type Stmt } from '../ir.js';
 
-export function tailModule(mod: ModuleIR): ModuleIR {
-  return { ...mod, processes: mod.processes.map(tailProcess) };
-}
-
-function tailProcess(p: ProcessIR): ProcessIR {
-  if (p.k === 'kernel') return tailKernel(p);
-  if (p.k === 'fused') {
-    return {
-      ...p,
-      segments: p.segments.map((seg) =>
-        seg.k === 'kernels' ? { ...seg, stages: seg.stages.map((st) => ({ ...st, kernel: tailKernel(st.kernel) })) } : seg),
-    };
-  }
-  return p;
-}
+export const tailModule = (mod: ModuleIR): ModuleIR => mapKernels(mod, tailKernel);
 
 const tailKernel = (k: KernelIR): KernelIR => ({ ...k, body: markTail(k.body) });
 
