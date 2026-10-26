@@ -127,7 +127,7 @@ class Elaborator {
 
   // A process type with parameters is a process the host supplies: its
   // signature is all Nile knows. It takes its parameters by name like any
-  // other, and the generated code holds a place for it (rt.provide).
+  // other, and the generated code holds a place for it (api.provide).
   private declareHostProcesses(decls: A.TopLevel[]): void {
     for (const d of decls) {
       if (d.kind !== 'processTypeDef' || !d.params) continue;

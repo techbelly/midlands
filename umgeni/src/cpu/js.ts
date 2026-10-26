@@ -131,11 +131,10 @@ function genBuiltinStage(s: Exclude<PipelineIR['stages'][number], { k: 'stage' }
     case 'dupZip':
       return `rt.${s.k}(${s.branches.map((b) => genStages(b, o)).join(', ')})`;
     case 'groupBy':
-      return `rt.groupBy([${s.keyIndexes.join(', ')}], ${s.stable})`;
+      return `rt.groupBy([${s.keyIndexes.join(', ')}])`;
     case 'reduceBy': {
       const fields = s.fields.map((f) => {
-        const env: GenEnv = { ...KERNEL_ENV };
-        return `{ index: ${f.index}, fn: (${mangle('#ra')}, ${mangle('#rb')}) => ${genExpr(f.op, o, env)} }`;
+        return `{ index: ${f.index}, fn: (${mangle('#ra')}, ${mangle('#rb')}) => ${genExpr(f.op, o, KERNEL_ENV)} }`;
       });
       return `rt.reduceBy([${s.keyIndexes.join(', ')}], [${fields.join(', ')}])`;
     }
@@ -192,8 +191,10 @@ function genSegment(stages: FusedStage[], o: CodegenOptions): string {
     };
     lines.push(`  const S${j} = new Float64Array(${k.stateInit.length});`);
     k.stateInit.forEach((e, i) => lines.push(`  S${j}[${i}] = ${genExpr(e, o, env)};`));
-    const seed = k.init.length > 0 ? `sd${j}(); ` : '';
-    if (seed) {
+    // A prologue runs once, before the first token or at the end if none came.
+    const seeded = k.init.length > 0;
+    const seed = `sd${j}();`;
+    if (seeded) {
       lines.push(`  let seeded${j} = false;`);
       lines.push(`  function sd${j}() {`);
       lines.push(`    if (seeded${j}) return;`);
@@ -216,10 +217,10 @@ function genSegment(stages: FusedStage[], o: CodegenOptions): string {
       lines.push(`      ${pop}`);
       lines.push(`    }`);
       lines.push(`  }`);
-      lines.push(`  function st${j}(${params}) { ${seed}q${j}.push([${params}]); run${j}(); }`);
+      lines.push(`  function st${j}(${params}) { ${seeded ? `${seed} ` : ''}q${j}.push([${params}]); run${j}(); }`);
     } else if (feeds) {
       lines.push(`  function st${j}(${params}) {`);
-      if (seed) lines.push(`    ${seed.trim()}`);
+      if (seeded) lines.push(`    ${seed}`);
       lines.push(`    ${declare((n, i) => `${n} = a${i}`)}`);
       lines.push(`    for (;;) {`);
       lines.push(genStmts(k.body, '      ', o, env));
@@ -228,7 +229,7 @@ function genSegment(stages: FusedStage[], o: CodegenOptions): string {
       lines.push(`  }`);
     } else {
       lines.push(`  function st${j}(${params}) {`);
-      if (seed) lines.push(`    ${seed.trim()}`);
+      if (seeded) lines.push(`    ${seed}`);
       lines.push(genStmts(k.body, '    ', o, env));
       lines.push(`  }`);
     }
@@ -237,7 +238,7 @@ function genSegment(stages: FusedStage[], o: CodegenOptions): string {
       lines.push(genStmts(k.epilogue, '    ', o, env));
       lines.push(`  }`);
     }
-    ends.push(`${seed}${worklist ? `run${j}(); ` : ''}${k.epilogue.length > 0 ? `fl${j}();` : ''}`.trim());
+    ends.push([seeded && seed, worklist && `run${j}();`, k.epilogue.length > 0 && `fl${j}();`].filter(Boolean).join(' '));
   });
 
   const w0 = stages[0].kernel.inputWidth;
@@ -267,7 +268,8 @@ function genWasm(segments: FusedSegment[], inputWidth: number, paramWidth: numbe
 
 function genFused(p: FusedIR, o: CodegenOptions, wasmModules: string[]): string {
   if (o.target === 'wasm' && p.segments.every(inWasm)) {
-    const w = inputWidthOf(p) ?? (() => { throw new Error(`'${p.name}': cannot tell its input width`); })();
+    const w = inputWidthOf(p);
+    if (w === null) throw new Error(`'${p.name}': cannot tell its input width`);
     return `R[${JSON.stringify(p.name)}] = (P = []) => ${genWasm(p.segments, w, p.paramWidth, wasmModules)};`;
   }
   const segs = p.segments.map((s) => {
@@ -289,14 +291,14 @@ export function generate(mod: ModuleIR, opts: CodegenOptions = {}): string {
   return [
     `(rt) => {`,
     `const R = Object.create(null);`,
-    // Processes the host supplies: a place for each, filled by rt.provide.
+    // Processes the host supplies: a place for each, filled by api.provide.
     ...mod.host.map((h) => `R[${JSON.stringify(h.name)}] = rt.hostProcess(R, ${JSON.stringify(h.name)});`),
     ...wasmModules,
     ...(opts.countOps ? [`let OPS = 0;`] : []),
     ...defs,
     // Factories also take their parameters by name (rt.nameParams).
     `rt.nameParams(R, ${JSON.stringify(mod.signatures)});`,
-    // …and the token layouts of the program's named types (rt.tokenType).
+    // …and the token layouts of the program's named types (api.types).
     `rt.describeTypes(R, ${JSON.stringify(mod.types)});`,
     ...(opts.countOps ? [`rt.describeOps(R, () => OPS);`] : []),
     `return R;`,

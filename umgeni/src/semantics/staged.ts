@@ -11,7 +11,7 @@ import { Semantics } from './nile.js';
 
 // An IR builder: the domain, plus `record` to capture the statements an
 // action performs.
-export function irDomain() {
+function irDomain() {
   let block: StagedStmt[] = [];
   const used = new Set<string>();
   // Names are unique per builder (a pattern temp or a re-declared name in one

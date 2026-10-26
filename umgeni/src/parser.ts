@@ -5,7 +5,7 @@ import { emptyOpTable, opExtensionSource, opKey, type OpTable } from './ops.js';
 import { preprocessMapped } from './preprocess.js';
 
 const coreSource = nileGrammarSource;
-export const coreGrammar = ohm.grammar(coreSource);
+const coreGrammar = ohm.grammar(coreSource);
 
 export class ParseError extends Error {
   constructor(message: string, public line: number, public col: number) {
@@ -15,7 +15,7 @@ export class ParseError extends Error {
 
 // --- pass 1: scan opDef headers to register prefix/outfix operators ---
 
-export function scanOpDefs(source: string, table: OpTable): void {
+function scanOpDefs(source: string, table: OpTable): void {
   for (const line of source.split('\n')) {
     if (line === '' || /^\s/.test(line)) continue;
     const m = coreGrammar.match(line.trimEnd(), 'OpDefHeader');
@@ -55,7 +55,7 @@ function grammarForOps(table: OpTable): CompiledGrammar {
   return compiled;
 }
 
-export interface ParseResult {
+interface ParseResult {
   module: ast.Module;
   table: OpTable;
 }

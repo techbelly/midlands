@@ -131,7 +131,7 @@ export interface ModuleIR {
   processes: ProcessIR[];
   // Processes the host supplies: declared in Nile by their signature alone
   // (`ReadImage :: (img : Real) : Point >> Color`), defined by the host at run
-  // time (rt.provide). A pipeline uses one like any stage.
+  // time (api.provide). A pipeline uses one like any stage.
   host: HostProcess[];
   // Each process's parameters as its Nile signature names them, in order,
   // with their flattened widths: how a host can pass them by name.

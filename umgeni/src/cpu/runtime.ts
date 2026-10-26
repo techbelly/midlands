@@ -9,7 +9,7 @@
 // depth-first as iteration, not JS recursion). This module supplies the
 // builtin stages, composition, and the boundary to the host.
 
-import type { TokenLayout } from '../ir.js';
+import type { ParamSig, TokenLayout } from '../ir.js';
 
 export type Token = number[];
 export type Emit = (t: Token) => void;
@@ -19,7 +19,6 @@ export type Emit = (t: Token) => void;
 // number, a record (Point, Matrix, Color…) its fields as an array.
 export type Params = number[] | { [name: string]: number | readonly NestedNumbers[] };
 type NestedNumbers = number | readonly NestedNumbers[];
-export type Feed = (t: Token) => void;
 
 // What generated code registers under a process's name: its Op, over its
 // flattened parameters (or named ones, after nameParams).
@@ -39,10 +38,7 @@ export interface Op {
 // Let each factory in a registry take its parameters by name too, checked
 // against the process's signature: every name present, no others, each the
 // right size. Flat arrays pass straight through.
-export function nameParams(
-  R: Record<string, (P?: number[]) => Op>,
-  signatures: Record<string, { name: string; width: number }[]>,
-): void {
+export function nameParams(R: Record<string, Factory>, signatures: Record<string, ParamSig[]>): void {
   for (const [process, sig] of Object.entries(signatures)) {
     const factory = R[process];
     if (!factory || sig.length === 0) continue;
@@ -54,7 +50,7 @@ export function nameParams(
 // Named values, flattened in the order `fields` gives, each checked for size.
 // Hot when building tokens, so numbers and flat arrays are written directly;
 // only a nested array is flattened.
-function flattenNamed(what: string, fields: { name: string; width: number }[], named: Exclude<Params, number[]>): number[] {
+function flattenNamed(what: string, fields: ParamSig[], named: Exclude<Params, number[]>): number[] {
   const expected = () => `${what} ${fields.map((p) => `${p.name} (${p.width})`).join(', ')}`;
   const out: number[] = [];
   for (const p of fields) {
@@ -72,47 +68,54 @@ function flattenNamed(what: string, fields: { name: string; width: number }[], n
   return out;
 }
 
+// --- what a registry carries beside its factories ----------------------------
+
+// Generated code describes its library on the registry record under symbols:
+// the host-process slots, the token layouts and (with countOps) the counter.
+const meta = <T,>(R: object, sym: symbol): T | undefined => (R as Record<symbol, T | undefined>)[sym];
+function describe<T>(R: object, sym: symbol, value: T): T {
+  Object.defineProperty(R, sym, { value });
+  return value;
+}
+
 // --- processes the host supplies ---------------------------------------------
 
 // A process declared in Nile by its signature alone (`ReadImage :: (img :
 // Real) : Point >> Color`) is the host's to define: generated code holds a place
 // for it, and the host fills the place with a factory taking the flattened
 // parameters (or, through the api, by name).
-export const HOSTS = Symbol.for('midlands.nile.hosts');
-type Slot = { factory: Factory | null };
+const HOSTS = Symbol.for('midlands.nile.hosts');
+type Slot = { factory: ((P: number[]) => Op) | null };
 
+// The place for a host process: nameParams wraps it like any factory, so
+// by the time a call reaches the slot its parameters are flat (or absent).
 export function hostProcess(R: object, name: string): Factory {
-  const hosts = ((R as { [HOSTS]?: Map<string, Slot> })[HOSTS] ??= new Map());
+  const hosts = meta<Map<string, Slot>>(R, HOSTS) ?? describe(R, HOSTS, new Map<string, Slot>());
   const slot: Slot = { factory: null };
   hosts.set(name, slot);
   return (P) => {
     if (!slot.factory) throw new Error(`'${name}' is a process the host supplies, and this host has not provided it (nile.provide)`);
-    return slot.factory(P);
+    return slot.factory(Array.isArray(P) ? P : []);
   };
 }
 
-export function provide(R: object, name: string, factory: (P: number[]) => Op): void {
-  const slot = (R as { [HOSTS]?: Map<string, Slot> })[HOSTS]?.get(name);
+function provide(R: object, name: string, factory: (P: number[]) => Op): void {
+  const slot = meta<Map<string, Slot>>(R, HOSTS)?.get(name);
   if (!slot) throw new Error(`'${name}' is not a process the host supplies (declared as 'Name :: (params) : In >> Out')`);
-  slot.factory = (P) => factory(Array.isArray(P) ? P : P === undefined ? [] : (P as unknown as number[]));
+  slot.factory = factory;
 }
 
 // --- tokens by field name ----------------------------------------------------
 
-// Where a registry keeps its library's token layouts (set by generated code).
-export const TYPES = Symbol.for('midlands.nile.types');
+// The library's token layouts (set by generated code).
+const TYPES = Symbol.for('midlands.nile.types');
+export const describeTypes = (R: object, types: Record<string, TokenLayout>): void => void describe(R, TYPES, types);
 
-export function describeTypes(R: object, types: Record<string, TokenLayout>): void {
-  Object.defineProperty(R, TYPES, { value: types });
-}
-
-// Where a registry compiled with countOps keeps its counter of executed IR
-// operations (set by generated code, read by benchmarks).
-export const OPS = Symbol.for('midlands.nile.ops');
-export function describeOps(R: object, count: () => number): void {
-  Object.defineProperty(R, OPS, { value: count });
-}
-export const opsCounter = (R: object): (() => number) | undefined => (R as { [OPS]?: () => number })[OPS];
+// The counter of executed IR operations, when compiled with countOps (set
+// by generated code, read by benchmarks).
+const OPS = Symbol.for('midlands.nile.ops');
+export const describeOps = (R: object, count: () => number): void => void describe(R, OPS, count);
+export const opsCounter = (R: object): (() => number) | undefined => meta(R, OPS);
 
 // A named record type, for reading and building its tokens by field name.
 // Look offsets up once (at) and index tokens with them in hot loops; get and
@@ -128,11 +131,7 @@ export interface TokenType {
   make(fields: Exclude<Params, number[]>): Token;
 }
 
-export function tokenType(registry: object, name: string): TokenType {
-  const types = (registry as { [TYPES]?: Record<string, TokenLayout> })[TYPES];
-  if (!types) throw new Error('this registry carries no token types (compiled before they existed?)');
-  const layout = types[name];
-  if (!layout) throw new Error(`no record type named '${name}' (known: ${Object.keys(types).join(', ')})`);
+function tokenType(name: string, layout: TokenLayout): TokenType {
   const field = (path: string) => {
     const f = layout.fields[path];
     if (!f) throw new Error(`'${path}' is not a field of ${name}: ${Object.keys(layout.fields).join(', ')}`);
@@ -182,8 +181,8 @@ export function api(registry: Record<string, Factory>): Api {
       return op;
     };
   }
-  const layouts = (registry as { [TYPES]?: Record<string, TokenLayout> })[TYPES] ?? {};
-  out.types = Object.fromEntries(Object.keys(layouts).map((name) => [name, tokenType(registry, name)]));
+  const layouts = meta<Record<string, TokenLayout>>(registry, TYPES) ?? {};
+  out.types = Object.fromEntries(Object.entries(layouts).map(([name, layout]) => [name, tokenType(name, layout)]));
   out.provide = (name: string, factory: (P: number[]) => Op) => provide(registry, name, factory);
   return out as Api;
 }
@@ -251,7 +250,7 @@ export function sortTokens(buffer: Token[], keys: number[]): Token[] {
 
 // A barrier is a function on finite streams: buffer every token, apply f at
 // end of stream, emit the result (whole, to a stage that takes batches).
-export function barrier(f: (ts: Token[]) => Token[]): Op {
+function barrier(f: (ts: Token[]) => Token[]): Op {
   let buffer: Token[] = [];
   let emit: Emit = () => {};
   let emitAll: ((ts: Token[]) => void) | null = null;
@@ -281,7 +280,7 @@ export const sortBy = (keys: number[]): Op => barrier((ts) => sortTokens(ts, key
 // GroupBy: buffer, order by keys (major first), emit on end(). The language
 // contract is key order only; this implementation happens to be stable,
 // which is a valid instance.
-export const groupBy = (keyIndexes: number[], _stable: boolean): Op => barrier((ts) => sortTokens(ts, keyIndexes));
+export const groupBy = (keyIndexes: number[]): Op => barrier((ts) => sortTokens(ts, keyIndexes));
 
 // ReduceBy: merge adjacent same-key runs (the upstream GroupBy guarantees
 // grouping) with per-field combining functions; other fields keep the first
@@ -479,7 +478,7 @@ export function identity(): Op {
 }
 
 // Compose `a → b`: a's output becomes b's input; end() drains a then b.
-export function compose(a: Op, b: Op): Op {
+function compose(a: Op, b: Op): Op {
   a.setEmit((t) => b.push(t));
   if (a.setEmitAll && b.pushAll) a.setEmitAll((ts) => b.pushAll!(ts));
   return {

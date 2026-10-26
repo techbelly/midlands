@@ -12,7 +12,7 @@ import type { ScalarExpr, TokenLayout } from './ir.js';
 // --- shapes ------------------------------------------------------------------
 
 export type Shape = { k: 'real' } | RecordShape;
-export interface RecordShape {
+interface RecordShape {
   k: 'record';
   name: string | null; // null: anonymous tuple
   fields: { name: string | null; shape: Shape }[];
@@ -79,7 +79,7 @@ export type Value<S = ScalarExpr> =
   | { k: 'scalar'; expr: S }
   | { k: 'agg'; shape: RecordShape; parts: Value<S>[] };
 
-export const scalar = <S = ScalarExpr>(expr: S): Value<S> => ({ k: 'scalar', expr });
+const scalar = <S = ScalarExpr>(expr: S): Value<S> => ({ k: 'scalar', expr });
 
 export function fromExprs<S>(shape: Shape, exprs: S[], base = 0): Value<S> {
   if (shape.k === 'real') return scalar(exprs[base]);

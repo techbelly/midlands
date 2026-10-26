@@ -38,7 +38,7 @@ import { paramsOnly, wgslBody, wgslExpr, WORKGROUP_SIZE, type WgslEnv } from './
 
 export class LowerError extends Error {}
 
-export const FIXED_SCALE = 65536;
+const FIXED_SCALE = 65536;
 
 // A pass's bindings, in binding order. The host supplies a buffer per role;
 // the shader declares each from the same list (execute.ts builds the bind
