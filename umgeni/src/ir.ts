@@ -117,7 +117,7 @@ export interface FusedIR {
 }
 export type FusedSegment =
   | { k: 'kernels'; stages: FusedStage[] }
-  | Exclude<StageIR, { k: 'stage' }>; // sortBy / identity / groupBy / reduceBy barriers
+  | Exclude<StageIR, { k: 'stage' }>; // whole-stream stages: the barriers (sortBy, groupBy, reduceBy, reverse), identity, dupCat, dupZip
 export interface FusedStage {
   name: string;
   kernel: KernelIR;

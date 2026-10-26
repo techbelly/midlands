@@ -1,6 +1,6 @@
 // Extended Nile's scans and windows are sugar: sugar.mooi rewrites them into
 // core Nile (state, primed updates, ifs) and returns what they declared —
-// a parallel backend lowers by the declaration (docs/access-patterns.md).
+// a parallel backend lowers by the declaration (umgeni/README.md).
 
 import type * as A from '../ast.js';
 import { load } from '../../../mooi/src/mooi.js';

@@ -8,9 +8,9 @@ what it is allowed to do.
 The stages, left to right:
 
 ```
-Nile ─Ohm─▶ syntax tree ─sugar.mooi─▶ core Nile ─nile.mooi, staged─▶ scalar IR ─▶ fuse, CSE ─▶ JS
-                        └─pipelines.mooi─▶ stage IR ─────────────────────────┘           ├──▶ wasm
-                                                                                          └──▶ WGSL
+Nile ─Ohm─▶ syntax tree ─sugar.mooi─▶ core Nile ─nile.mooi, staged─▶ scalar IR ─▶ fuse, CSE, tail ─▶ JS
+                        └─pipelines.mooi─▶ stage IR ─────────────────────────┘                 ├──▶ wasm
+                                                                                                └──▶ WGSL
 ```
 
 - **Grammar**: [src/grammar/nile.ohm](src/grammar/nile.ohm) describes Nile's

@@ -1,4 +1,4 @@
-// The access-patterns constructs (docs/access-patterns.md), end to end:
+// The access-patterns constructs (umgeni/README.md), end to end:
 // nl/rasterize-parallel.nl expresses the rasterizer with GroupBy / ReduceBy / a scan
 // clause / ∷ windows — and must reproduce the classic Rasterize pipeline.
 //

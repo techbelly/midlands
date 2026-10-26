@@ -27,8 +27,8 @@ compiler. Gezira is short because Nile's primitives are the shape of 2D
 graphics: streams of tokens, small kernels, arithmetic lifted over points
 and matrices. Is there a set of primitives that is the shape of *compiling*,
 so that a compiler for Nile could also be a few pages of mathematics? The
-answer so far: partly. Nile's meaning is 360 lines of equations in a
-language made for the purpose. The rest of the compiler, about 5,600 lines
+answer so far: partly. Nile's meaning is about 390 lines of equations in a
+language made for the purpose. The rest of the compiler, about 5,400 lines
 of TypeScript, is still ordinary code, and section 9 counts it honestly.
 
 | part | what it is | lines |
@@ -199,7 +199,7 @@ the running sums and adjacent-pair windows of section 7, into plain Nile
 state and primed updates, and records what was declared. The other says
 what a pipeline means: each stage over the stream the one before it leaves,
 and the ordering discipline that the parallel back end relies on. The four
-files together are 360 lines and are the only definition of Nile in the
+files together are about 390 lines and are the only definition of Nile in the
 repository. There is no second, faster version in TypeScript.
 
 Running the definition on placeholders leaves a residue: the *scalar IR*,
@@ -233,7 +233,7 @@ Every function takes its arguments one at a time, whether written in Mooi
 or handed in by the host as a plain JavaScript function. That is how a host
 extends it: the equations call host functions like any other.
 
-The implementation is three files and about 370 lines: a grammar that Ohm
+The implementation is about 365 lines: a grammar that Ohm
 parses with, an evaluator that matches shapes and tries equations in order,
 and a prelude of map, folds and filter. It depends on nothing but Ohm.
 
@@ -399,8 +399,9 @@ and 1,958 lines of TypeScript stand around them.
 
 Some of that is substrate: the IR itself, the two domains, the shapes and
 layouts of values. Some of it is meaning that has not moved. The 205 lines
-that turn mid-stream `⇒` into a state machine are, the research note shows,
-a specialisation of about fifteen lines of semantics, done by hand. The 226
+that turn mid-stream `⇒` into a state machine are, a research note (not in
+the repository) shows,
+a specialisation of about fifteen lines of semantics, done by hand. The 210
 lines of common subexpression elimination are sharing in the residue, which
 a different domain could do for free. Templates and fusion are the same
 story. A generic specialiser would absorb all three, and the estimate, not
@@ -416,7 +417,7 @@ concern at a time.
 ## 10. What is open
 
 - A generic specialiser, replacing the hand-written handling of `⇒`,
-  templates and fusion, with the research note's experiment as its oracle.
+  templates and fusion, with that note's experiment as its oracle.
 - Back ends as models of the domain signature, in Mooi.
 - Mesh gradients are exact and slow: a 200-pixel patch takes over a second
   on the CPU. Their lowering works but the presenter has no coloured-pixel
