@@ -27,9 +27,9 @@
 // DupCat and DupZip are not here yet: a pipeline using them keeps its kernel
 // runs in wasm and those two stages in JS (js.ts falls back per segment).
 
-import { anyStmt, type FusedSegment, type FusedStage, type ScalarExpr, type Stmt } from '../ir.js';
+import { type FusedSegment, type FusedStage, type ScalarExpr, type Stmt } from '../ir.js';
 import { BIN, UN } from '../scalar.js';
-import { needsWorklist } from '../passes/tail.js';
+import { stageShape, type StageShape } from '../passes/tail.js';
 
 // --- a minimal binary encoder ---------------------------------------------------
 
@@ -219,13 +219,13 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
   const EMIT = parts.map((p) => declare(Array(p.outputWidth).fill(F64))); // a part's last emit
   const IN = parts.map((p) => declare(Array(p.inputWidth).fill(F64))); // a part's entry
 
-  // A stage's place in the module: its worklist (if it feeds and needs one),
-  // the globals holding its arguments and state, its two functions, and the
-  // function its emit calls: the next stage, or the part's last emit.
+  // A stage's place in the module: how its body runs (passes/tail.ts), its
+  // worklist if it needs one, the globals holding its arguments and state,
+  // its two functions, and the function its emit calls: the next stage, or
+  // the part's last emit.
   interface Slot {
     stage: FusedStage;
-    feeds: boolean;
-    worklist: boolean;
+    shape: StageShape;
     stackBase: number;
     sp: number;
     args: number[];
@@ -236,12 +236,11 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
   }
   const slots: Slot[][] = parts.map((part, p) => {
     const ss = part.stages.map((stage): Slot => {
-      const worklist = needsWorklist(stage.kernel.body);
+      const shape = stageShape(stage.kernel.body);
       const stackBase = top;
-      if (worklist) top += STACK_BYTES;
+      if (shape === 'worklist') top += STACK_BYTES;
       return {
-        stage, worklist, stackBase,
-        feeds: anyStmt(stage.kernel.body, (x) => x.k === 'feed'),
+        stage, shape, stackBase,
         sp: g(I32, i32c(stackBase)),
         args: stage.args.flat().map(() => g(F64, f64c(0))),
         state: stage.kernel.stateInit.map(() => g(F64, f64c(0))),
@@ -319,7 +318,8 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
   for (const s of slots.flat()) {
     const k = s.stage.kernel;
     const w = k.inputWidth;
-    const { feeds, sp, stackBase } = s;
+    const { sp, stackBase } = s;
+    const feeds = s.shape !== 'straight';
     const build = (f: Fn, list: Stmt[], flush: boolean) => {
       const locals = new Map<string, number>();
       // A feeding stage's inputs are locals it pops into; otherwise they are its parameters.
@@ -373,7 +373,7 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
           }
         }
       };
-      if (feeds && !flush && s.worklist) {
+      if (!flush && s.shape === 'worklist') {
         // Push the incoming token and pop it back; then run the body, popping
         // the next token at the bottom of the loop until the worklist is empty
         // — depth-first, exactly the JS segment's loop. A tail feed branches
@@ -385,7 +385,7 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
         f.emit(pop, [OP.block, VOID, OP.loop, VOID]);
         run(list, 0);
         f.emit(gget(sp), i32c(stackBase), [OP.i32GtU, OP.i32Eqz, OP.brIf, 1], pop, [OP.br, 0, OP.end, OP.end]);
-      } else if (feeds && !flush) {
+      } else if (!flush && s.shape === 'loop') {
         // Every feed is a tail feed: the body loops over one token, no worklist.
         for (let i = 0; i < w; i++) f.emit(get(i), set(inputs[i]));
         f.emit([OP.block, VOID, OP.loop, VOID]);

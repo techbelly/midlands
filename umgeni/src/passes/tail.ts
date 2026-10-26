@@ -30,3 +30,12 @@ function markTail(stmts: Stmt[]): Stmt[] {
 
 // Whether a body still needs a worklist: some feed is not a tail feed.
 export const needsWorklist = (stmts: Stmt[]): boolean => anyStmt(stmts, (s) => s.k === 'feed' && !s.tail);
+
+// How a back end runs a per-token body. A body that never feeds runs
+// straight through. A tail feed is the loop's next turn, so a body whose
+// every feed is one (ExpandSpans) is a loop over one token, no worklist.
+// Several feeds in a row (DecomposeBeziers) need the worklist, popped at the
+// top of the loop unless the last turn fed.
+export type StageShape = 'straight' | 'loop' | 'worklist';
+export const stageShape = (body: Stmt[]): StageShape =>
+  !anyStmt(body, (s) => s.k === 'feed') ? 'straight' : needsWorklist(body) ? 'worklist' : 'loop';

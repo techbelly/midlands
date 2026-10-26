@@ -1,6 +1,6 @@
 // The symbolic domain: scalars are IR expressions, effects are recorded as
-// IR statements. Running the semantics (semantics.ts) in this domain
-// produces scalar IR — elaboration as staged interpretation (nile.mooi).
+// IR statements. Running the semantics (nile.ts, nile.mooi) in this domain
+// produces scalar IR — elaboration as staged interpretation.
 
 import type * as A from '../ast.js';
 import type { KernelIR, ScalarExpr, Stmt } from '../ir.js';

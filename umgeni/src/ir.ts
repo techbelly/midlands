@@ -1,20 +1,25 @@
-// The IR, level 2 of the pipeline: parse -> AST -> elaborate -> IR -> codegen.
+// The IR: one tree, read top down.
 //
-// Two levels, mirroring Nile itself:
-//  - stream level: ProcessIR — kernels and pipeline definitions, connected by
-//    typed streams
-//  - scalar level: inside a kernel, everything is flattened to scalars.
-//    Records and tuples are gone: a Bezier is six Reals, state is a vector of
-//    Reals, a token is a flat array of Reals. Broadcasting, operator inlining,
-//    and componentwise lifting all happen during elaboration, so the IR only
-//    ever speaks scalar arithmetic.
+//   ModuleIR      the compiled library: its processes, plus what a host needs
+//                 (host-supplied processes, parameter names, token layouts)
+//   ProcessIR     a process is one of
+//     KernelIR      a kernel: state, a prologue, a per-token body and a flush,
+//                   all in scalar statements
+//     PipelineIR    a wiring diagram: StageIR stages by name with arguments,
+//                   or whole-stream builtins (sort, group, reduce, reverse…)
+//     FusedIR       a pipeline after passes/fuse.ts: nested pipelines inlined,
+//                   runs of kernels grouped into FusedSegments. A PipelineIR
+//                   survives fusion only when fusion bailed.
+//   Stmt, ScalarExpr   inside a kernel, where everything is flattened to
+//                 scalars. Records and tuples are gone: a Bezier is six Reals,
+//                 state is a vector of Reals, a token is a flat array of
+//                 Reals. Broadcasting, operator inlining and componentwise
+//                 lifting all happen during elaboration.
 //
-// Like the AST, the IR is plain serializable data.
-//
-// Deliberately not yet here (deferred until transforms need them, per the
-// measure-first rule): SSA form, common-subexpression elimination, a CFG.
-// Expressions are trees and control flow is structured if/else, which maps
-// 1:1 onto both JS and (later) WGSL.
+// Like the AST, the IR is plain serializable data. There is no SSA form and
+// no CFG: expressions are trees, control flow is structured if/else, and the
+// only mutable names are the primed state locals (passes/cse.ts handles
+// those with versions). That maps 1:1 onto JS, WebAssembly and WGSL.
 
 export type ScalarExpr =
   | { k: 'const'; value: number }
@@ -156,6 +161,16 @@ export interface TokenLayout {
 }
 
 // --- folds: the IR is a tree; these are its traversals -------------------------
+
+// A fused pipeline's input width: that of its first kernel, or of the
+// reduce that starts it. Null when nothing in it says.
+export function inputWidthOf(f: FusedIR): number | null {
+  for (const s of f.segments) {
+    if (s.k === 'kernels') return s.stages[0].kernel.inputWidth;
+    if (s.k === 'reduceBy') return s.width;
+  }
+  return null;
+}
 
 // Every kernel in a module, rewritten by f: on its own, or inside a fused
 // segment. A pipeline (left unfused only when fusion bailed) holds none.

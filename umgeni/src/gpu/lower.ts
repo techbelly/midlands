@@ -32,8 +32,8 @@
 // centres), as DecomposeBeziers emits them. GroupBy's exact equality and the
 // grid's floor then agree.
 
-import { allStmts, anyStmt, type FusedIR, type FusedStage, type KernelIR } from '../ir.js';
-import { needsWorklist } from '../passes/tail.js';
+import { allStmts, anyStmt, inputWidthOf, type FusedIR, type FusedStage, type KernelIR } from '../ir.js';
+import { stageShape } from '../passes/tail.js';
 import { wgslBody, wgslExpr, WORKGROUP_SIZE, type WgslEnv } from './wgsl.js';
 
 export class LowerError extends Error {}
@@ -99,7 +99,8 @@ export function lowerPipeline(fused: FusedIR, opts: LowerOptions): Plan {
   const passes: Pass[] = [];
   const grids: string[] = [];
   let repr: Grid | null = null; // null: Dense
-  let width = inputWidthOf(fused);
+  const inputWidth = inputWidthOf(fused) ?? (() => { throw new LowerError(`'${name}': cannot tell its input width`); })();
+  let width = inputWidth;
   let pending: FusedStage[] = [];
 
   const flush = (sink: Sink) => {
@@ -140,16 +141,7 @@ export function lowerPipeline(fused: FusedIR, opts: LowerOptions): Plan {
     throw new LowerError(`'${name}': ${nile} needs the whole stream in order, which has no parallel lowering`);
   }
   flush(opts.sink);
-  return { name, passes, inputWidth: inputWidthOf(fused), paramWidth, extent, cells: extent.reduce((a, b) => a * b, 1), grids };
-}
-
-function inputWidthOf(f: FusedIR): number {
-  for (let i = 0; i < f.segments.length; i++) {
-    const s = f.segments[i];
-    if (s.k === 'kernels') return s.stages[0].kernel.inputWidth;
-    if (s.k === 'reduceBy') return s.width;
-  }
-  throw new LowerError(`'${f.name}': cannot tell its input width`);
+  return { name, passes, inputWidth, paramWidth, extent, cells: extent.reduce((a, b) => a * b, 1), grids };
 }
 
 // --- the stages of one pass -------------------------------------------------
@@ -212,14 +204,9 @@ function genStages(stages: FusedStage[], width: number, o: PassOptions, key: num
     if (key !== null) key = carried(k, key);
 
     const args = stage.args.flat().map((a) => wgslExpr(a, P));
-    const feeds = anyStmt(k.body, (s) => s.k === 'feed');
-    // A tail feed (passes/tail.ts) is the loop's next turn. A kernel whose
-    // every feed is one (ExpandSpans: `>> …; << …`) feeds at most once per
-    // token, so it is a loop over one token, no worklist; several feeds in a
-    // row (DecomposeBeziers) need the worklist, popped at the top of the loop
-    // unless the last turn fed.
-    const worklist = feeds && needsWorklist(k.body);
-    out.feeds ||= worklist;
+    const shape = stageShape(k.body); // passes/tail.ts
+    const feeds = shape !== 'straight';
+    out.feeds ||= shape === 'worklist';
     const w = k.inputWidth;
     const env: WgslEnv = {
       param: (i) => args[i],
@@ -231,7 +218,7 @@ function genStages(stages: FusedStage[], width: number, o: PassOptions, key: num
     out.decls.push(`var<private> S${j} : array<f32, ${Math.max(1, k.stateInit.length)}>;`);
     k.stateInit.forEach((e, i) => out.init.push(`  S${j}[${i}] = ${wgslExpr(e, env)};`));
     const params = Array.from({ length: w }, (_, i) => `a${i} : f32`).join(', ');
-    if (feeds && !worklist) {
+    if (shape === 'loop') {
       fns.push([
         `fn st${j}(${params}) {`,
         `  var T${j} : array<f32, ${w}>;`,
@@ -246,7 +233,7 @@ function genStages(stages: FusedStage[], width: number, o: PassOptions, key: num
         `  }`,
         `}`,
       ].join('\n'));
-    } else if (feeds) {
+    } else if (shape === 'worklist') {
       out.decls.push(`var<private> F${j} : array<f32, ${o.cap * w}>;`, `var<private> sp${j} : u32;`);
       out.init.push(`  sp${j} = 0u;`);
       fns.push([

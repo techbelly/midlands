@@ -67,25 +67,20 @@ function flatten(stages: StageIR[], byName: Map<string, ProcessIR>, depth: numbe
     if (inner === null) return null;
     const flatArgs = st.args.flat();
     for (const r of inner) {
-      out.push(
-        r.k === 'kernel'
-          ? {
-              k: 'kernel',
-              stage: { ...r.stage, args: r.stage.args.map((vec) => vec.map((e) => subst(e, flatArgs))) },
-            }
-          : substBarrier(r, flatArgs),
-      );
+      out.push(r.k === 'kernel' ? { k: 'kernel', stage: { ...r.stage, args: substArgs(r.stage.args, flatArgs) } } : substStage(r, flatArgs));
     }
   }
   return out;
 }
 
-// DupCat branches name their stages with arguments too.
-function substBarrier<S extends StageIR>(s: S, flatArgs: ScalarExpr[]): S {
-  if (s.k === 'stage') return { ...s, args: s.args.map((vec) => vec.map((e) => subst(e, flatArgs))) };
-  if (s.k === 'dupCat' || s.k === 'dupZip') return { ...s, branches: s.branches.map((b) => b.map((x) => substBarrier(x, flatArgs))) };
+// A stage's argument expressions rewritten into the caller's parameter
+// space, including the stages nested in DupCat and DupZip branches.
+function substStage<S extends StageIR>(s: S, flatArgs: ScalarExpr[]): S {
+  if (s.k === 'stage') return { ...s, args: substArgs(s.args, flatArgs) };
+  if (s.k === 'dupCat' || s.k === 'dupZip') return { ...s, branches: s.branches.map((b) => b.map((x) => substStage(x, flatArgs))) };
   return s;
 }
+const substArgs = (args: ScalarExpr[][], flatArgs: ScalarExpr[]): ScalarExpr[][] => args.map((vec) => vec.map((e) => subst(e, flatArgs)));
 
 const subst = (e: ScalarExpr, flatArgs: ScalarExpr[]): ScalarExpr =>
   mapExpr(e, (leaf) => (leaf.k === 'param' ? flatArgs[leaf.index] : leaf));
