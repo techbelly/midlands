@@ -3,27 +3,18 @@
 // the same definition the compiler stages, so interpreter and compiled code
 // must agree bit for bit.
 
-import type * as A from '../ast.js';
 import { identity, pipeline, type Op, type Token } from '../cpu/runtime.js';
 import { BIN, UN } from '../scalar.js';
-import { fromExprs, shapeWidth, type Shape, type Value } from '../values.js';
-import type { Domain, Program } from './domain.js';
+import { fromExprs, paramParts } from '../values.js';
+import type { Domain, KernelContext, Program } from './domain.js';
 import { Semantics } from './nile.js';
-
-export interface KernelContext {
-  kernel: A.Kernel; // desugared
-  params: { names: string[]; shape: Shape }[];
-  sig: { input: Shape; output: Shape };
-}
 
 // `resolve` finds the processes a mid-stream ⇒ names. With it, `⇒` means
 // what it meant in the original C runtime: this process *becomes* the
 // pipeline, which receives the rest of the input (no defunctionalization).
 export function interpretKernel(
   P: Program,
-  k: A.Kernel, // desugared
-  params: { names: string[]; shape: Shape }[],
-  sig: { input: Shape; output: Shape },
+  { kernel: k, params, sig }: KernelContext,
   paramValues: number[],
   resolve?: (name: string) => KernelContext | undefined,
 ): Op {
@@ -50,24 +41,14 @@ export function interpretKernel(
       const ops = stages.flatMap((st) => {
         if (!st) return []; // (→)
         const c = resolve(st.name) ?? (() => { throw new Error(`⇒ to unknown '${st.name}'`); })();
-        return [interpretKernel(P, c.kernel, c.params, c.sig, st.args, resolve)];
+        return [interpretKernel(P, c, st.args, resolve)];
       });
       became = ops.length > 0 ? pipeline(ops) : identity();
       became.setEmit((t) => emit(t));
     },
   };
-  let at = 0;
-  const value: Value<number> = {
-    k: 'agg',
-    shape: { k: 'record', name: null, fields: [] },
-    parts: params.flatMap((g) => g.names.map(() => {
-      const w = shapeWidth(g.shape);
-      const v = fromExprs(g.shape, paramValues.slice(at, at + w));
-      at += w;
-      return v;
-    })),
-  };
-  const sem = new Semantics(P, D).kernel(k, value, params.map((g) => g.names), sig);
+  const p = paramParts(params, (shape, at) => fromExprs(shape, paramValues, at));
+  const sem = new Semantics(P, D).kernel(k, p.parts, p.names, sig);
   state.push(...sem.initial);
   let seeded = false;
   const seed = () => {

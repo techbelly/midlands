@@ -28,7 +28,7 @@ export function agree(sources: string[]) {
         const params = Array.from({ length: pw }, value);
         const input = Array.from({ length: 1 + (trial % 6) }, () => Array.from({ length: iw }, value));
         const want = run(factory(params), input.map((t) => [...t]));
-        const got = run(interpretKernel(program, ctx.kernel, ctx.params, ctx.sig, params), input.map((t) => [...t]));
+        const got = run(interpretKernel(program, ctx, params), input.map((t) => [...t]));
         expect(got.length, `${name} #outputs`).toBe(want.length);
         got.forEach((t, i) => t.forEach((x, j) => expect(Object.is(x, want[i][j]), `${name} out ${i}.${j}: ${x} vs ${want[i][j]}`).toBe(true)));
       }

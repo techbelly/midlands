@@ -28,6 +28,18 @@ export interface Domain<S> {
   forward(stages: ({ name: string; args: S[] } | null)[]): void;
 }
 
+// A kernel as the semantics runs it: desugared, with its parameter groups
+// and its stream types.
+export interface KernelContext {
+  kernel: A.Kernel;
+  params: ParamGroup[];
+  sig: { input: Shape; output: Shape };
+}
+export interface ParamGroup {
+  names: string[];
+  shape: Shape;
+}
+
 // What the program declares (types, user operators, process parameters).
 export interface Program {
   type(t: A.Type): Shape;

@@ -5,8 +5,8 @@
 import type * as A from '../ast.js';
 import type { KernelIR, ScalarExpr, Stmt } from '../ir.js';
 import type { ForwardStmt, Generator } from '../substitute.js';
-import { fromSlots, shapeWidth, type Shape, type Value } from '../values.js';
-import type { Domain, Program } from './domain.js';
+import { fromSlots, paramParts, shapeWidth, type Value } from '../values.js';
+import type { Domain, KernelContext, Program } from './domain.js';
 import { Semantics } from './nile.js';
 
 // An IR builder: the domain, plus `record` to capture the statements an
@@ -58,28 +58,10 @@ export function irDomain() {
   return { D, record };
 }
 
-// Parameters as a value: one part per name, reading consecutive slots.
-function paramValue(params: { names: string[]; shape: Shape }[], kind: 'param' | 'input', from: number) {
-  let at = from;
-  const parts = params.flatMap((g) => g.names.map(() => {
-    const v = fromSlots(g.shape, kind, at);
-    at += shapeWidth(g.shape);
-    return v;
-  }));
-  const value: Value<ScalarExpr> = { k: 'agg', shape: { k: 'record', name: null, fields: [] }, parts };
-  return { value, width: at - from };
-}
-
-export function stageKernel(
-  P: Program,
-  k: A.Kernel, // desugared
-  params: { names: string[]; shape: Shape }[],
-  sig: { input: Shape; output: Shape },
-  access: KernelIR['access'],
-): KernelIR {
+export function stageKernel(P: Program, { kernel: k, params, sig }: KernelContext, access: KernelIR['access']): KernelIR {
   const { D, record } = irDomain();
-  const p = paramValue(params, 'param', 0);
-  const sem = new Semantics(P, D).kernel(k, p.value, params.map((g) => g.names), sig);
+  const p = paramParts(params, (shape, at) => fromSlots(shape, 'param', at));
+  const sem = new Semantics(P, D).kernel(k, p.parts, p.names, sig);
   return {
     k: 'kernel', name: k.name, paramWidth: p.width,
     inputWidth: shapeWidth(sig.input), outputWidth: shapeWidth(sig.output),
@@ -93,17 +75,10 @@ export function stageKernel(
 
 // A generator's prologue, for the frame interpreter (substitute.ts): its
 // parameters are the frame's slots after the tag; declarations are locals.
-export function stageGenerator(
-  P: Program,
-  k: A.Kernel,
-  params: { names: string[]; shape: Shape }[],
-  sig: { input: Shape; output: Shape },
-): Generator {
+export function stageGenerator(P: Program, { kernel: k, params, sig }: KernelContext): Generator {
   const { D, record } = irDomain();
-  const p = paramValue(params, 'input', 1);
-  const env = new Map<string, Value<ScalarExpr>>();
-  let i = 0;
-  for (const g of params) for (const n of g.names) env.set(n, (p.value as { parts: Value<ScalarExpr>[] }).parts[i++]);
+  const p = paramParts(params, (shape, at) => fromSlots(shape, 'input', 1 + at));
+  const env = new Map(p.names.map((n, i) => [n, p.parts[i]]));
   const body = record(() => new Semantics(P, D).stmts(k.prologue, env, { ...sig, flush: true }));
   return { name: k.name, paramWidth: p.width, body };
 }

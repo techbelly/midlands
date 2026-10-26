@@ -93,6 +93,22 @@ export function fromExprs<S>(shape: Shape, exprs: S[], base = 0): Value<S> {
   return { k: 'agg', shape, parts };
 }
 
+// One value per parameter name, over consecutive slots; `part` reads a shape
+// at an offset. The names are in group order, as the values are.
+export function paramParts<S>(params: { names: string[]; shape: Shape }[], part: (shape: Shape, at: number) => Value<S>): { names: string[]; parts: Value<S>[]; width: number } {
+  const names: string[] = [];
+  const parts: Value<S>[] = [];
+  let width = 0;
+  for (const g of params) {
+    for (const n of g.names) {
+      names.push(n);
+      parts.push(part(g.shape, width));
+      width += shapeWidth(g.shape);
+    }
+  }
+  return { names, parts, width };
+}
+
 // A value reading a contiguous run of slots (param/state/input).
 export function fromSlots(shape: Shape, kind: 'param' | 'state' | 'input', base: number): Value {
   const exprs: ScalarExpr[] = [];

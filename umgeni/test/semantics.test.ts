@@ -31,7 +31,7 @@ describe('mid-stream ⇒: interpreter ≡ compiler ≡ the 2012 runtime', () => 
   const { program, kernels } = kernelContexts(parseProgram(sources).modules, true);
   const interp = (name: string, params: number[] = []) => {
     const c = kernels.get(name)!;
-    return interpretKernel(program, c.kernel, c.params, c.sig, params, (n) => kernels.get(n));
+    return interpretKernel(program, c, params, (n) => kernels.get(n));
   };
   const build: Record<string, (p: number[]) => ReturnType<typeof interp>> = {
     OffsetBezier: (p) => interp('OffsetBezier', p),

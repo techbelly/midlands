@@ -13,7 +13,7 @@ import { assembleFamily, SubstError, type Generator } from './substitute.js';
 import { desugar, SugarError } from './semantics/sugar.js';
 import { elabPipelineStages, type PipelineProgram } from './semantics/pipelines.js';
 import { stageExpr, stageGenerator, stageKernel } from './semantics/staged.js';
-import type { Program } from './semantics/domain.js';
+import type { KernelContext, ParamGroup, Program } from './semantics/domain.js';
 import { ElabError, fieldInfo, fit, fromSlots, REAL, scalar, shapeWidth, tokenLayout, type Shape, type Value } from './values.js';
 import { opKey } from './ops.js';
 
@@ -80,7 +80,7 @@ class Elaborator {
   contexts(modules: A.Module[], all = false) {
     this.declare(modules.flatMap((m) => m.decls));
     const program = this.program;
-    const kernels = new Map<string, { kernel: A.Kernel; params: { names: string[]; shape: Shape }[]; sig: StreamSig }>();
+    const kernels = new Map<string, KernelContext>();
     for (const [name, d] of this.kernels) {
       const sig = this.streamSig(d.type);
       if (!sig || this.isTemplate(d) || pipelineBody(d) || (!all && (usesSubstitution(d) || this.generators.has(name)))) continue;
@@ -282,7 +282,7 @@ class Elaborator {
       : declared.window ? { window: { key: declared.window.key === null ? null : realField(declared.window.key, 'window segment key') } }
       : undefined;
     // The kernel is the residue of staging its semantics (semantics/).
-    return stageKernel(this.program, d, this.paramGroups(d), sig, access);
+    return stageKernel(this.program, { kernel: d, params: this.paramGroups(d), sig }, access);
   }
 
   // --- substitution (`⇒` mid-stream; see substitute.ts) ---
@@ -307,7 +307,7 @@ class Elaborator {
   // A generator's body for the frame interpreter: params live in the frame
   // (input slots 1…), prologue declarations are plain locals.
   private elabGenerator(d: A.Kernel): Generator {
-    return stageGenerator(this.program, d, this.paramGroups(d), this.plainSig(d));
+    return stageGenerator(this.program, { kernel: d, params: this.paramGroups(d), sig: this.plainSig(d) });
   }
 
   // Everything `d` can substitute into, transitively: stream processes it may
@@ -373,11 +373,6 @@ class Elaborator {
       isStream: (t) => this.isProcessType(t),
     };
   }
-}
-
-interface ParamGroup {
-  names: string[];
-  shape: Shape;
 }
 
 // Parameters by name, in order, with their flattened widths.
