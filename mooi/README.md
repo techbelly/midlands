@@ -19,27 +19,44 @@ sizes [x, ...rest] | x > 9 = ["big"] ++ sizes rest
 ```
 
 The right-hand sides are a small expression language: anonymous functions
-(`\x -> …`), `let … in …`, `if`, lists, records with `...spread`, `;` to do
-one thing then another, and `??` for a default when a value is missing.
+(`\x -> …`), `let … in …` (several bindings separated by commas, each a
+pattern), `if … then … else …`, lists, records with `...spread`, field
+access `x.f`, `;` to do one thing then another, and `??` for a default
+when a value is missing. The operators are `+ - * /`, `++` (strings or
+lists), the comparisons, `&&` and `||` (both short-circuit).
 
-Every function takes its arguments one at a time (it is *curried*), whether
-it was written in Mooi or is a plain JavaScript function the host passed in.
-That is how a host extends Mooi: it hands over functions, and the equations
-call them like any other.
+## Syntax
 
-```ts
-import { load } from './src/mooi.js';
-import { prelude } from './src/prelude.js';
+- A definition starts at column 0; its continuation lines are indented.
+  `--` starts a comment.
+- A pattern is a name, `_`, a number, a string, `null`, a node
+  `name{f1, f2: p}` (a field alone binds a variable of that name; `f: p`
+  matches `p` against it; there must be no space before the `{`), a list
+  `[]`, `[p, q]` or `[p, ...rest]`, or a pattern in parentheses.
+- A node pattern matches an object whose `kind` or `k` field is the name.
+  The node expression `name{…}` always builds `{kind: name, …}`; a record
+  with a `k` tag is written out, `{k: "scalar", expr: x}`.
+- Strings have no escapes. `null` and `undefined` are one missing value:
+  `==` treats them as equal, and `??` steps over either.
 
-const m = load(source, { ...prelude(fail), lookup, bind });
-m.eval(tree, env);
-```
+## Host conventions
 
-The implementation is three files, about 360 lines together:
+- Every function is curried by its arity, read from the JavaScript
+  function's `length`: a host function with default or rest parameters has
+  the wrong arity, so write it with plain parameters.
+- A zero-arity host function is called by applying it to `unit`, the
+  prelude's name for `undefined`: `c.get unit`.
+- A definition with no parameters is a value, computed once on first use.
+- A Mooi definition shadows a host name of the same name.
+- `prelude(fail)` supplies the list functions, `must x msg` (x or fail),
+  `null`, `unit`, `true` and `false`.
+
+The implementation is about 365 lines:
 
 - [src/mooi.ohm](src/mooi.ohm), the grammar, which [Ohm](https://ohmjs.org) parses with.
 - [src/mooi.ts](src/mooi.ts), the evaluator: matching shapes, trying equations in order, applying functions.
 - [src/prelude.ts](src/prelude.ts), the prelude: map, folds, filter and friends.
+- [src/source.ts](src/source.ts) and its browser twin, which read the grammar in Node or in a bundle.
 
 [test/mooi.test.ts](test/mooi.test.ts) is a complete small example. The large
 example is umgeni's definition of Nile:
