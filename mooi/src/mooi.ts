@@ -99,21 +99,18 @@ class Env {
 }
 const NO = Symbol('no match');
 
-// Apply a function value to one argument: functions are curried by arity
-// (a JS function's length), host and Mooi alike. A partial application is a
-// function carrying its target and the arguments so far.
-type Fn = ((...a: unknown[]) => unknown) & { __fn?: (...a: unknown[]) => unknown; __args?: unknown[] };
+// Mooi has one missing value: JS null and undefined are the same to it.
+const same = (a: unknown, b: unknown) => a === b || (a == null && b == null);
+// A node's tag: `kind` in Nile's syntax trees, `k` in umgeni's values and IR.
+const tagOf = (v: object) => (v as { kind?: string }).kind ?? (v as { k?: string }).k;
+
+// Apply a function value to one argument. Functions are curried by arity (a
+// JS function's length), host and Mooi alike: applied short of its arity, a
+// function gives back a function of the arguments still owed.
 export function app(f: unknown, x: unknown): unknown {
   if (typeof f !== 'function') throw new Error(`Mooi: applying a non-function (${describe(f)})`);
-  const fn = f as Fn;
-  const target = fn.__fn ?? fn;
-  const args = [...(fn.__args ?? []), x];
-  if (target.length === 0) return target();
-  if (args.length >= target.length) return target(...args);
-  const p: Fn = (...more: unknown[]) => more.reduce((acc, m) => app(acc, m), p);
-  p.__fn = target;
-  p.__args = args;
-  return p;
+  if (f.length <= 1) return f(x); // a zero-arity function (a cell's get) ignores x
+  return withArity(f.length - 1, (...rest: unknown[]) => f(x, ...rest));
 }
 
 function withArity<F extends (...a: unknown[]) => unknown>(n: number, f: F): F {
@@ -125,11 +122,11 @@ function match(p: Pat, v: unknown, env: Env): boolean {
   switch (p.p) {
     case 'wild': return true;
     case 'var': env.set(p.name, v); return true;
-    case 'lit': return v === p.value || (p.value === null && v === undefined);
+    case 'lit': return same(v, p.value);
     case 'node': {
       if (v === null || typeof v !== 'object') return false;
       const o = v as Record<string, unknown>;
-      if (o.kind !== p.name && o.k !== p.name) return false;
+      if (tagOf(o) !== p.name) return false;
       return p.fields.every(([f, sub]) => match(sub, o[f], env));
     }
     case 'list': {
@@ -209,8 +206,8 @@ export function load(src: string, host: Record<string, unknown>): Record<string,
         if (x.op === '&&') return a && ev(x.b, env);
         const b = ev(x.b, env) as never;
         switch (x.op) {
-          case '==': return a === b || (a == null && b == null);
-          case '!=': return !(a === b || (a == null && b == null));
+          case '==': return same(a, b);
+          case '!=': return !same(a, b);
           case '<': return (a as number) < b;
           case '>': return (a as number) > b;
           case '<=': return (a as number) <= b;
@@ -249,4 +246,4 @@ export function load(src: string, host: Record<string, unknown>): Record<string,
 }
 
 const describe = (v: unknown) =>
-  v && typeof v === 'object' ? ((v as { kind?: string; k?: string }).kind ?? (v as { k?: string }).k ?? (Array.isArray(v) ? `[${v.length}]` : '{…}')) : String(v);
+  v && typeof v === 'object' ? (tagOf(v) ?? (Array.isArray(v) ? `[${v.length}]` : '{…}')) : String(v);
