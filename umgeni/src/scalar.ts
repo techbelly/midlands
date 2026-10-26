@@ -41,18 +41,6 @@ export const UN: Record<UnOpName, OpDef<(a: number) => number>> = {
   ceil: { nile: '⌈_⌉', cls: 'fn', sym: 'ceil', f: Math.ceil, wasm: 0x9b },
 };
 
-// Evaluate an expression whose leaves the caller resolves (the host side of
-// GPU state folding).
-export function evalScalar(e: ScalarExpr, leaf: (e: ScalarExpr) => number): number {
-  switch (e.k) {
-    case 'bin': return BIN[e.op].f(evalScalar(e.a, leaf), evalScalar(e.b, leaf));
-    case 'un': return UN[e.op].f(evalScalar(e.a, leaf));
-    case 'select': return evalScalar(e.cond, leaf) !== 0 ? evalScalar(e.then, leaf) : evalScalar(e.else, leaf);
-    case 'const': return e.value;
-    default: return leaf(e);
-  }
-}
-
 // --- C-like text rendering (JS and WGSL differ only in spelling) ---
 
 export interface Dialect {

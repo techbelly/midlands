@@ -24,7 +24,7 @@ import { createRasterHost, type GpuRasterizer } from '../umgeni/src/gpu/raster.j
 import { createPresenter, type Presenter } from '../umgeni/src/gpu/present.js';
 import { lowerPipeline } from '../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../umgeni/src/gpu/execute.js';
-import { requestDevice } from '../umgeni/src/gpu/runtime.js';
+import { requestDevice } from '../umgeni/src/gpu/device.js';
 import { compileMs, nile, nileWasm, RasterizePixelsIR } from './nl/text.nl-lib';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';

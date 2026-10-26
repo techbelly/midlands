@@ -15,7 +15,7 @@ import { compileLibraryFile } from '../src/sources.js';
 import { createRasterHost } from '../../umgeni/src/gpu/raster.js';
 import { lowerPipeline, META_BYTES, type Plan } from '../../umgeni/src/gpu/lower.js';
 import { appendSink, coverageSink, createExecutor, metaWords, wholeGrid } from '../../umgeni/src/gpu/execute.js';
-import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
+import { requestDevice } from '../../umgeni/src/gpu/device.js';
 import { paintCoverage } from '../src/text/host.js';
 import type { FusedIR } from '../../umgeni/src/ir.js';
 

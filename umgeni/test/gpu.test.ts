@@ -1,13 +1,12 @@
 // Node-side tests for the GPU backend's pure parts (classification, WGSL
-// generation, state folding). Actual GPU execution runs under Deno —
-// `npm run bench:gpu` — which also checks GPU-vs-CPU output tolerance.
+// generation, lowering). Actual GPU execution runs under Deno: the
+// `npm run check:*` scripts compare GPU output with the CPU's.
 
 import { describe, expect, it } from 'vitest';
 import { gezira, roda } from './sources.js';
 import { compileLibrary } from '../src/compile.js';
 import { isMapKernel } from '../src/gpu/classify.js';
-import { genMapShader } from '../src/gpu/wgsl.js';
-import { evalStateInit } from '../src/gpu/eval.js';
+import { wgslBody, type WgslEnv } from '../src/gpu/wgsl.js';
 import { lowerPipeline, LowerError } from '../src/gpu/lower.js';
 import { appendSink, coverageSink } from '../src/gpu/execute.js';
 import type { KernelIR } from '../src/ir.js';
@@ -36,11 +35,6 @@ describe('GPU kernel classification', () => {
 });
 
 describe('WGSL generation', () => {
-  it('generates the TransformBeziers shader (golden)', () => {
-    const kernel = kernelsOf('types.nl', 'bezier.nl').find((k) => k.name === 'TransformBeziers')!;
-    expect(genMapShader(kernel)).toMatchSnapshot();
-  });
-
   it('formats numbers as valid WGSL f32 literals', () => {
     const src = [
       'K : Real >> Real',
@@ -48,7 +42,14 @@ describe('WGSL generation', () => {
       '        >> {a × 2 if a < 0.5, -1}',
     ].join('\n');
     const kernel = compileLibrary([src]).ir.processes[0] as KernelIR;
-    const shader = genMapShader(kernel);
+    const env: WgslEnv = {
+      param: (i) => `P[${i}u]`,
+      state: (i) => `S[${i}u]`,
+      input: (i) => `IN[${i}u]`,
+      emit: (vals, indent) => vals.map((v, i) => `${indent}OUT[${i}u] = ${v};`).join('\n'),
+      feed: () => { throw new Error('map kernels cannot feed'); },
+    };
+    const shader = wgslBody(kernel.body, '  ', env);
     expect(shader).toContain('2.0');     // integer constants get a decimal
     expect(shader).toContain('(-1.0)');
     expect(shader).toContain('< 0.5');   // conditions stay native bool
@@ -135,15 +136,5 @@ describe('pipeline lowering (gpu/lower.ts)', () => {
     refuse(nlSrc.replace('+[ h ] by @y', '+[ h ] by @x'), 'RasterizeParallel', /scans by a field that is not the grid's major key/);
     // A window that does not declare its segment.
     refuse(nlSrc.replace('∀ p ∷ q by @y', '∀ p ∷ q'), 'RasterizeParallel', /must declare its segment/);
-  });
-});
-
-describe('state folding', () => {
-  it('evaluates prologue state from params (LinearGradient)', () => {
-    const kernel = kernelsOf('types.nl', 'gradient.nl').find((k) => k.name === 'LinearGradient')!;
-    expect(isMapKernel(kernel)).toBe(true);
-    // S=(0,0), E=(2,0): v=(2,0), d=(0.5,0), s00=0
-    const state = evalStateInit(kernel.stateInit, [0, 0, 2, 0]);
-    expect(state).toEqual([2, 0, 0.5, 0, 0]);
   });
 });

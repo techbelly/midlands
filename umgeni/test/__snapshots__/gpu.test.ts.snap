@@ -1,30 +1,5 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`WGSL generation > generates the TransformBeziers shader (golden) 1`] = `
-"// generated from Nile kernel TransformBeziers (map class)
-// P layout: [0..6) params, [6..) folded state
-struct Meta { n : u32 }
-@group(0) @binding(0) var<uniform> META : Meta;
-@group(0) @binding(1) var<storage, read> P : array<f32>;
-@group(0) @binding(2) var<storage, read> INBUF : array<f32>;
-@group(0) @binding(3) var<storage, read_write> OUTBUF : array<f32>;
-
-@compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
-  let i = gid.x;
-  if (i >= META.n) { return; }
-  let inBase = i * 6u;
-  let outBase = i * 6u;
-  OUTBUF[outBase + 0u] = (((P[0u] * INBUF[inBase + 0u]) + (P[2u] * INBUF[inBase + 1u])) + P[4u]);
-  OUTBUF[outBase + 1u] = (((P[1u] * INBUF[inBase + 0u]) + (P[3u] * INBUF[inBase + 1u])) + P[5u]);
-  OUTBUF[outBase + 2u] = (((P[0u] * INBUF[inBase + 2u]) + (P[2u] * INBUF[inBase + 3u])) + P[4u]);
-  OUTBUF[outBase + 3u] = (((P[1u] * INBUF[inBase + 2u]) + (P[3u] * INBUF[inBase + 3u])) + P[5u]);
-  OUTBUF[outBase + 4u] = (((P[0u] * INBUF[inBase + 4u]) + (P[2u] * INBUF[inBase + 5u])) + P[4u]);
-  OUTBUF[outBase + 5u] = (((P[1u] * INBUF[inBase + 4u]) + (P[3u] * INBUF[inBase + 5u])) + P[5u]);
-}
-"
-`;
-
 exports[`pipeline lowering (gpu/lower.ts) > lowers RasterizeParallel to a plan of two passes from IR alone (golden) 1`] = `
 "// DecomposeBeziers, one thread per token (generated from Nile IR)
 struct Meta { n : u32, major : u32, minor : u32, segBase : u32, segEnd : u32, minBase : u32, minEnd : u32, pad : u32 }

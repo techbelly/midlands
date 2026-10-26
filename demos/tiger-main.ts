@@ -8,7 +8,7 @@ import type { FusedIR } from '../umgeni/src/ir.js';
 import { createPresenter } from '../umgeni/src/gpu/present.js';
 import { lowerPipeline } from '../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../umgeni/src/gpu/execute.js';
-import { requestDevice } from '../umgeni/src/gpu/runtime.js';
+import { requestDevice } from '../umgeni/src/gpu/device.js';
 import { nile, nileWasm, RasterizePixelsIR } from './nl/vector.nl-lib';
 import svgSrc from './tiger.svg';
 import { quoteNile } from './src/quote.js';

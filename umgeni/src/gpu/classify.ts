@@ -1,12 +1,12 @@
-// Kernel classification for GPU backends. Phase A handles only the
-// map class: one thread per token, no cross-token effects.
+// Kernel classification for the GPU back end. gpu/texture.ts lowers map
+// kernels, one thread per token with no cross-token effects, into a texture
+// shader; everything else goes through gpu/lower.ts.
 //
 //   map: no init body, no epilogue, no feedback, no state writes, and
 //        exactly one emit which is the last top-level statement (so every
 //        token produces exactly one output token).
 //
-// Everything else (dynamic expansion, carried state, sorts) is later phases;
-// classification is derived from the IR, not annotated by hand.
+// Classification is derived from the IR, not annotated by hand.
 
 import { anyStmt, type KernelIR } from '../ir.js';
 

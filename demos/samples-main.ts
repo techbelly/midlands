@@ -15,7 +15,7 @@ import { quoteNile } from './src/quote.js';
 import { createPresenter, type PathBatch, type Presenter } from '../umgeni/src/gpu/present.js';
 import { lowerPipeline } from '../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../umgeni/src/gpu/execute.js';
-import { requestDevice } from '../umgeni/src/gpu/runtime.js';
+import { requestDevice } from '../umgeni/src/gpu/device.js';
 import tigerSvg from './tiger.svg';
 // Source Serif 4: SIL OFL 1.1 (fonts/OFL.txt). Cairo's samples ask for Sans.
 import sourceSerif from './fonts/SourceSerif4.ttf';

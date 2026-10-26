@@ -13,7 +13,6 @@
     "demo:build": "node demos/tools/build.mjs",
     "demo:serve": "node demos/tools/build.mjs && npx esbuild --servedir=demos/dist",
     "bench": "npx tsx demos/tools/bench.ts",
-    "bench:gpu": "deno run --allow-read --allow-env --unstable-sloppy-imports umgeni/tools/bench-gpu.ts",
     "bench:gpu:resident": "deno run --allow-read --allow-env --unstable-sloppy-imports demos/tools/bench-gpu-resident.ts",
     "check:present": "deno run --allow-read --allow-env --unstable-sloppy-imports demos/tools/check-present.ts",
     "check:lowering": "deno run --allow-read --allow-env --unstable-sloppy-imports demos/tools/check-lowering.ts",

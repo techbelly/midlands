@@ -11,7 +11,7 @@ import { createPresenter } from '../../umgeni/src/gpu/present.js';
 import { lowerPipeline } from '../../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../../umgeni/src/gpu/execute.js';
 import { lowerTexture } from '../../umgeni/src/gpu/texture.js';
-import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
+import { requestDevice } from '../../umgeni/src/gpu/device.js';
 import { PAINT_GLUE, paintShapes } from '../src/vector/paint.js';
 import { writePixels } from '../src/vector/spans.js';
 import { PRESETS } from '../paint-presets.js';

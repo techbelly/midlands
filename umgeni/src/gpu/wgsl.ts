@@ -1,16 +1,17 @@
-// WGSL code generation for map-class kernels: one thread per input token.
+// Scalar IR rendered as WGSL statements. gpu/lower.ts and gpu/texture.ts
+// each supply a WgslEnv saying how a parameter, state slot, input slot, emit
+// or feed is spelled in their shader; this file knows only the statements.
 //
-// The scalar IR ports almost directly — pure f32 arithmetic, structured
-// control flow, single-assignment locals. The two representational shifts:
-// WGSL comparisons yield bool (numeric context materializes 0.0/1.0 via
-// select; boolean context stays native, mirroring the JS boolCond pass), and
-// state slots are folded into the parameter buffer by the host (a map kernel
-// never writes state — see gpu/eval.ts).
+// The scalar IR ports almost directly: pure f32 arithmetic, structured
+// control flow, single-assignment locals. The one representational shift is
+// that WGSL comparisons yield bool, so a numeric context materializes
+// 0.0/1.0 through select while a boolean context stays native (mirroring
+// the JS boolCond pass).
 //
 // PRECISION: WGSL computes in f32; the reference backend in f64. GPU output
 // is compared with tolerances, not bit-equality.
 
-import { allStmts, type KernelIR, type ScalarExpr, type Stmt } from '../ir.js';
+import { allStmts, type ScalarExpr, type Stmt } from '../ir.js';
 import { renderCond, renderExpr, type Dialect } from '../scalar.js';
 
 function fmt(v: number): string {
@@ -109,35 +110,3 @@ const assignedNames = (list: Stmt[]) =>
   new Set([...allStmts(list)].flatMap((s) => (s.k === 'assign' ? [s.name] : [])));
 
 export const WORKGROUP_SIZE = 64;
-
-export function genMapShader(k: KernelIR): string {
-  const c: WgslEnv = {
-    param: (i) => `P[${i}u]`,
-    state: (i) => `P[${k.paramWidth + i}u]`,
-    input: (i) => `INBUF[inBase + ${i}u]`,
-    emit: (vals, indent) =>
-      vals.map((v, i) => `${indent}OUTBUF[outBase + ${i}u] = ${v};`).join('\n'),
-    feed: () => {
-      throw new Error('map kernels cannot feed');
-    },
-  };
-  return [
-    `// generated from Nile kernel ${k.name} (map class)`,
-    `// P layout: [0..${k.paramWidth}) params, [${k.paramWidth}..) folded state`,
-    `struct Meta { n : u32 }`,
-    `@group(0) @binding(0) var<uniform> META : Meta;`,
-    `@group(0) @binding(1) var<storage, read> P : array<f32>;`,
-    `@group(0) @binding(2) var<storage, read> INBUF : array<f32>;`,
-    `@group(0) @binding(3) var<storage, read_write> OUTBUF : array<f32>;`,
-    ``,
-    `@compute @workgroup_size(${WORKGROUP_SIZE})`,
-    `fn main(@builtin(global_invocation_id) gid : vec3<u32>) {`,
-    `  let i = gid.x;`,
-    `  if (i >= META.n) { return; }`,
-    `  let inBase = i * ${k.inputWidth}u;`,
-    `  let outBase = i * ${k.outputWidth}u;`,
-    wgslBody(k.body, '  ', c),
-    `}`,
-    ``,
-  ].join('\n');
-}

@@ -13,7 +13,7 @@ import { compileLibrary } from '../../umgeni/src/compile.js';
 import { createRasterHost } from '../../umgeni/src/gpu/raster.js';
 import { lowerPipeline } from '../../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../../umgeni/src/gpu/execute.js';
-import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
+import { requestDevice } from '../../umgeni/src/gpu/device.js';
 import * as rt from '../../umgeni/src/cpu/runtime.js';
 import { paintCoverage, textSpansParams, textTokens, type TextSpansParams } from '../src/text/host.js';
 

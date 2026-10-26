@@ -15,7 +15,7 @@ import { compileLibrary } from '../../umgeni/src/compile.js';
 import { createRasterHost } from '../../umgeni/src/gpu/raster.js';
 import { lowerPipeline } from '../../umgeni/src/gpu/lower.js';
 import { appendSink, coverageSink, createExecutor, metaWords, wholeGrid } from '../../umgeni/src/gpu/execute.js';
-import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
+import { requestDevice } from '../../umgeni/src/gpu/device.js';
 import { META_BYTES, type Sink } from '../../umgeni/src/gpu/lower.js';
 
 // The reference for ExpandSpans: a span (x, y, c, l) painted by a loop, as

@@ -10,7 +10,7 @@ import { compileLibraryFile, read } from '../src/sources.js';
 import { createPresenter } from '../../umgeni/src/gpu/present.js';
 import { lowerPipeline } from '../../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../../umgeni/src/gpu/execute.js';
-import { requestDevice } from '../../umgeni/src/gpu/runtime.js';
+import { requestDevice } from '../../umgeni/src/gpu/device.js';
 import * as rt from '../../umgeni/src/cpu/runtime.js';
 import { parseSvg } from '../src/vector/svg.js';
 import { drawTiger, fitView, paintPaths, tigerPaths, toBatches } from '../src/vector/tiger.js';
