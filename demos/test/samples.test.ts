@@ -169,7 +169,7 @@ describe('matrices (nl/vector.nl)', () => {
 // --- the samples page, headless -----------------------------------------------
 import { readFileSync } from 'node:fs';
 import { parseTrueType } from '../src/text/ttf.js';
-import { Sheet } from '../src/samples/draw.js';
+import { CpuTarget, Sheet } from '../src/samples/draw.js';
 import { SCENES } from '../src/samples/scenes.js';
 import { path } from '../src/samples/path.js';
 import { parseSvg } from '../src/vector/svg.js';
@@ -186,7 +186,7 @@ drawTiger(tiger, parseSvg(read('demos/tiger.svg'), samples.api), fitView(256, 25
 const render = (id: string) => {
   const scene = SCENES.find((s) => s.id === id)!;
   const img = page();
-  scene.draw(new Sheet(samples.api, img), font, tiger);
+  scene.draw(new Sheet(samples.api, new CpuTarget(samples.api, img)), font, tiger);
   return img;
 };
 
@@ -265,7 +265,7 @@ describe('mesh gradients (nl/patch.nl)', () => {
   it('fills a straight-sided patch pixel for pixel, blending the corner colours', () => {
     const img = page();
     const line = (x0: number, y0: number, x1: number, y1: number) => [x0, y0, x0 + (x1 - x0) / 3, y0 + (y1 - y0) / 3, x0 + (2 * (x1 - x0)) / 3, y0 + (2 * (y1 - y0)) / 3, x1, y1];
-    new Sheet(samples.api, img).paintMesh([{ T: line(10, 10, 20, 10), B: line(10, 20, 20, 20), L: line(10, 10, 10, 20), R: line(20, 10, 20, 20), colors: [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1], [1, 1, 1, 1]] }]);
+    new Sheet(samples.api, new CpuTarget(samples.api, img)).paintMesh([{ T: line(10, 10, 20, 10), B: line(10, 20, 20, 20), L: line(10, 10, 10, 20), R: line(20, 10, 20, 20), colors: [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1], [1, 1, 1, 1]] }]);
     expect(px(img, 9, 9)).toEqual(WHITE);
     expect(px(img, 20, 15)).toEqual(WHITE);
     const tl = px(img, 10, 10), tr = px(img, 19, 10), bl = px(img, 10, 19);

@@ -4,14 +4,15 @@
 // produces (spans.ts); nothing geometric happens here. DOM-free, so the
 // samples render headless in tests as well as on the page.
 //
-// Given a list to collect batches in, the Sheet draws for the GPU instead:
-// each fill or stroke becomes its clipped beziers, a colour and the name of
-// the pipeline that rasterizes them (RasterizePixels or its even-odd twin,
-// lowered from their IR by the page), for gpu/present.ts to run. The
+// A Sheet draws onto a Target. CpuTarget rasterizes and paints into an
+// image, with clips, textures, images and meshes. GpuTarget collects each
+// fill or stroke as its clipped beziers, a colour and the name of the
+// pipeline that rasterizes them (RasterizePixels or its even-odd twin,
+// lowered from their IR by the page), for gpu/present.ts to run; the
 // geometry (flatten, stroke, dash, clip to the page) is the same Nile, on
-// the CPU, as the tiger does it. What the presenter cannot draw — a clip,
-// a texture, an image, a mesh — throws CpuOnly, naming why, and the page
-// draws that scene on the CPU.
+// the CPU, as the tiger does it. What the presenter cannot draw — a clip, a
+// texture, an image, a mesh — GpuTarget refuses with CpuOnly, naming why,
+// and the page draws that scene on the CPU.
 
 import type { Api } from '../vector/draw.js';
 import { writePixels, type ImgLike } from '../vector/spans.js';
@@ -67,19 +68,27 @@ const I = [1, 0, 0, 1, 0, 0];
 const CAP: Record<Cap, number> = { butt: 0, round: -1, square: 1 }; // gezira's c
 const nileColor = (c: Rgba) => [c[3], c[0], c[1], c[2]]; // gezira's (a, r, g, b)
 
-export class Sheet {
-  private clipSpans: number[][] | null = null;
-  private readonly box: { min: number[]; max: number[] };
-  private readonly images: ImgLike[] = [];
+/** A Coons patch: four cubic sides (8 numbers each) and four corner colours. */
+export interface Patch { T: number[]; B: number[]; L: number[]; R: number[]; colors: [Rgba, Rgba, Rgba, Rgba] }
 
-  constructor(private readonly nile: Api, private readonly img: ImgLike, private readonly gpu: PathBatch[] | null = null) {
-    this.box = { min: [0, 0], max: [img.width, img.height] };
-    nile.provide('ReadImage', readImage(this.images));
-  }
+/** Where a Sheet's shapes end up. The geometry is the Sheet's: a target is
+ *  handed beziers already flattened (and, for a stroke, outlined). */
+export interface Target {
+  /** Paint beziers, in page space, in one colour under a fill rule. */
+  shade(beziers: number[][], color: Rgba, rule: Rule): void;
+  /** From now on, paint only inside these beziers (and any clip already set). */
+  clip(beziers: number[][]): void;
+  resetClip(): void;
+  paintTexture(texture: 'PaintSky' | 'PaintSun', beziers: number[][]): void;
+  paintImage(image: ImgLike, M: Matrix, extend: 'none' | 'repeat', pattern: Matrix): void;
+  paintMesh(patches: Patch[]): void;
+}
+
+export class Sheet {
+  constructor(private readonly nile: Api, private readonly target: Target) {}
 
   fill(path: Path, color: Rgba, rule: Rule = 'winding'): void {
-    if (this.gpu) return this.batch(this.flatten(path.cubics), color, rule);
-    this.paint(this.coverage(this.flatten(path.cubics), rule), color);
+    this.target.shade(this.flatten(path.cubics), color, rule);
   }
 
   stroke(path: Path, color: Rgba, s: Stroke): void {
@@ -90,24 +99,20 @@ export class Sheet {
       const [on1, off1, on2, off2] = dashLengths(s.dash.pattern);
       return this.nile.DashedStroke({ M: I, w: s.width, l, c, on1, off1, on2, off2, phase: s.dash.offset }).run(sub);
     });
-    if (this.gpu) return this.batch(outline, color, 'winding');
-    this.paint(this.coverage(outline, 'winding'), color);
+    this.target.shade(outline, color, 'winding');
   }
 
   /** From now on, paint only inside this path (and any clip already set). */
   clip(path: Path): void {
-    if (this.gpu) throw new CpuOnly('Intersect lowers to the GPU, but this page composites a clip on the CPU');
-    const spans = this.coverage(this.flatten(path.cubics), 'winding');
-    this.clipSpans = this.clipSpans ? this.nile.Intersect().run([...spans, ...this.clipSpans]).map((p) => [p[0], p[1], p[2], 1]) : spans;
+    this.target.clip(this.flatten(path.cubics));
   }
   resetClip(): void {
-    this.clipSpans = null;
+    this.target.resetClip();
   }
 
   /** Fill a path with one of the samples' textures (nl/samples.nl). */
   paintTexture(texture: 'PaintSky' | 'PaintSun', path: Path): void {
-    if (this.gpu) throw new CpuOnly('ApplyTexture pairs each pixel with its paint by DupZip, which has no parallel lowering (the paint page lowers a texture to a shader function instead)');
-    writePixels(this.img, this.nile, this.nile[texture](this.box).run(this.flatten(path.cubics)));
+    this.target.paintTexture(texture, this.flatten(path.cubics));
   }
 
   /** Maps composed in order, the first applied last, as Cairo's translate,
@@ -120,9 +125,55 @@ export class Sheet {
    *  from the image placed by M (the transform in force), either once or
    *  repeated as a pattern, whose own matrix maps user space to the image. */
   paintImage(image: ImgLike, M: Matrix, extend: 'none' | 'repeat' = 'none', pattern: Matrix = IDENTITY): void {
-    if (this.gpu) throw new CpuOnly('ReadImage is a process the host supplies; it has no GPU form yet');
+    this.target.paintImage(image, M, extend, pattern);
+  }
+
+  /** A mesh gradient: Coons patches (nl/patch.nl). */
+  paintMesh(patches: Patch[]): void {
+    this.target.paintMesh(patches);
+  }
+
+  private flatten(cubics: number[][]): number[][] {
+    return this.nile.FlattenCubics().run(cubics);
+  }
+}
+
+/** Draws into an image on the CPU: every operation is compiled Nile, and
+ *  the host writes the pixels Nile produces (spans.ts). */
+export class CpuTarget implements Target {
+  private clipSpans: number[][] | null = null;
+  private readonly box: { min: number[]; max: number[] };
+  private readonly images: ImgLike[] = [];
+
+  constructor(private readonly nile: Api, private readonly img: ImgLike) {
+    this.box = { min: [0, 0], max: [img.width, img.height] };
+    nile.provide('ReadImage', readImage(this.images));
+  }
+
+  shade(beziers: number[][], color: Rgba, rule: Rule): void {
+    const C = nileColor(color);
+    const spans = this.coverage(beziers, rule);
+    const pixels = this.clipSpans
+      ? this.nile.ClipPaint({ C }).run([...spans, ...this.clipSpans])
+      : this.nile.PaintSpans({ C }).run(spans);
+    writePixels(this.img, this.nile, pixels);
+  }
+
+  clip(beziers: number[][]): void {
+    const spans = this.coverage(beziers, 'winding');
+    this.clipSpans = this.clipSpans ? this.nile.Intersect().run([...spans, ...this.clipSpans]).map((p) => [p[0], p[1], p[2], 1]) : spans;
+  }
+  resetClip(): void {
+    this.clipSpans = null;
+  }
+
+  paintTexture(texture: 'PaintSky' | 'PaintSun', beziers: number[][]): void {
+    writePixels(this.img, this.nile, this.nile[texture](this.box).run(beziers));
+  }
+
+  paintImage(image: ImgLike, M: Matrix, extend: 'none' | 'repeat', pattern: Matrix): void {
     const img = this.images.indexOf(image) >= 0 ? this.images.indexOf(image) : this.images.push(image) - 1;
-    const page = this.coverage(this.flatten(path().rectangle(0, 0, this.img.width, this.img.height).build().cubics), 'winding');
+    const page = this.coverage(this.nile.FlattenCubics().run(path().rectangle(0, 0, this.img.width, this.img.height).build().cubics), 'winding');
     const spans = this.clipSpans ? this.nile.Intersect().run([...page, ...this.clipSpans]).map((p) => [p[0], p[1], p[2], 1]) : page;
     const pixels = extend === 'repeat'
       ? this.nile.PaintImageRepeat({ M, Mp: pattern, D: [image.width, image.height], img }).run(spans)
@@ -130,32 +181,44 @@ export class Sheet {
     writePixels(this.img, this.nile, pixels);
   }
 
-  /** A mesh gradient: Coons patches (nl/patch.nl), each four cubic sides
-   *  (top, bottom, left, right, as 8 numbers each) and four corner colours. */
-  paintMesh(patches: { T: number[]; B: number[]; L: number[]; R: number[]; colors: [Rgba, Rgba, Rgba, Rgba] }[]): void {
-    if (this.gpu) throw new CpuOnly('MeshPixels lowers to the GPU, but its pixels carry colours, and the presenter paints coverage in one colour per path');
+  paintMesh(patches: Patch[]): void {
     const { Patch } = this.nile.types;
     const tokens = patches.map((p) => Patch.make({ T: p.T, B: p.B, L: p.L, R: p.R, C00: nileColor(p.colors[0]), C10: nileColor(p.colors[1]), C01: nileColor(p.colors[2]), C11: nileColor(p.colors[3]), d: 0 }));
     writePixels(this.img, this.nile, this.nile.MeshPixels().run(tokens));
   }
 
-  // For the GPU: the beziers clipped to the page, the colour, and the rasterizer.
-  private batch(beziers: number[][], color: Rgba, rule: Rule): void {
-    const clipped = this.nile.ClipBeziers(this.box).run(beziers);
-    this.gpu!.push({ tokens: new Float32Array(clipped.flat()), n: clipped.length, color, plan: rule === 'evenodd' ? 'RasterizePixelsEvenOdd' : 'RasterizePixels' });
-  }
-  private flatten(cubics: number[][]): number[][] {
-    return this.nile.FlattenCubics().run(cubics);
-  }
   private coverage(beziers: number[][], rule: Rule): number[][] {
     return (rule === 'evenodd' ? this.nile.FillEvenOdd(this.box) : this.nile.FillWinding(this.box)).run(beziers);
   }
-  private paint(spans: number[][], color: Rgba): void {
-    const C = nileColor(color);
-    const pixels = this.clipSpans
-      ? this.nile.ClipPaint({ C }).run([...spans, ...this.clipSpans])
-      : this.nile.PaintSpans({ C }).run(spans);
-    writePixels(this.img, this.nile, pixels);
+}
+
+/** Collects batches for the GPU presenter: the beziers clipped to the page,
+ *  the colour, and the rasterizer. Refuses what the presenter cannot draw. */
+export class GpuTarget implements Target {
+  private readonly box: { min: number[]; max: number[] };
+
+  constructor(private readonly nile: Api, width: number, height: number, private readonly batches: PathBatch[]) {
+    this.box = { min: [0, 0], max: [width, height] };
+  }
+
+  shade(beziers: number[][], color: Rgba, rule: Rule): void {
+    const clipped = this.nile.ClipBeziers(this.box).run(beziers);
+    this.batches.push({ tokens: new Float32Array(clipped.flat()), n: clipped.length, color, plan: rule === 'evenodd' ? 'RasterizePixelsEvenOdd' : 'RasterizePixels' });
+  }
+
+  clip(): void {
+    throw new CpuOnly('Intersect lowers to the GPU, but this page composites a clip on the CPU');
+  }
+  resetClip(): void {}
+
+  paintTexture(): void {
+    throw new CpuOnly('ApplyTexture pairs each pixel with its paint by DupZip, which has no parallel lowering (the paint page lowers a texture to a shader function instead)');
+  }
+  paintImage(): void {
+    throw new CpuOnly('ReadImage is a process the host supplies; it has no GPU form yet');
+  }
+  paintMesh(): void {
+    throw new CpuOnly('MeshPixels lowers to the GPU, but its pixels carry colours, and the presenter paints coverage in one colour per path');
   }
 }
 

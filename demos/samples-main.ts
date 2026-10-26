@@ -7,7 +7,7 @@
 
 import { nile, RasterizePixelsIR, RasterizePixelsEvenOddIR } from './nl/samples.nl-lib';
 import { parseTrueType } from './src/text/ttf.js';
-import { CpuOnly, Sheet } from './src/samples/draw.js';
+import { CpuOnly, CpuTarget, GpuTarget, Sheet } from './src/samples/draw.js';
 import { SCENES } from './src/samples/scenes.js';
 import { parseSvg } from './src/vector/svg.js';
 import { drawTiger, fitView } from './src/vector/tiger.js';
@@ -110,7 +110,7 @@ function drawCpu(i: number): void {
   const ctx = cpu.getContext('2d')!;
   const img = ctx.createImageData(SIZE, SIZE);
   img.data.fill(255);
-  SCENES[i].draw(new Sheet(nile, img), font, tiger);
+  SCENES[i].draw(new Sheet(nile, new CpuTarget(nile, img)), font, tiger);
   ctx.putImageData(img, 0, 0);
   cpu.style.display = '';
   gpuCanvas.style.display = 'none';
@@ -132,7 +132,7 @@ async function draw(): Promise<void> {
     try {
       // The geometry runs first, all of it; a scene the presenter cannot
       // draw is found out before anything is submitted.
-      scene.draw(new Sheet(nile, { width: SIZE, height: SIZE, data: new Uint8ClampedArray(0) }, batches), font, tiger);
+      scene.draw(new Sheet(nile, new GpuTarget(nile, SIZE, SIZE, batches)), font, tiger);
     } catch (e) {
       if (!(e instanceof CpuOnly)) throw e;
       drawCpu(i);
