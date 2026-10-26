@@ -83,7 +83,7 @@ export async function readAppended(device: GPUDevice, plan: Plan, tokens: number
   const input = device.createBuffer({ size: Math.max(16, tokens.length * plan.inputWidth * 4), usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
   const out = device.createBuffer({ size: outBytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
   const count = device.createBuffer({ size: 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
-  const readBuf = device.createBuffer({ size: outBytes + 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+  const readBuf = device.createBuffer({ size: outBytes + 8, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
   device.queue.writeBuffer(meta, 0, metaWords(tokens.length, plan.extent, wholeGrid(plan.extent)));
   device.queue.writeBuffer(input, 0, new Float32Array(tokens.flat()));
   const groups = x.bind({ meta, input, sink: { OUT: out, COUNT: count } });
@@ -94,10 +94,12 @@ export async function readAppended(device: GPUDevice, plan: Plan, tokens: number
   x.encode(enc, groups, { n: tokens.length, segments: plan.extent[0] });
   enc.copyBufferToBuffer(out, 0, readBuf, 0, outBytes);
   enc.copyBufferToBuffer(count, 0, readBuf, outBytes, 4);
+  enc.copyBufferToBuffer(x.overflow, 0, readBuf, outBytes + 4, 4);
   device.queue.submit([enc.finish()]);
   await readBuf.mapAsync(GPUMapMode.READ);
   const mapped = readBuf.getMappedRange();
-  const got = new Uint32Array(mapped.slice(outBytes, outBytes + 4))[0];
+  const [got, overflowed] = new Uint32Array(mapped.slice(outBytes, outBytes + 8));
+  if (overflowed) throw new Error(`'${plan.name}': a thread overflowed its worklist, so the tokens are incomplete`);
   if (got > cap) throw new Error(`'${plan.name}' appended ${got} tokens, more than the ${cap} the buffer holds`);
   const vals = new Float32Array(mapped.slice(0, got * width * 4));
   readBuf.unmap();
