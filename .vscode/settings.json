@@ -1,0 +1,11 @@
+{
+  // Nile and Mooi are written in Unicode (∀ ∷ ⇒ → ◁ ρ …): do not flag it.
+  "[nile]": {
+    "editor.unicodeHighlight.ambiguousCharacters": false,
+    "editor.unicodeHighlight.nonBasicASCII": false
+  },
+  "[mooi]": {
+    "editor.unicodeHighlight.ambiguousCharacters": false,
+    "editor.unicodeHighlight.nonBasicASCII": false
+  }
+}
