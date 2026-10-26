@@ -32,6 +32,10 @@ fit v sh | length v.parts != length sh.fields = null
 fit v sh = let fs = zipWith (\p f -> fit p f.shape) v.parts sh.fields
            in if all (\x -> x != null) fs then agg sh fs else null
 
+-- A value fitted to a shape, or the failure named; and its leaves.
+fitted v sh msg   = must (fit v sh) msg
+fitLeaves v sh msg = leaves (fitted v sh msg)
+
 -- Apply f to arguments fitted to its parameter shapes, or — when some
 -- argument is a bigger record — componentwise over that record's shape.
 lift shapes f args =

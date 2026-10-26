@@ -33,7 +33,7 @@ expr unOp{op, operand} ρ          = apply op [expr operand ρ]
 expr cond{cases, otherwise} ρ     = foldr (guard ρ) (expr otherwise ρ) cases
 expr tuple{elements} ρ            = tuple (map (\e -> expr e ρ) elements)
 expr field{object, field} ρ       = part (expr object ρ) field
-expr typed{expr: e, type: t} ρ    = must (fit (expr e ρ) (P.type t)) "cannot ascribe this value to its type"
+expr typed{expr: e, type: t} ρ    = fitted (expr e ρ) (P.type t) "cannot ascribe this value to its type"
 
 -- { a if c, rest } is select(c, a, rest), lifted like any operator.
 guard ρ arm rest = lift [R, R, R] (\[c, a, b] -> scalar (D.select (s c) (s a) (s b))) [expr arm.cond ρ, expr arm.value ρ, rest]
@@ -43,19 +43,22 @@ guard ρ arm rest = lift [R, R, R] (\[c, a, b] -> scalar (D.select (s c) (s a) (
 -- lifted over records either way.
 apply op args | builtin op = lift (map (\_ -> R) args) (\xs -> scalar (prim op (map s xs))) args
 apply op args              = let d = must (P.op op) ("unknown operator " ++ op)
-                             in lift (map (\p -> p.shape) d.params) (\xs -> must (fit (expr d.body (bindAll empty (map (\p -> p.name) d.params) xs)) d.result) ("'" ++ op ++ "' does not produce its declared type")) args
+                             in lift (map (\p -> p.shape) d.params) (\xs -> fitted (expr d.body (bindAll empty (map (\p -> p.name) d.params) xs)) d.result ("'" ++ op ++ "' does not produce its declared type")) args
 
 -- Statements are effects; each returns the environment that follows it.
 exec io decl{name, type: t, value} ρ = bind ρ name (share name (ascribe (expr value ρ) t))
 exec io patAssign{pattern, value} ρ  = foldl (assignOrBind) ρ (destructure pattern (share "#pat" (expr value ρ)))
 exec io assign{name, value} ρ        = assignTo ρ (name ++ "'") (expr value ρ)
-exec io out{exprs} ρ                 = each (\e -> D.emit (leaves (must (fit (expr e ρ) io.output) "a '>>' value does not fit the output type"))) exprs; ρ
+exec io out{exprs} ρ                 = send D.emit io.output "a '>>' value does not fit the output type" exprs ρ
 exec io in{exprs} ρ | io.flush       = fail "`<<` is not allowed in a flush body"
-exec io in{exprs} ρ                  = each (\e -> D.feed (leaves (must (fit (expr e ρ) io.input) "a '<<' value does not fit the input type"))) exprs; ρ
+exec io in{exprs} ρ                  = send D.feed io.input "a '<<' value does not fit the input type" exprs ρ
 exec io if{cond: c, then: t, else: f} ρ = D.branch (scalarOf (expr c ρ)) (\_ -> execs io t ρ) (\_ -> execs io (f ?? []) ρ); ρ
 exec io forward{pipeline} ρ          = D.forward (map (stage ρ) pipeline); ρ
 
 execs io stmts ρ = foldl (\ρ st -> exec io st ρ) ρ stmts
+
+-- Each expression's value, fitted to the stream's shape, to the effect.
+send effect sh msg exprs ρ = each (\e -> effect (fitLeaves (expr e ρ) sh msg)) exprs; ρ
 
 assignOrBind ρ [n, v] | primed n = assignTo ρ n v
 assignOrBind ρ [n, v]            = bind ρ n v
@@ -65,10 +68,10 @@ stage ρ identityPipeline{} = null
 stage ρ kernelRef{name}    = {name: name, args: []}
 stage ρ kernelApp{name, args} =
   let shapes = must (P.params name) ("⇒ names unknown process " ++ name)
-  in {name: name, args: concat (zipWith (\a sh -> leaves (must (fit (expr a ρ) sh) "an argument does not fit its parameter")) args shapes)}
+  in {name: name, args: concat (zipWith (\a sh -> fitLeaves (expr a ρ) sh "an argument does not fit its parameter") args shapes)}
 
 ascribe v null = v
-ascribe v t    = must (fit v (P.type t)) "a value does not fit its declared type"
+ascribe v t    = fitted v (P.type t) "a value does not fit its declared type"
 
 -- A value computed once, under a name: each leaf let-bound.
 share n v = let ls = leaves v in tree (shapeOf v) (mapi (\x i -> D.let (leafName n i (length ls)) x) ls)
@@ -77,7 +80,7 @@ leafName n i k = n ++ "#" ++ str i
 
 -- x' = v writes the cells standing for x'.
 assignTo ρ n v = let c = must (cellsOf ρ n) ("'" ++ n ++ " =' must update a state binding declared before ∀")
-                 in eachi (\x i -> (at c.cells i).set x) (leaves (must (fit v c.shape) "a value does not fit the state it updates")); ρ
+                 in eachi (\x i -> (at c.cells i).set x) (fitLeaves v c.shape "a value does not fit the state it updates"); ρ
 
 -- A kernel, given its parameters bound (ρ0): state declared by its
 -- prologue, a step per token, a flush.

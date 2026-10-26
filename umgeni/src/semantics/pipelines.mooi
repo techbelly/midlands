@@ -105,4 +105,4 @@ instantiate c k args s =
      else let callee = foldl (bindArg c k) {env: empty, procs: noProcs} (zipWith (\p a -> [p, a]) names args)
           in stages (context c.who callee.env callee.procs) k.pipeline s
 bindArg c k acc [p, a] | P.isStream p.type = {...acc, procs: bindProc acc.procs p.name {elems: pipelineOf a ("'" ++ k.name ++ "'"), env: c.env, procs: c.procs}}
-bindArg c k acc [p, a] = {...acc, env: bind acc.env p.name (must (fit (P.expr a c.env) (P.type p.type)) ("argument '" ++ p.name ++ "' of '" ++ k.name ++ "' does not fit its parameter"))}
+bindArg c k acc [p, a] = {...acc, env: bind acc.env p.name (fitted (P.expr a c.env) (P.type p.type) ("argument '" ++ p.name ++ "' of '" ++ k.name ++ "' does not fit its parameter"))}
