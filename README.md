@@ -40,6 +40,10 @@ The demos are a static site (`npm run demo:build` → `demos/dist`). They use
 WebGPU where the browser has it. The checks and benchmarks that need a real
 GPU run under [Deno](https://deno.com), which has WebGPU: see `package.json`.
 
+For syntax highlighting of Nile and Mooi in VS Code, link the extension in
+[tools/vscode/](tools/vscode/) into your extensions folder and reload:
+`ln -s "$PWD/tools/vscode/nile-mooi" ~/.vscode/extensions/midlands.nile-mooi`.
+
 ## Credits and licences
 
 midlands is MIT licensed ([LICENSE](LICENSE)). It builds on:
