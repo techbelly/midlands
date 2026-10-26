@@ -268,16 +268,15 @@ function genWasm(segments: FusedSegment[], inputWidth: number, paramWidth: numbe
   const layout = { outBase: w.outBase, outWidth: w.outputWidth, inBase: w.inBase, inWidth: w.inputWidth, inTokens: w.inTokens };
   return `rt.wasmPipeline(${name}, ${JSON.stringify(layout)}, P)`;
 }
-const noSeeds = (s: FusedSegment) => s.k !== 'kernels' || s.stages.every((st) => st.kernel.init.length === 0);
 
 function genFused(p: FusedIR, o: CodegenOptions, wasmModules: string[]): string {
-  if (o.target === 'wasm' && p.segments.every((s) => inWasm(s) && noSeeds(s))) {
+  if (o.target === 'wasm' && p.segments.every(inWasm)) {
     const w = inputWidthOf(p) ?? (() => { throw new Error(`'${p.name}': cannot tell its input width`); })();
     return `R[${JSON.stringify(p.name)}] = (P = []) => ${genWasm(p.segments, w, p.paramWidth, wasmModules)};`;
   }
   const segs = p.segments.map((s) => {
     if (s.k !== 'kernels') return `    ${genBuiltinStage(s, o)},`;
-    if (o.target === 'wasm' && noSeeds(s)) return `    ${genWasm([s], s.stages[0].kernel.inputWidth, p.paramWidth, wasmModules)},`;
+    if (o.target === 'wasm' && inWasm(s)) return `    ${genWasm([s], s.stages[0].kernel.inputWidth, p.paramWidth, wasmModules)},`;
     return `    ${genSegment(s.stages, o)},`;
   });
   return [

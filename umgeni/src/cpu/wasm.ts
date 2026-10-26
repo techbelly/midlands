@@ -24,8 +24,10 @@
 // pipeline's output is bit-identical to the JS backend's — that is the test.
 // The module is emitted directly in the binary format (no assembler).
 //
-// DupCat and DupZip are not here yet: a pipeline using them keeps its kernel
-// runs in wasm and those two stages in JS (js.ts falls back per segment).
+// Not here yet: DupCat, DupZip, and a kernel with a prologue (a seed feed
+// or an emit before any input). A pipeline using one keeps its other kernel
+// runs in wasm and that segment in JS (js.ts falls back per segment; inWasm
+// says which).
 
 import { type FusedSegment, type FusedStage, type ScalarExpr, type Stmt } from '../ir.js';
 import { BIN, UN } from '../scalar.js';
@@ -132,8 +134,12 @@ const OUT_TOKENS = 256;
 const IN_TOKENS = 256;
 const STACK_BYTES = 1 << 15;
 
-export type Barrier = Extract<FusedSegment, { k: 'sortBy' | 'groupBy' | 'reduceBy' | 'reverse' }>;
-export const inWasm = (s: FusedSegment): boolean => s.k !== 'dupCat' && s.k !== 'dupZip';
+type Barrier = Extract<FusedSegment, { k: 'sortBy' | 'groupBy' | 'reduceBy' | 'reverse' }>;
+
+// What this file compiles: kernel runs with no prologue, and the four
+// in-place barriers.
+export const inWasm = (s: FusedSegment): boolean =>
+  s.k === 'kernels' ? s.stages.every((st) => st.kernel.init.length === 0) : s.k !== 'dupCat' && s.k !== 'dupZip';
 
 export interface WasmPipeline {
   bytes: Uint8Array;
@@ -144,52 +150,74 @@ export interface WasmPipeline {
   inTokens: number;
 }
 
-// A part is a run of kernels; between parts, the barriers applied to the
-// stream, in order. A pipeline that starts or ends with a barrier has an
-// empty part there, whose entry is its emit.
-interface Part {
+// A run of kernels, and the barriers applied to its output before the next
+// run reads it (none after the last). A pipeline that starts or ends with a
+// barrier has an empty run there.
+interface Run {
   stages: FusedStage[];
   inputWidth: number;
+  outputWidth: number; // what the stages leave: the width of the buffer's tokens
+  barriers: Barrier[];
+}
+
+function partition(segments: FusedSegment[], inputWidth: number): Run[] {
+  const runs: Run[] = [];
+  let width = inputWidth; // the stream's width at this point in the pipeline
+  const open = (): Run => {
+    const run = { stages: [], inputWidth: width, outputWidth: width, barriers: [] };
+    runs.push(run);
+    return run;
+  };
+  let run = open();
+  for (const s of segments) {
+    if (!inWasm(s)) throw new Error(`wasm: ${s.k === 'kernels' ? 'a prologue' : s.k} is not compiled to wasm yet`);
+    if (s.k === 'identity' || s.k === 'dupCat' || s.k === 'dupZip') continue; // dup: refused above
+    if (s.k === 'kernels') {
+      if (run.barriers.length > 0) run = open(); // a new run reads what the barriers leave
+      run.stages.push(...s.stages);
+      width = run.outputWidth = s.stages[s.stages.length - 1].kernel.outputWidth;
+    } else {
+      run.barriers.push(s);
+      if (s.k === 'reduceBy') width = s.width;
+    }
+  }
+  if (run.barriers.length > 0) open();
+  return runs;
+}
+
+// A stage's place in the module: how its body runs (passes/tail.ts), its
+// worklist if it needs one, the globals holding its arguments and state,
+// its two functions, and the function its emit calls: the next stage, or
+// the part's last emit.
+interface Slot {
+  stage: FusedStage;
+  shape: StageShape;
+  stackBase: number;
+  sp: number;
+  args: number[];
+  state: number[];
+  st: number; // the per-token body
+  fl: number; // the flush body
+  next: number;
+}
+
+// A run's place in the module: its stages' slots, its entry (the first
+// stage, or with no stages its emit), its last stage's emit, and, unless it
+// is the last, the buffer its output goes to (base and top globals) with
+// the barriers applied there, each ReduceBy as a function of its own.
+interface Part {
+  inputWidth: number;
   outputWidth: number;
+  slots: Slot[];
+  entry: number;
+  emit: number;
+  out: { base: number; top: number; barriers: { b: Barrier; reduce: number }[] } | null;
 }
 
 export function compilePipeline(segments: FusedSegment[], inputWidth: number, pipelineParams: number): WasmPipeline {
-  const parts: Part[] = [];
-  const barriers: Barrier[][] = [];
-  let cur: FusedStage[] = [];
-  let partIn = inputWidth;
-  let width = inputWidth;
-  let inBarrier = false;
-  const close = () => {
-    const out = cur.length > 0 ? cur[cur.length - 1].kernel.outputWidth : partIn;
-    parts.push({ stages: cur, inputWidth: partIn, outputWidth: out });
-    width = out;
-    cur = [];
-  };
-  for (const s of segments) {
-    if (s.k === 'identity') continue;
-    if (s.k === 'dupCat' || s.k === 'dupZip') throw new Error(`wasm: ${s.k} is not compiled to wasm yet`);
-    if (s.k === 'kernels') {
-      if (inBarrier) {
-        inBarrier = false;
-        partIn = width;
-      }
-      cur.push(...s.stages);
-      continue;
-    }
-    if (!inBarrier) {
-      close();
-      barriers.push([]);
-      inBarrier = true;
-    }
-    barriers[barriers.length - 1].push(s);
-    if (s.k === 'reduceBy') width = s.width;
-  }
-  if (inBarrier) partIn = width;
-  close();
-  const np = parts.length;
-  const w0 = parts[0].inputWidth;
-  const outWidth = parts[np - 1].outputWidth;
+  const runs = partition(segments, inputWidth);
+  const w0 = runs[0].inputWidth;
+  const outWidth = runs[runs.length - 1].outputWidth;
 
   // The fixed layout.
   const outBase = 8 * pipelineParams;
@@ -201,8 +229,6 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
   const globals: { type: number; init: number[] }[] = [];
   const g = (type: number, init: number[]) => globals.push({ type, init }) - 1;
   const OUTP = g(I32, i32c(outBase));
-  const bufBase = parts.slice(0, -1).map(() => g(I32, i32c(0)));
-  const bufTop = parts.slice(0, -1).map(() => g(I32, i32c(0)));
 
   // Functions: declared first (so calls can be emitted before bodies exist),
   // defined below. Index 0 is the imported drain.
@@ -216,26 +242,11 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
   };
   const DRAIN = 0;
   const ENSURE = declare([I32]); // ensure(bytes): grow until HEAP + bytes fits
-  const EMIT = parts.map((p) => declare(Array(p.outputWidth).fill(F64))); // a part's last emit
-  const IN = parts.map((p) => declare(Array(p.inputWidth).fill(F64))); // a part's entry
 
-  // A stage's place in the module: how its body runs (passes/tail.ts), its
-  // worklist if it needs one, the globals holding its arguments and state,
-  // its two functions, and the function its emit calls: the next stage, or
-  // the part's last emit.
-  interface Slot {
-    stage: FusedStage;
-    shape: StageShape;
-    stackBase: number;
-    sp: number;
-    args: number[];
-    state: number[];
-    st: number; // the per-token body
-    fl: number; // the flush body
-    next: number;
-  }
-  const slots: Slot[][] = parts.map((part, p) => {
-    const ss = part.stages.map((stage): Slot => {
+  const parts: Part[] = runs.map((run, p): Part => {
+    const emit = declare(Array(run.outputWidth).fill(F64));
+    const entry = declare(Array(run.inputWidth).fill(F64));
+    const slots = run.stages.map((stage): Slot => {
       const shape = stageShape(stage.kernel.body);
       const stackBase = top;
       if (shape === 'worklist') top += STACK_BYTES;
@@ -249,9 +260,13 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
         next: -1,
       };
     });
-    ss.forEach((s, j) => { s.next = j + 1 < ss.length ? ss[j + 1].st : EMIT[p]; });
-    return ss;
+    slots.forEach((s, j) => { s.next = j + 1 < slots.length ? slots[j + 1].st : emit; });
+    const out = p + 1 < runs.length
+      ? { base: g(I32, i32c(0)), top: g(I32, i32c(0)), barriers: run.barriers.map((b) => ({ b, reduce: b.k === 'reduceBy' ? declare([]) : -1 })) }
+      : null;
+    return { inputWidth: run.inputWidth, outputWidth: run.outputWidth, slots, entry, emit, out };
   });
+  const slots = parts.flatMap((part) => part.slots);
   const heap0 = top;
   const pages = Math.ceil((heap0 + PAGE) / PAGE);
   const HEAP = g(I32, i32c(heap0));
@@ -259,11 +274,18 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
 
   const SORT = declare([I32, I32, I32, I32]); // sort(base, top, wb, keyOff)
   const REVERSE = declare([I32, I32, I32]); // reverse(base, top, wb)
-  const REDUCE = barriers.map((bs) => bs.map((b) => (b.k === 'reduceBy' ? declare([]) : -1)));
   const INIT = declare([]);
   const END = declare([], [I32]);
   const PUSH = declare(Array(w0).fill(F64), [I32]);
   const PUSH_ALL = declare([I32], [I32]);
+
+  // The tokens in [from, to), `stride` bytes apart, the first `width` values
+  // of each fed to `entry` in turn.
+  const stream = (cur: number, from: number[], to: number[], stride: number, width: number, entry: number): number[] =>
+    forRange(cur, from, to, i32c(stride), [
+      ...Array.from({ length: width }, (_, i) => [...get(cur), ...ldF64(8 * i)]).flat(),
+      ...call(entry),
+    ]);
 
   // --- scalar expressions over an environment ---
   interface Env {
@@ -315,7 +337,7 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
   }
 
   // --- stages ---
-  for (const s of slots.flat()) {
+  for (const s of slots) {
     const k = s.stage.kernel;
     const w = k.inputWidth;
     const { sp, stackBase } = s;
@@ -411,24 +433,25 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
 
   // A part's last emit: append to its buffer (the top of the heap), or store
   // to OUT and hand the buffer to JS when full.
-  parts.forEach((part, p) => define(EMIT[p], (f) => {
+  for (const part of parts) define(part.emit, (f) => {
     const w = part.outputWidth;
-    if (p + 1 < np) {
+    if (part.out) {
+      const { top } = part.out;
       f.emit(i32c(8 * w), call(ENSURE));
-      for (let i = 0; i < w; i++) f.emit(gget(bufTop[p]), get(i), stF64(8 * i));
-      f.emit(gget(bufTop[p]), i32c(8 * w), add, gset(bufTop[p]), gget(bufTop[p]), gset(HEAP));
+      for (let i = 0; i < w; i++) f.emit(gget(top), get(i), stF64(8 * i));
+      f.emit(gget(top), i32c(8 * w), add, gset(top), gget(top), gset(HEAP));
     } else {
       for (let i = 0; i < w; i++) f.emit(gget(OUTP), get(i), stF64(8 * i));
       f.emit(gget(OUTP), i32c(8 * w), add, gset(OUTP));
       f.emit(ifThen([...gget(OUTP), ...i32c(outLimit), OP.i32GeU], call(DRAIN)));
     }
-  }));
+  });
 
   // A part's entry: its first stage, or (no stages) its emit.
-  parts.forEach((part, p) => define(IN[p], (f) => {
+  for (const part of parts) define(part.entry, (f) => {
     for (let i = 0; i < part.inputWidth; i++) f.emit(get(i));
-    f.emit(call(slots[p][0]?.st ?? EMIT[p]));
-  }));
+    f.emit(call(part.slots[0]?.st ?? part.emit));
+  });
 
   // sort(base, top, wb, keyOff): a stable LSD radix sort of the tokens in
   // [base, top) by the f64 at keyOff: the key's bits made monotonic (-0 as 0,
@@ -511,44 +534,48 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
   // reduce: merge adjacent same-key tokens of a buffer in place (the GroupBy
   // before it made equal keys adjacent); listed fields combine, the others
   // keep the first token's values.
-  barriers.forEach((bs, p) => bs.forEach((b, i) => {
-    if (b.k !== 'reduceBy') return;
-    define(REDUCE[p][i], (f) => {
-      const wb = 8 * b.width;
-      const rd = f.local(I32), wr = f.local(I32), has = f.local(I32), same = f.local(I32), k = f.local(I32);
-      const ra = f.local(F64), rb = f.local(F64);
-      const env: Env = { ...noEnv('a ReduceBy operator'), local: (name) => (name === '#ra' ? ra : rb) };
-      f.emit(gget(bufBase[p]), set(wr), i32c(0), set(has));
-      const prev = (off: number) => [...get(wr), ...i32c(wb), ...sub, ...ldF64(off)];
-      f.emit(forRange(rd, gget(bufBase[p]), gget(bufTop[p]), i32c(wb), [
-        // same: a token has been written, and every key equals its key
-        ...get(has), ...set(same),
-        ...b.keyIndexes.flatMap((ki) => [
-          ...get(same), OP.if, I32, ...prev(8 * ki), ...get(rd), ...ldF64(8 * ki), OP.f64Eq, OP.else, ...i32c(0), OP.end, ...set(same),
-        ]),
-        ...ifThen(get(same), b.fields.flatMap((fld) => {
-          const op = new Fn([]);
-          num(op, fld.op, env);
-          return [
-            ...prev(8 * fld.index), ...set(ra), ...get(rd), ...ldF64(8 * fld.index), ...set(rb),
-            ...get(wr), ...i32c(wb), ...sub, ...op.code, ...stF64(8 * fld.index),
-          ];
-        }), [
-          ...forRange(k, i32c(0), i32c(wb), i32c(8), [...get(wr), ...get(k), ...add, ...get(rd), ...get(k), ...add, ...ldI64(), ...stI64()]),
-          ...get(wr), ...i32c(wb), ...add, ...set(wr), ...i32c(1), ...set(has),
-        ]),
-      ]));
-      f.emit(get(wr), gset(bufTop[p]));
-    });
-  }));
+  for (const part of parts) {
+    if (!part.out) continue;
+    const { base, top } = part.out;
+    for (const { b, reduce } of part.out.barriers) {
+      if (b.k !== 'reduceBy') continue;
+      define(reduce, (f) => {
+        const wb = 8 * b.width;
+        const rd = f.local(I32), wr = f.local(I32), has = f.local(I32), same = f.local(I32), k = f.local(I32);
+        const ra = f.local(F64), rb = f.local(F64);
+        const env: Env = { ...noEnv('a ReduceBy operator'), local: (name) => (name === '#ra' ? ra : rb) };
+        f.emit(gget(base), set(wr), i32c(0), set(has));
+        const prev = (off: number) => [...get(wr), ...i32c(wb), ...sub, ...ldF64(off)];
+        f.emit(forRange(rd, gget(base), gget(top), i32c(wb), [
+          // same: a token has been written, and every key equals its key
+          ...get(has), ...set(same),
+          ...b.keyIndexes.flatMap((ki) => [
+            ...get(same), OP.if, I32, ...prev(8 * ki), ...get(rd), ...ldF64(8 * ki), OP.f64Eq, OP.else, ...i32c(0), OP.end, ...set(same),
+          ]),
+          ...ifThen(get(same), b.fields.flatMap((fld) => {
+            const op = new Fn([]);
+            num(op, fld.op, env);
+            return [
+              ...prev(8 * fld.index), ...set(ra), ...get(rd), ...ldF64(8 * fld.index), ...set(rb),
+              ...get(wr), ...i32c(wb), ...sub, ...op.code, ...stF64(8 * fld.index),
+            ];
+          }), [
+            ...forRange(k, i32c(0), i32c(wb), i32c(8), [...get(wr), ...get(k), ...add, ...get(rd), ...get(k), ...add, ...ldI64(), ...stI64()]),
+            ...get(wr), ...i32c(wb), ...add, ...set(wr), ...i32c(1), ...set(has),
+          ]),
+        ]));
+        f.emit(get(wr), gset(top));
+      });
+    }
+  }
 
   // init: reset the allocator, output and worklists; evaluate stage
   // arguments (over the pipeline params in memory) and state initializers.
   define(INIT, (f) => {
     f.emit(i32c(outBase), gset(OUTP), i32c(heap0), gset(HEAP), [OP.memorySize, 0x00], i32c(PAGE), mul, gset(LIMIT));
-    if (np > 1) f.emit(gget(HEAP), gset(bufBase[0]), gget(HEAP), gset(bufTop[0]));
+    if (parts[0].out) f.emit(gget(HEAP), gset(parts[0].out.base), gget(HEAP), gset(parts[0].out.top));
     const argEnv: Env = { ...noEnv('a stage argument'), param: (i) => [...i32c(0), ...ldF64(8 * i)] };
-    for (const s of slots.flat()) {
+    for (const s of slots) {
       f.emit(i32c(s.stackBase), gset(s.sp));
       s.stage.args.flat().forEach((a, i) => { num(f, a, argEnv); f.emit(gset(s.args[i])); });
       const env: Env = { ...noEnv('a state initializer'), param: (i) => gget(s.args[i]), state: (i) => gget(s.state[i]) };
@@ -556,30 +583,28 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
     }
   });
 
-  // end(): flush part 0; then, for each barrier group, apply it to the
-  // buffer and stream the buffer into the next part, which is flushed too.
+  // end(): flush each part in turn; between parts, apply the barriers to
+  // the buffer and stream it into the next part.
   define(END, (f) => {
     const cur = f.local(I32);
     parts.forEach((part, p) => {
-      if (p > 0) {
-        const wb = 8 * parts[p - 1].outputWidth;
-        const buf = [...gget(bufBase[p - 1]), ...gget(bufTop[p - 1])];
-        barriers[p - 1].forEach((b, i) => {
-          switch (b.k) {
-            case 'sortBy':
-            case 'groupBy': for (const key of [...b.keyIndexes].reverse()) f.emit(buf, i32c(wb), i32c(8 * key), call(SORT)); break;
-            case 'reverse': f.emit(buf, i32c(wb), call(REVERSE)); break;
-            case 'reduceBy': f.emit(call(REDUCE[p - 1][i])); break;
-          }
-        });
-        // The next buffer starts at the heap top, above this one.
-        if (p + 1 < np) f.emit(gget(HEAP), gset(bufBase[p]), gget(HEAP), gset(bufTop[p]));
-        f.emit(forRange(cur, gget(bufBase[p - 1]), gget(bufTop[p - 1]), i32c(wb), [
-          ...Array.from({ length: part.inputWidth }, (_, i) => [...get(cur), ...ldF64(8 * i)]).flat(),
-          ...call(IN[p]),
-        ]));
+      for (const s of part.slots) f.emit(call(s.fl));
+      if (!part.out) return;
+      const { base, top, barriers } = part.out;
+      const wb = 8 * part.outputWidth;
+      const buf = [...gget(base), ...gget(top)];
+      for (const { b, reduce } of barriers) {
+        switch (b.k) {
+          case 'sortBy':
+          case 'groupBy': for (const key of [...b.keyIndexes].reverse()) f.emit(buf, i32c(wb), i32c(8 * key), call(SORT)); break;
+          case 'reverse': f.emit(buf, i32c(wb), call(REVERSE)); break;
+          case 'reduceBy': f.emit(call(reduce)); break;
+        }
       }
-      slots[p].forEach((s) => f.emit(call(s.fl)));
+      // The next part's buffer starts at the heap top, above this one.
+      const next = parts[p + 1];
+      if (next.out) f.emit(gget(HEAP), gset(next.out.base), gget(HEAP), gset(next.out.top));
+      f.emit(stream(cur, gget(base), gget(top), wb, next.inputWidth, next.entry));
     });
     f.emit(gget(OUTP));
   });
@@ -587,16 +612,13 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
   // push(token): into part 0; returns the output pointer so JS need not ask.
   define(PUSH, (f) => {
     for (let i = 0; i < w0; i++) f.emit(get(i));
-    f.emit(call(IN[0]), gget(OUTP));
+    f.emit(call(parts[0].entry), gget(OUTP));
   });
   // pushAll(n): part 0 over n tokens in the input buffer.
   define(PUSH_ALL, (f) => {
     const end = f.local(I32), cur = f.local(I32);
     f.emit(get(0), i32c(8 * w0), mul, i32c(inBase), add, set(end));
-    f.emit(forRange(cur, i32c(inBase), get(end), i32c(8 * w0), [
-      ...Array.from({ length: w0 }, (_, i) => [...get(cur), ...ldF64(8 * i)]).flat(),
-      ...call(IN[0]),
-    ]));
+    f.emit(stream(cur, i32c(inBase), get(end), 8 * w0, w0, parts[0].entry));
     f.emit(gget(OUTP));
   });
 
