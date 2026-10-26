@@ -1,21 +1,22 @@
-// A pipeline's meaning: pipelines.mooi, bound to the program. The stages
+// A pipeline's meaning: pipelines.mooi (with values.mooi for the argument
+// values), bound to the program. The stages
 // come out as IR; the discipline (what may follow an unordered GroupBy,
 // what a template's arguments must be) is the equations'.
 
 import type * as A from '../ast.js';
 import type { StageIR } from '../ir.js';
-import { ElabError, flatten, shapeWidth, type Shape, type Value } from '../values.js';
+import { ElabError, REAL, type Shape, type Value } from '../values.js';
 import { load } from '../../../mooi/src/mooi.js';
 import { prelude } from '../../../mooi/src/prelude.js';
-import { pipelinesSource } from './source.js';
+import { pipelinesSource, valuesSource } from './source.js';
+
+const SOURCE = `${valuesSource}\n${pipelinesSource}`;
 
 // What the equations ask of the program.
 export interface PipelineProgram {
   field(shape: Shape, name: string): { offset: number; shape: Shape };
   expr(e: A.Expr, env: Map<string, Value>): Value;
-  fit(v: Value, shape: Shape): Value | null;
   type(t: A.Type): Shape;
-  local(name: string): Value;
   stream(name: string): { input: Shape; output: Shape } | null;
   known(name: string): boolean;
   template(name: string): A.Kernel | null;
@@ -36,11 +37,10 @@ const fail = (msg: string): never => {
 export function elabPipelineStages(
   P: PipelineProgram, who: string, elems: A.PipelineElem[], env: Map<string, Value>, procs: Map<string, Closure>, input: Shape,
 ): { stages: StageIR[]; output: Shape } {
-  const m = load(pipelinesSource, {
+  const m = load(SOURCE, {
     ...prelude(fail),
     P,
-    width: shapeWidth,
-    leaves: flatten,
+    R: REAL,
     empty: new Map(),
     bind: (e: Map<string, Value>, n: string, v: Value) => new Map(e).set(n, v),
     noProcs: new Map(),

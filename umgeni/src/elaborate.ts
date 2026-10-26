@@ -14,7 +14,7 @@ import { desugar, SugarError } from './semantics/sugar.js';
 import { elabPipelineStages, type PipelineProgram } from './semantics/pipelines.js';
 import { stageExpr, stageGenerator, stageKernel } from './semantics/staged.js';
 import type { KernelContext, ParamGroup, Program } from './semantics/domain.js';
-import { ElabError, fieldInfo, fit, fromSlots, REAL, scalar, shapeWidth, tokenLayout, type Shape, type Value } from './values.js';
+import { ElabError, fieldInfo, fromSlots, REAL, shapeWidth, tokenLayout, type Shape, type Value } from './values.js';
 import { opKey } from './ops.js';
 
 // --- operator tables -----------------------------------------------------------
@@ -361,9 +361,7 @@ class Elaborator {
     return {
       field: (shape, name) => fieldInfo(shape, name),
       expr: (e, env) => stageExpr(this.program, e, env),
-      fit,
       type: (t) => this.resolveType(t),
-      local: (name) => scalar({ k: 'local', name }),
       stream: (name) => this.streams.get(name) ?? null,
       known: (name) => this.streams.has(name),
       template: (name) => {

@@ -11,10 +11,11 @@
 -- parameters, instantiated here: no process is a value at run time).
 --
 -- The host supplies: P.field (a field's offset and shape in a shape),
--- width, P.expr (an argument, staged), P.fit, P.type, P.local, P.stream (a
--- process's stream types, or null; P.known says whether the name exists),
--- P.template (a template's kernel, or null), P.isStream (a type names a
--- process type), and the environments: empty, bind, lookupProc, bindProc.
+-- P.expr (an argument, staged), P.type, P.stream (a process's stream types,
+-- or null; P.known says whether the name exists), P.template (a template's
+-- kernel, or null), P.isStream (a type names a process type), and the
+-- environments: empty, bind, lookupProc, bindProc. Values come from
+-- values.mooi, loaded with this file.
 
 -- A context: the pipeline being defined (for messages), the values its
 -- parameters are bound to, and its process-typed parameters' closures.
@@ -35,11 +36,12 @@ stage c kernelRef{name} s        = named c name [] s
 stage c kernelApp{name, args} s  = named c name args s
 
 -- A reduced field: combined by its operator, a scalar expression over the
--- two values being combined (#ra, #rb).
+-- two values being combined (#ra, #rb): locals the back end names.
+local n = scalar {k: "local", name: n}
 reduction c s f | s.unordered && not (commutative f.op) =
   fail ("ReduceBy in '" ++ c.who ++ "' uses '" ++ f.op ++ "', not known to be commutative, on unordered groups; use 'GroupBy stable (…)'")
 reduction c s f =
-  let op = P.expr binOp{op: f.op, left: var{name: "#ra"}, right: var{name: "#rb"}} (bind (bind empty "#ra" (P.local "#ra")) "#rb" (P.local "#rb"))
+  let op = P.expr binOp{op: f.op, left: var{name: "#ra"}, right: var{name: "#rb"}} (bind (bind empty "#ra" (local "#ra")) "#rb" (local "#rb"))
   in if op.k != "scalar" then fail ("ReduceBy operator '" ++ f.op ++ "' must combine Reals")
      else {index: real s.shape f.name "ReduceBy field", op: op.expr}
 
@@ -106,4 +108,4 @@ instantiate c k args s =
      else let callee = foldl (bindArg c k) {env: empty, procs: noProcs} (zipWith (\p a -> [p, a]) names args)
           in stages (context c.who callee.env callee.procs) (head k.prologue).pipeline s
 bindArg c k acc [p, a] | P.isStream p.type = {...acc, procs: bindProc acc.procs p.name {elems: pipelineOf a ("'" ++ k.name ++ "'"), env: c.env, procs: c.procs}}
-bindArg c k acc [p, a] = {...acc, env: bind acc.env p.name (must (P.fit (P.expr a c.env) (P.type p.type)) ("argument '" ++ p.name ++ "' of '" ++ k.name ++ "' does not fit its parameter"))}
+bindArg c k acc [p, a] = {...acc, env: bind acc.env p.name (must (fit (P.expr a c.env) (P.type p.type)) ("argument '" ++ p.name ++ "' of '" ++ k.name ++ "' does not fit its parameter"))}
