@@ -9,6 +9,7 @@ import { lowerPipeline } from '../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../umgeni/src/gpu/execute.js';
 import { lowerTexture, type LoweredTexture } from '../umgeni/src/gpu/texture.js';
 import { requestDevice } from '../umgeni/src/gpu/device.js';
+import { fusedPipeline } from '../umgeni/src/ir.js';
 import { PAINT_GLUE, paintShapes } from './src/vector/paint.js';
 import { writePixels } from './src/vector/spans.js';
 import { PRESETS } from './paint-presets.js';
@@ -88,9 +89,7 @@ async function gpuRenderer(p: CompiledLibrary, paint: string): Promise<Presenter
   if (!device || !gpuContext) return null;
   if (gpu?.paint !== paint) {
     gpu?.renderer.dispose();
-    const fused = p.ir.processes.find((x) => x.k === 'fused' && x.name === 'RasterizePixels');
-    if (!fused || fused.k !== 'fused') return null;
-    const plan = lowerPipeline(fused, { extent: [H, W], sink: coverageSink });
+    const plan = lowerPipeline(fusedPipeline(p.ir, 'RasterizePixels'), { extent: [H, W], sink: coverageSink });
     const format = navigator.gpu.getPreferredCanvasFormat();
     gpu = { paint, renderer: createPresenter(device, plan, { format, paint }) };
   }

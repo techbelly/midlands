@@ -9,7 +9,7 @@ import { isMapKernel } from '../src/gpu/classify.js';
 import { wgslBody, type WgslEnv } from '../src/gpu/wgsl.js';
 import { lowerPipeline, LowerError } from '../src/gpu/lower.js';
 import { appendSink, coverageSink } from '../src/gpu/execute.js';
-import type { KernelIR } from '../src/ir.js';
+import { fusedPipeline, type KernelIR } from '../src/ir.js';
 
 
 function kernelsOf(...files: string[]): KernelIR[] {
@@ -65,11 +65,7 @@ describe('WGSL generation', () => {
 describe('pipeline lowering (gpu/lower.ts)', () => {
   const sources = ['types.nl', 'bezier.nl', 'rasterize.nl', 'texture.nl'].map(gezira);
   const nlSrc = roda('rasterize-parallel.nl');
-  const fusedOf = (library: ReturnType<typeof compileLibrary>, name: string) => {
-    const f = library.ir.processes.find((p) => p.k === 'fused' && p.name === name);
-    if (!f || f.k !== 'fused') throw new Error(`${name} not fused`);
-    return f;
-  };
+  const fusedOf = (library: ReturnType<typeof compileLibrary>, name: string) => fusedPipeline(library.ir, name);
   const frame = (sink = coverageSink) => ({ extent: [360, 880], sink });
 
   it('lowers RasterizeParallel to a plan of two passes from IR alone (golden)', () => {

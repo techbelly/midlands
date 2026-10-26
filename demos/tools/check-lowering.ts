@@ -8,15 +8,16 @@
 //                     ahead of the worklist pass
 //   Expand            ExpandSpans alone, one pass, output appended to a buffer
 //
-// Run: deno run --allow-read --allow-env --unstable-sloppy-imports demos/tools/check-lowering.ts
+// Run: npm run check:lowering  (deno, with WebGPU)
 
-import { read } from '../src/sources.js';
+import { librarySourceTexts } from '../src/sources.js';
 import { compileLibrary } from '../../umgeni/src/compile.js';
-import { createRasterHost } from '../../umgeni/src/gpu/raster.js';
-import { lowerPipeline } from '../../umgeni/src/gpu/lower.js';
-import { appendSink, coverageSink, createExecutor, metaWords, wholeGrid } from '../../umgeni/src/gpu/execute.js';
-import { requestDevice } from '../../umgeni/src/gpu/device.js';
-import { META_BYTES, type Sink } from '../../umgeni/src/gpu/lower.js';
+import { createRasterHost, readAppended } from '../../umgeni/src/gpu/raster.js';
+import { lowerPipeline, type Sink } from '../../umgeni/src/gpu/lower.js';
+import { appendSink } from '../../umgeni/src/gpu/execute.js';
+import { fusedPipeline } from '../../umgeni/src/ir.js';
+import { paintCoverage, textBeziers, textSpansParams } from '../src/text/host.js';
+import { compareCoverage, coveragePlan, requireDevice } from './gpu-check.js';
 
 // The reference for ExpandSpans: a span (x, y, c, l) painted by a loop, as
 // the presenter's sink did before ExpandSpans ran on the GPU in Nile.
@@ -37,58 +38,37 @@ const spanSink: Sink = {
     `${ind}}`,
   ].join('\n'),
 };
-import { paintCoverage, textSpansParams, textTokens } from '../src/text/host.js';
 
 const library = compileLibrary([
-  read('gezira/types.nl'),
-  read('gezira/bezier.nl'),
-  read('gezira/rasterize.nl'),
-  read('gezira/texture.nl'),
-  read('roda/text.nl'),
-  read('roda/rasterize-parallel.nl'),
+  ...librarySourceTexts('demos/nl/text.nl-lib'),
   // Two pipelines the lowering has not been written against.
   'RasterizeMapped (M : Matrix) : Bezier >> CoverageSpan\n    ⇒ TransformBeziers (M) → RasterizeParallel\n',
   'Expand : CoverageSpan >> CoveragePoint\n    ⇒ ExpandSpans\n',
 ]);
 if (library.unsupported.length > 0) throw new Error(JSON.stringify(library.unsupported));
-const fused = (name: string) => {
-  const f = library.ir.processes.find((p) => p.k === 'fused' && p.name === name);
-  if (!f || f.k !== 'fused') throw new Error(`${name} not fused`);
-  return f;
-};
 const nile = library.api;
+const spanPlan = (name: string) => lowerPipeline(fusedPipeline(library.ir, name), { extent: [H, W], sink: spanSink });
 
 const W = 320;
 const H = 48;
 const params = textSpansParams({ size: 16, width: W, height: H, margin: 4 });
-const beziers = nile.TextBeziers(params).run(textTokens(nile, 'ANY PIPELINE'));
+const beziers = textBeziers(nile, 'ANY PIPELINE', params);
 const flat = new Float32Array(beziers.flat());
 const n = beziers.length;
-const device = (await requestDevice())!;
-
-function compare(what: string, cpu: ArrayLike<number>, gpu: ArrayLike<number>, tolerance: number): void {
-  let max = 0;
-  let covered = 0;
-  for (let i = 0; i < cpu.length; i++) {
-    max = Math.max(max, Math.abs(cpu[i] - gpu[i]));
-    if (cpu[i] > 0.5) covered++;
-  }
-  if (covered < 100) throw new Error(`${what}: too few covered pixels (${covered})`);
-  if (max > tolerance) throw new Error(`${what}: CPU and GPU disagree, max ${max.toFixed(4)} > ${tolerance}`);
-  console.log(`${what}: ok, ${covered} px covered, max diff ${max.toFixed(4)}`);
-}
+const device = await requireDevice();
+const drew = { min: 100 };
 
 // 1. RasterizePixels: pixels from the GPU vs the CPU's spans expanded, and
 // vs the GPU's own spans painted by the hand-written loop (spanSink), which
 // the Nile ExpandSpans must reproduce exactly.
 {
-  const pixels = createRasterHost(device, lowerPipeline(fused('RasterizePixels'), { extent: [H, W], sink: coverageSink }));
-  const spans = createRasterHost(device, lowerPipeline(fused('RasterizeParallel'), { extent: [H, W], sink: spanSink }));
+  const pixels = createRasterHost(device, coveragePlan(library.ir, 'RasterizePixels', W, H));
+  const spans = createRasterHost(device, spanPlan('RasterizeParallel'));
   const cov = await pixels.render(flat, n);
   if (pixels.overflowed()) throw new Error('RasterizePixels: worklist overflow');
-  compare('RasterizePixels vs the span loop, both on the GPU', await spans.render(flat, n), cov, 0);
+  compareCoverage('RasterizePixels vs the span loop, both on the GPU', await spans.render(flat, n), cov, 0, drew);
   // f32 vs f64: a sample on a pixel boundary can land one cell over.
-  compare('RasterizePixels vs the CPU', paintCoverage(nile.RasterizeParallel().run(beziers), W, H), cov, 0.2);
+  compareCoverage('RasterizePixels vs the CPU', paintCoverage(nile.RasterizeParallel().run(beziers), W, H), cov, 0.2, drew);
   pixels.dispose();
   spans.dispose();
 }
@@ -97,11 +77,11 @@ function compare(what: string, cpu: ArrayLike<number>, gpu: ArrayLike<number>, t
 {
   const M = [0.5, 0, 0, 0.5, 40, 10];
   // RasterizeMapped emits spans, so its sink is the span loop.
-  const plan = lowerPipeline(fused('RasterizeMapped'), { extent: [H, W], sink: spanSink });
+  const plan = spanPlan('RasterizeMapped');
   if (!plan.passes[0].bindings.some((b) => b.role === 'params')) throw new Error('RasterizeMapped: no params binding');
   const gpu = createRasterHost(device, plan, M);
   const cov = await gpu.render(flat, n);
-  compare('RasterizeMapped (TransformBeziers (M) fused ahead, M from P) vs the CPU', paintCoverage(nile.RasterizeMapped({ M }).run(beziers), W, H), cov, 0.2);
+  compareCoverage('RasterizeMapped (TransformBeziers (M) fused ahead, M from P) vs the CPU', paintCoverage(nile.RasterizeMapped({ M }).run(beziers), W, H), cov, 0.2, drew);
   gpu.dispose();
 }
 
@@ -109,35 +89,15 @@ function compare(what: string, cpu: ArrayLike<number>, gpu: ArrayLike<number>, t
 {
   const spans = nile.RasterizeParallel().run(beziers);
   const cpu = nile.Expand().run(spans);
-  const plan = lowerPipeline(fused('Expand'), { extent: [1], sink: appendSink(4) });
-  const x = createExecutor(device, plan);
-  const cap = cpu.length + 1024;
-  const meta = device.createBuffer({ size: META_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-  const input = device.createBuffer({ size: spans.length * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
-  const out = device.createBuffer({ size: cap * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
-  const count = device.createBuffer({ size: 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
-  const readBuf = device.createBuffer({ size: cap * 16 + 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
-  device.queue.writeBuffer(meta, 0, metaWords(spans.length, plan.extent, wholeGrid(plan.extent)));
-  device.queue.writeBuffer(input, 0, new Float32Array(spans.flat()));
-  const groups = x.bind({ meta, input, sink: { OUT: out, COUNT: count } });
-  const enc = device.createCommandEncoder();
-  enc.clearBuffer(count);
-  x.encode(enc, groups, { n: spans.length, segments: 1 });
-  enc.copyBufferToBuffer(out, 0, readBuf, 0, cap * 16);
-  enc.copyBufferToBuffer(count, 0, readBuf, cap * 16, 4);
-  device.queue.submit([enc.finish()]);
-  await readBuf.mapAsync(GPUMapMode.READ);
-  const mapped = readBuf.getMappedRange();
-  const got = new Uint32Array(mapped.slice(cap * 16, cap * 16 + 4))[0];
-  const vals = new Float32Array(mapped.slice(0, got * 16));
-  readBuf.unmap();
-  if (got !== cpu.length) throw new Error(`Expand: GPU emitted ${got} tokens, CPU ${cpu.length}`);
+  const plan = lowerPipeline(fusedPipeline(library.ir, 'Expand'), { extent: [1], sink: appendSink(4) });
+  const gpu = await readAppended(device, plan, spans, 4, cpu.length + 1024);
+  if (gpu.length !== cpu.length) throw new Error(`Expand: GPU emitted ${gpu.length} tokens, CPU ${cpu.length}`);
   // Order is unspecified (threads finish as they finish): compare as sorted lists.
   const key = (t: ArrayLike<number>) => `${t[0]},${t[1]},${Math.fround(t[2]).toFixed(5)}`;
   const a = cpu.map(key).sort();
-  const b = Array.from({ length: got }, (_, i) => key(vals.subarray(i * 4, i * 4 + 4))).sort();
+  const b = gpu.map(key).sort();
   const differ = a.filter((k, i) => k !== b[i]).length;
-  if (differ > 0) throw new Error(`Expand: ${differ} of ${got} tokens differ`);
-  console.log(`Expand (ExpandSpans alone, appended): ok, ${got} tokens, same multiset as the CPU`);
+  if (differ > 0) throw new Error(`Expand: ${differ} of ${gpu.length} tokens differ`);
+  console.log(`Expand (ExpandSpans alone, appended): ok, ${gpu.length} tokens, same multiset as the CPU`);
 }
 console.log('lowering ok');

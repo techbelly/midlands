@@ -38,6 +38,11 @@ export function fallback(...fonts: FallbackFont[]): GlyphSource {
 export const textTokens = (nile: Api, text: string, glyphFor: GlyphSource = stubGlyph): Token[] =>
   glyphTokens(nile, text, glyphFor).tokens;
 
+// The single-colour front half: every glyph's beziers laid out, transformed
+// and clipped (TextBeziers in nl/text.nl), as the rasterizers take them.
+export const textBeziers = (nile: Api, text: string, params: TextSpansParams, glyphFor?: GlyphSource): Token[] =>
+  nile.TextBeziers(params).run(textTokens(nile, text, glyphFor));
+
 // Invisible in emoji text without shaping: zero-width joiner, variation
 // selectors (they select emoji presentation, which a colour font already has).
 const IGNORABLE = /[\u200D\uFE0E\uFE0F]/u;

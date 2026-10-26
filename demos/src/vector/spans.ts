@@ -19,6 +19,10 @@ export interface ImgLike {
   data: Uint8ClampedArray | number[];
 }
 
+// A white page to draw on, laid out as ImageData is.
+export const blankImage = (width: number, height: number): { width: number; height: number; data: Uint8ClampedArray } =>
+  ({ width, height, data: new Uint8ClampedArray(width * height * 4).fill(255) });
+
 // Composite PaintedPixel tokens (nl/spans.nl) over the image: a colour,
 // premultiplied (a, r, g, b) in 0..1, and a pixel (its centre n + 0.5, so it
 // floors to n) with its coverage c. Field offsets are looked up once.

@@ -20,8 +20,12 @@ export function librarySources(manifest: string, root: URL = ROOT): string[] {
     .map((p) => new URL(p, base).href.slice(root.href.length));
 }
 
+// The sources themselves, for a compile that adds declarations of its own.
+export const librarySourceTexts = (manifest: string, root: URL = ROOT): string[] =>
+  librarySources(manifest, root).map((p) => read(p, root));
+
 // What `import { nile } from './nl/text.nl-lib'` gives a page, for node
 // (with compile options): compileLibraryFile('demos/nl/text.nl-lib').api.
 export function compileLibraryFile(manifest: string, opts: CompileOptions = {}, root: URL = ROOT): CompiledLibrary {
-  return compileLibrary(librarySources(manifest, root).map((p) => read(p, root)), opts);
+  return compileLibrary(librarySourceTexts(manifest, root), opts);
 }

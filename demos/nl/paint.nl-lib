@@ -1,0 +1,16 @@
+-- The paint page's Nile program: gezira's kernels, its compositors,
+-- gradients and filters among them, unmodified, plus the demos' vector and
+-- span stages and umgeni's parallel rasterizer. The page adds your Paint
+-- and the glue that applies it.
+-- One source per line, relative to this file.
+../../gezira/types.nl
+../../gezira/bezier.nl
+../../gezira/stroke.nl
+../../gezira/rasterize.nl
+../../gezira/texture.nl
+../../gezira/compositor.nl
+../../gezira/gradient.nl
+../../gezira/filter.nl
+../../roda/vector.nl
+../../roda/spans.nl
+../../roda/rasterize-parallel.nl

@@ -172,6 +172,14 @@ export function inputWidthOf(f: FusedIR): number | null {
   return null;
 }
 
+// The fused pipeline of that name: what a GPU host lowers. Throws when the
+// module has no such process, or has one that is a kernel or did not fuse.
+export function fusedPipeline(mod: ModuleIR, name: string): FusedIR {
+  const p = mod.processes.find((p) => p.name === name);
+  if (!p || p.k !== 'fused') throw new Error(`'${name}' is not a fused pipeline`);
+  return p;
+}
+
 // Every kernel in a module, rewritten by f: on its own, or inside a fused
 // segment. A pipeline (left unfused only when fusion bailed) holds none.
 export function mapKernels(mod: ModuleIR, f: (k: KernelIR) => KernelIR): ModuleIR {
