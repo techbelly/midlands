@@ -1,13 +1,12 @@
 // The prelude: plain list and record functions, curried by arity like
 // every Mooi function. Hosts add their own primitives beside these.
 
-import { app } from './mooi.js';
+import { app, same } from './mooi.js';
 
 type F = (...a: unknown[]) => unknown;
 
 export function prelude(fail: (msg: string) => never): Record<string, unknown> {
   return {
-    null: null, unit: undefined, true: true, false: false,
     fail,
     must: (x: unknown, msg: string) => x ?? fail(msg),
     not: (x: unknown) => !x,
@@ -33,7 +32,10 @@ export function prelude(fail: (msg: string) => never): Record<string, unknown> {
     drop: (n: number, xs: unknown[]) => xs.slice(n),
     sum: (xs: number[]) => xs.reduce((a, b) => a + b, 0),
     range: (n: number) => Array.from({ length: n }, (_, i) => i),
-    member: (x: unknown, xs: unknown[]) => xs.includes(x),
-    indexOf: (x: unknown, xs: unknown[]) => (xs.indexOf(x) < 0 ? null : xs.indexOf(x)),
+    member: (x: unknown, xs: unknown[]) => xs.some((y) => same(x, y)),
+    indexOf: (x: unknown, xs: unknown[]) => {
+      const i = xs.findIndex((y) => same(x, y));
+      return i < 0 ? null : i;
+    },
   };
 }

@@ -6,12 +6,12 @@ Mooi {
   Guard = "|" Expr
 
   Pat = nodeOpen ListOf<FieldPat, ","> "}"                 -- node
-      | "[" "]"                                            -- nil
       | "[" NonemptyListOf<Pat, ","> "," "..." ident "]"   -- cons
-      | "[" NonemptyListOf<Pat, ","> "]"                   -- list
+      | "[" ListOf<Pat, ","> "]"                           -- list
       | "_"                                                -- wild
       | number                                             -- num
       | string                                             -- str
+      | literal                                            -- lit
       | ident                                              -- var
       | "(" Pat ")"                                        -- paren
   FieldPat = name ":" Pat   -- rename
@@ -51,6 +51,7 @@ Mooi {
        | "{" ListOf<FieldInit, ","> "}"        -- record
        | number                                -- num
        | string                                -- str
+       | literal                               -- lit
        | ident                                 -- var
   FieldInit = "..." Expr     -- spread
             | name ":" Expr  -- field
@@ -59,7 +60,10 @@ Mooi {
   nodeOpen = name "{"
   ident = ~keyword name
   name = (letter | "_") (alnum | "_" | "'")*
-  keyword = ("let" | "in" | "if" | "then" | "else") ~(alnum | "_" | "'")
+  keyword = ("let" | "in" | "if" | "then" | "else" | literal) ~(alnum | "_" | "'")
+  // The language's own values: the one missing value under two names
+  // (null, and unit for "nothing to pass"), and the booleans.
+  literal = ("null" | "unit" | "true" | "false") ~(alnum | "_" | "'")
   number = digit+ ("." digit+)?
   string = "\"" (~"\"" any)* "\""
   space += comment

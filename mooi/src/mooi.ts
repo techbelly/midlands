@@ -34,6 +34,8 @@ interface Clause {
   body: Expr;
 }
 
+const LITERALS: Record<string, unknown> = { null: null, unit: undefined, true: true, false: false };
+
 const semantics = grammar.createSemantics().addOperation('ast', {
   Program: (_lead, defs, _sep) => defs.asIteration().children.map((d: ohm.Node) => d.ast()),
   Def: (name, pats, guard, _eq, body) => ({
@@ -42,13 +44,13 @@ const semantics = grammar.createSemantics().addOperation('ast', {
   }),
   Guard: (_bar, e) => e.ast(),
   Pat_node: (open, fields, _c) => ({ p: 'node', name: open.sourceString.slice(0, -1), fields: fields.asIteration().children.map((f: ohm.Node) => f.ast()) }),
-  Pat_nil: (_o, _c) => ({ p: 'list', items: [], rest: null }),
   Pat_cons: (_o, items, _comma, _dots, rest, _c) => ({ p: 'list', items: items.asIteration().children.map((x: ohm.Node) => x.ast()), rest: rest.sourceString }),
   Pat_list: (_o, items, _c) => ({ p: 'list', items: items.asIteration().children.map((x: ohm.Node) => x.ast()), rest: null }),
   Pat_wild: (_u) => ({ p: 'wild' }),
   Pat_num: (n) => ({ p: 'lit', value: Number(n.sourceString) }),
   Pat_str: (s) => ({ p: 'lit', value: s.sourceString.slice(1, -1) }),
-  Pat_var: (n) => (n.sourceString === 'null' ? { p: 'lit', value: null } : { p: 'var', name: n.sourceString }),
+  Pat_lit: (l) => ({ p: 'lit', value: LITERALS[l.sourceString] }),
+  Pat_var: (n) => ({ p: 'var', name: n.sourceString }),
   Pat_paren: (_o, p, _c) => p.ast(),
   FieldPat_rename: (name, _c, p) => [name.sourceString, p.ast()],
   FieldPat_same: (name) => [name.sourceString, { p: 'var', name: name.sourceString }],
@@ -72,6 +74,7 @@ const semantics = grammar.createSemantics().addOperation('ast', {
   Atom_record: (_o, fields, _c) => ({ e: 'record', kind: null, fields: fields.asIteration().children.map((f: ohm.Node) => f.ast()) }),
   Atom_num: (n) => ({ e: 'lit', value: Number(n.sourceString) }),
   Atom_str: (s) => ({ e: 'lit', value: s.sourceString.slice(1, -1) }),
+  Atom_lit: (l) => ({ e: 'lit', value: LITERALS[l.sourceString] }),
   Atom_var: (n) => ({ e: 'var', name: n.sourceString }),
   FieldInit_spread: (_dots, x) => ['...', x.ast()],
   FieldInit_field: (name, _c, x) => [name.sourceString, x.ast()],
@@ -83,15 +86,16 @@ const layout = (src: string) =>
 
 // --- evaluation ---
 
-// Scopes chain to their parent instead of copying it.
+// Scopes chain to their parent instead of copying it; the root of every
+// chain is the program's globals (its definitions and the host's).
 class Env {
   private vars = new Map<string, unknown>();
-  constructor(private parent: Env | null = null) {}
-  has(n: string): boolean {
-    return this.vars.has(n) || (this.parent?.has(n) ?? false);
-  }
-  get(n: string): unknown {
-    return this.vars.has(n) ? this.vars.get(n) : this.parent?.get(n);
+  constructor(private parent: Env | Record<string, unknown>) {}
+  lookup(n: string): unknown {
+    if (this.vars.has(n)) return this.vars.get(n);
+    if (this.parent instanceof Env) return this.parent.lookup(n);
+    if (n in this.parent) return this.parent[n];
+    throw new Error(`Mooi: unbound '${n}'`);
   }
   set(n: string, v: unknown): void {
     this.vars.set(n, v);
@@ -100,7 +104,7 @@ class Env {
 const NO = Symbol('no match');
 
 // Mooi has one missing value: JS null and undefined are the same to it.
-const same = (a: unknown, b: unknown) => a === b || (a == null && b == null);
+export const same = (a: unknown, b: unknown): boolean => a === b || (a == null && b == null);
 // A node's tag: `kind` in Nile's syntax trees, `k` in umgeni's values and IR.
 const tagOf = (v: object) => (v as { kind?: string }).kind ?? (v as { k?: string }).k;
 
@@ -139,6 +143,68 @@ function match(p: Pat, v: unknown, env: Env): boolean {
   }
 }
 
+// The operators that evaluate both sides first.
+const STRICT: Record<string, (a: never, b: never) => unknown> = {
+  '==': (a: unknown, b: unknown) => same(a, b),
+  '!=': (a: unknown, b: unknown) => !same(a, b),
+  '<': (a: number, b: number) => a < b,
+  '>': (a: number, b: number) => a > b,
+  '<=': (a: number, b: number) => a <= b,
+  '>=': (a: number, b: number) => a >= b,
+  '++': (a: string | unknown[], b: string | unknown[]) => (typeof a === 'string' ? a + (b as string) : [...a, ...(b as unknown[])]),
+  '+': (a: number, b: number) => a + b,
+  '-': (a: number, b: number) => a - b,
+  '*': (a: number, b: number) => a * b,
+  '/': (a: number, b: number) => a / b,
+};
+
+function ev(x: Expr, env: Env): unknown {
+  switch (x.e) {
+    case 'lit': return x.value;
+    case 'var': return env.lookup(x.name);
+    case 'field': {
+      const o = ev(x.x, env) as Record<string, unknown> | null;
+      if (o === null || o === undefined) throw new Error(`Mooi: '.${x.name}' of ${o}`);
+      return o[x.name];
+    }
+    case 'list': return x.items.map((i) => ev(i, env));
+    case 'record': {
+      const o: Record<string, unknown> = x.kind ? { kind: x.kind } : {};
+      for (const [f, v] of x.fields) {
+        if (f === '...') Object.assign(o, ev(v, env));
+        else o[f] = ev(v, env);
+      }
+      return o;
+    }
+    case 'app': return app(ev(x.f, env), ev(x.x, env));
+    case 'if': return ev(x.c, env) ? ev(x.t, env) : ev(x.f, env);
+    case 'let': {
+      const inner = new Env(env);
+      for (const [p, v] of x.binds) if (!match(p, ev(v, inner), inner)) throw new Error('Mooi: let pattern did not match');
+      return ev(x.body, inner);
+    }
+    case 'lam':
+      return withArity(x.pats.length, (...args: unknown[]) => {
+        const inner = new Env(env);
+        x.pats.forEach((p, i) => {
+          if (!match(p, args[i], inner)) throw new Error('Mooi: lambda pattern did not match');
+        });
+        return ev(x.body, inner);
+      });
+    case 'bin': {
+      // `;`, `??`, `||` and `&&` decide whether to evaluate their right side.
+      if (x.op === ';') { ev(x.a, env); return ev(x.b, env); }
+      const a = ev(x.a, env);
+      if (x.op === '??') return a ?? ev(x.b, env);
+      if (x.op === '||') return a || ev(x.b, env);
+      if (x.op === '&&') return a && ev(x.b, env);
+      const f = STRICT[x.op];
+      if (!f) throw new Error(`Mooi: operator ${x.op}`);
+      return f(a as never, ev(x.b, env) as never);
+    }
+  }
+}
+
 // Parsing is the expensive part; a source is parsed once and its
 // definitions reused for every instantiation.
 const parsed = new Map<string, { name: string; clause: Clause }[]>();
@@ -159,76 +225,12 @@ export function load(src: string, host: Record<string, unknown>): Record<string,
   for (const d of defs) clauses.set(d.name, [...(clauses.get(d.name) ?? []), d.clause]);
   const globals: Record<string, unknown> = { ...host };
 
-  const lookup = (name: string, env: Env): unknown => {
-    if (env.has(name)) return env.get(name);
-    if (name in globals) return globals[name];
-    throw new Error(`Mooi: unbound '${name}'`);
-  };
-
-  const ev = (x: Expr, env: Env): unknown => {
-    switch (x.e) {
-      case 'lit': return x.value;
-      case 'var': return lookup(x.name, env);
-      case 'field': {
-        const o = ev(x.x, env) as Record<string, unknown> | null;
-        if (o === null || o === undefined) throw new Error(`Mooi: '.${x.name}' of ${o}`);
-        return o[x.name];
-      }
-      case 'list': return x.items.map((i) => ev(i, env));
-      case 'record': {
-        const o: Record<string, unknown> = x.kind ? { kind: x.kind } : {};
-        for (const [f, v] of x.fields) {
-          if (f === '...') Object.assign(o, ev(v, env));
-          else o[f] = ev(v, env);
-        }
-        return o;
-      }
-      case 'app': return app(ev(x.f, env), ev(x.x, env));
-      case 'if': return ev(x.c, env) ? ev(x.t, env) : ev(x.f, env);
-      case 'let': {
-        const inner = new Env(env);
-        for (const [p, v] of x.binds) if (!match(p, ev(v, inner), inner)) throw new Error('Mooi: let pattern did not match');
-        return ev(x.body, inner);
-      }
-      case 'lam':
-        return withArity(x.pats.length, (...args: unknown[]) => {
-          const inner = new Env(env);
-          x.pats.forEach((p, i) => {
-            if (!match(p, args[i], inner)) throw new Error('Mooi: lambda pattern did not match');
-          });
-          return ev(x.body, inner);
-        });
-      case 'bin': {
-        if (x.op === ';') { ev(x.a, env); return ev(x.b, env); }
-        const a = ev(x.a, env);
-        if (x.op === '??') return a ?? ev(x.b, env);
-        if (x.op === '||') return a || ev(x.b, env);
-        if (x.op === '&&') return a && ev(x.b, env);
-        const b = ev(x.b, env) as never;
-        switch (x.op) {
-          case '==': return same(a, b);
-          case '!=': return !same(a, b);
-          case '<': return (a as number) < b;
-          case '>': return (a as number) > b;
-          case '<=': return (a as number) <= b;
-          case '>=': return (a as number) >= b;
-          case '++': return typeof a === 'string' ? a + b : [...(a as unknown[]), ...(b as unknown[])];
-          case '+': return (a as number) + b;
-          case '-': return (a as number) - b;
-          case '*': return (a as number) * b;
-          case '/': return (a as number) / b;
-        }
-        throw new Error(`Mooi: operator ${x.op}`);
-      }
-    }
-  };
-
   for (const [name, cs] of clauses) {
     const arity = cs[0].pats.length;
     if (cs.some((c) => c.pats.length !== arity)) throw new Error(`Mooi: clauses of '${name}' differ in arity`);
     const run = (args: unknown[]): unknown => {
       for (const c of cs) {
-        const env = new Env();
+        const env = new Env(globals);
         if (!c.pats.every((p, i) => match(p, args[i], env))) continue;
         if (c.guard && !ev(c.guard, env)) continue;
         return ev(c.body, env);

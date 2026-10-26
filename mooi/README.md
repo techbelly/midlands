@@ -29,27 +29,27 @@ lists), the comparisons, `&&` and `||` (both short-circuit).
 
 - A definition starts at column 0; its continuation lines are indented.
   `--` starts a comment.
-- A pattern is a name, `_`, a number, a string, `null`, a node
+- A pattern is a name, `_`, a number, a string, `null` (or `unit`, `true`,
+  `false`), a node
   `name{f1, f2: p}` (a field alone binds a variable of that name; `f: p`
   matches `p` against it; there must be no space before the `{`), a list
   `[]`, `[p, q]` or `[p, ...rest]`, or a pattern in parentheses.
 - A node pattern matches an object whose `kind` or `k` field is the name.
   The node expression `name{…}` always builds `{kind: name, …}`; a record
   with a `k` tag is written out, `{k: "scalar", expr: x}`.
-- Strings have no escapes. `null` and `undefined` are one missing value:
-  `==` treats them as equal, and `??` steps over either.
+- Strings have no escapes. `null`, `unit`, `true` and `false` are the
+  language's own words. `null` and `unit` are one missing value (JavaScript's
+  null and undefined): `==` treats them as equal, and `??` steps over either.
 
 ## Host conventions
 
 - Every function is curried by its arity, read from the JavaScript
   function's `length`: a host function with default or rest parameters has
   the wrong arity, so write it with plain parameters.
-- A zero-arity host function is called by applying it to `unit`, the
-  prelude's name for `undefined`: `c.get unit`.
+- A zero-arity host function is called by applying it to `unit`: `c.get unit`.
 - A definition with no parameters is a value, computed once on first use.
 - A Mooi definition shadows a host name of the same name.
-- `prelude(fail)` supplies the list functions, `must x msg` (x or fail),
-  `null`, `unit`, `true` and `false`.
+- `prelude(fail)` supplies the list functions and `must x msg` (x or fail).
 
 The implementation is about 365 lines:
 
