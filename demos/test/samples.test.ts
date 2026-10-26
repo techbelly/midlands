@@ -1,4 +1,4 @@
-// The Cairo samples' Nile (nl/evenodd.nl, …), checked headless.
+// The Cairo samples' Nile (roda/evenodd.nl, …), checked headless.
 import { describe, expect, it } from 'vitest';
 import { compileLibraryFile, librarySourceTexts, read } from '../src/sources.js';
 import { compileLibrary } from '../../umgeni/src/compile.js';
@@ -20,7 +20,7 @@ const coverageAt = (spans: number[][], x: number, y: number): number => {
   return c;
 };
 
-describe('the even-odd rule (nl/evenodd.nl)', () => {
+describe('the even-odd rule (roda/evenodd.nl)', () => {
   it('compiles, and lowers nothing unsupported', () => {
     expect(library.unsupported).toEqual([]);
     expect(('RasterizeEvenOdd' in library.api)).toBe(true);
@@ -53,7 +53,7 @@ const seg = (x0: number, y0: number, x1: number, y1: number): number[] => [x0, y
 const chord = (b: number[]) => Math.hypot(b[4] - b[0], b[5] - b[1]);
 const I = [1, 0, 0, 1, 0, 0];
 
-describe('dashes (nl/dash.nl)', () => {
+describe('dashes (roda/dash.nl)', () => {
   it('compiles: DashBeziers and the capped stroker', () => {
     expect(library.unsupported).toEqual([]);
     for (const n of ['DashBeziers', 'StrokePieces', 'DashedStroke']) expect((n in library.api), n).toBe(true);
@@ -104,7 +104,7 @@ const pixelAt = (pts: number[][], x: number, y: number): number | null => {
   return t ? t[2] : null;
 };
 
-describe('clipping and masking (nl/clip.nl)', () => {
+describe('clipping and masking (roda/clip.nl)', () => {
   it('keeps the pixels both the shape and the clip cover, with the product of their coverages', () => {
     const shape = nile.RasterizeParallel().run(square(0, 0, 10, 10));
     const clip = nile.RasterizeParallel().run(square(5, 5, 15, 15));
@@ -134,7 +134,7 @@ describe('clipping and masking (nl/clip.nl)', () => {
   });
 });
 
-describe('matrices (nl/vector.nl)', () => {
+describe('matrices (roda/vector.nl)', () => {
   // A map under test: translate, rotate a third of a turn, scale unevenly.
   const maps = [[1, 0, 0, 1, 30, -7], [0.5, 0.8660254037844386, -0.8660254037844386, 0.5, 0, 0], [2, 0, 0, 0.5, 0, 0]];
   it('Compose applies the maps in order, the first last, as Cairo does', () => {
@@ -250,7 +250,7 @@ describe('the Cairo samples, drawn by Nile', () => {
   });
 });
 
-describe('mesh gradients (nl/patch.nl)', () => {
+describe('mesh gradients (roda/patch.nl)', () => {
   it('fills a straight-sided patch pixel for pixel, blending the corner colours', () => {
     const img = page();
     new Sheet(samples.api, new CpuTarget(samples.api, img)).paintMesh([{ T: lineCubic([10, 10], [20, 10]), B: lineCubic([10, 20], [20, 20]), L: lineCubic([10, 10], [10, 20]), R: lineCubic([20, 10], [20, 20]), colors: [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1], [1, 1, 1, 1]] }]);

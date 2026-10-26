@@ -8,6 +8,6 @@
     "skipLibCheck": true,
     "types": ["node", "@webgpu/types"]
   },
-  "include": ["mooi", "umgeni", "demos"],
-  "exclude": ["demos/dist", "*/tools", "node_modules"]
+  "include": ["mooi", "umgeni", "demos", "tools"],
+  "exclude": ["demos/dist", "demos/tools", "node_modules"]
 }

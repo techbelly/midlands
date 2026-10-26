@@ -1,5 +1,5 @@
 // Coverage spans → pixels. Expanding each span to its pixels and colouring
-// them is Nile (nl/spans.nl: gezira's ExpandSpans and UniformColor); the
+// them is Nile (roda/spans.nl: gezira's ExpandSpans and UniformColor); the
 // host only writes the resulting pixels, since Nile has no random-access
 // memory. The paint page writes its textured pixels the same way.
 
@@ -32,7 +32,7 @@ export function inkedPixels(img: ImgLike): number {
   return n;
 }
 
-// Composite PaintedPixel tokens (nl/spans.nl) over the image: a colour,
+// Composite PaintedPixel tokens (roda/spans.nl) over the image: a colour,
 // premultiplied (a, r, g, b) in 0..1, and a pixel (its centre n + 0.5, so it
 // floors to n) with its coverage c. Field offsets are looked up once.
 export function writePixels(img: ImgLike, nile: Api, tokens: number[][]): void {

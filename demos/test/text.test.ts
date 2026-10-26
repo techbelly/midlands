@@ -23,7 +23,7 @@ function runsInRow(buf: Float64Array, width: number, y: number, threshold = 0.5)
   return runs;
 }
 
-describe('the text pipeline (nl/text.nl)', () => {
+describe('the text pipeline (roda/text.nl)', () => {
   it('compiles with nothing unsupported', () => {
     expect(library.unsupported).toEqual([]);
     expect(('TextSpans' in library.api)).toBe(true);

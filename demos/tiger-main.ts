@@ -1,5 +1,5 @@
-// The tiger demo shell: zoom/pan state and canvas plumbing. Ported from
-// chari/web/tiger-main.ts; the pipeline is Umgeni-compiled (nl/vector.nl-lib).
+// The tiger demo shell: zoom/pan state and canvas plumbing. The pipeline is
+// Umgeni-compiled (nl/vector.nl-lib).
 
 import { parseSvg } from './src/vector/svg.js';
 import type { Api } from './src/vector/draw.js';

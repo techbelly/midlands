@@ -6,7 +6,7 @@
 // control flow, single-assignment locals. The one representational shift is
 // that WGSL comparisons yield bool, so a numeric context materializes
 // 0.0/1.0 through select while a boolean context stays native (mirroring
-// the JS boolCond pass).
+// the JS back end's boolCond option).
 //
 // PRECISION: WGSL computes in f32; the reference backend in f64. GPU output
 // is compared with tolerances, not bit-equality.

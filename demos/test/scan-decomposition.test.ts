@@ -1,6 +1,6 @@
 // Scan-design step 1 (docs/scan-design.md): validate that CombineEdgeSamples
 // decomposes into reduce-by-key → segmented scan → pairwise window, written
-// as ORDINARY sequential Nile (nl/combine-scan.nl, no new syntax), before any
+// as ORDINARY sequential Nile (test/fixtures/combine-scan.nl, no new syntax), before any
 // language design happens.
 //
 // Expected equivalence: identical span structure (positions, lengths, count);

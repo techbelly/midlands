@@ -1,8 +1,8 @@
 // Regenerate test/fixtures/paint-oracle.json: random coverage spans through
 // the paint scenes (test/fixtures/paint-scenes.nl, mirrored in harness.c) —
 // gradients, color spans, compositors and filters on the original runtime.
-// Needs the oracle binary: `sh tools/oracle/build.sh` first.
-//   npx tsx tools/oracle/gen-paint-fixtures.ts
+// Needs the oracle binary: `sh umgeni/tools/oracle/build.sh` first.
+//   npx tsx umgeni/tools/oracle/gen-paint-fixtures.ts
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 

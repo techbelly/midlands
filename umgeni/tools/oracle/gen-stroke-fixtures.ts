@@ -1,7 +1,7 @@
 // Regenerate test/fixtures/stroke-oracle.json: random curved paths (open and
 // closed) through the original gezira stroke processes, every cap and join.
-// Needs the oracle binary: `sh tools/oracle/build.sh` first.
-//   npx tsx tools/oracle/gen-stroke-fixtures.ts
+// Needs the oracle binary: `sh umgeni/tools/oracle/build.sh` first.
+//   npx tsx umgeni/tools/oracle/gen-stroke-fixtures.ts
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 

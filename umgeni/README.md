@@ -129,8 +129,8 @@ nile.provide('ReadImage', (P) => readImageOp(images[P[0]]));
 - **The 2012 runtime**: gezira's stroke and paint processes, compiled by
   Amelang's compiler and run on the original C runtime. Recorded in
   `test/fixtures/{stroke,paint}-oracle.json`; to rebuild,
-  `sh tools/oracle/build.sh` (fetches nile and gezira at pinned commits;
-  x86_64, so Rosetta on Apple Silicon), then `npx tsx tools/oracle/gen-*-fixtures.ts`.
+  `sh umgeni/tools/oracle/build.sh` (fetches nile and gezira at pinned commits;
+  x86_64, so Rosetta on Apple Silicon), then `npx tsx umgeni/tools/oracle/gen-*-fixtures.ts`.
 - **chari**: an earlier compiler for Nile; its outputs on
   `test/fixtures/chari-kernels.nl` are recorded and must match bit for bit.
 - **Interpreter ≡ compiler**: every kernel, random inputs, every output

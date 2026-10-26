@@ -1,8 +1,7 @@
-// The streaming runtime. Ported from chari's runtime (which validated the
-// model against the tiger demo), with one representational change: a token is
-// always a flat array of numbers — records are scalarized by elaboration, so
-// a Bezier flows through as 6 numbers. This keeps the runtime shape-blind and
-// leaves the road open to typed-array batching.
+// The streaming runtime. A token is always a flat array of numbers: records
+// are scalarized by elaboration, so a Bezier flows through as 6 numbers,
+// which keeps the runtime shape-blind and leaves the road open to
+// typed-array batching.
 //
 // Kernels themselves are generated code (js.ts: every kernel runs as a
 // segment, with feedback as a LIFO worklist — recursive subdivision runs

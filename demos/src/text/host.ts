@@ -2,7 +2,7 @@
 // tests, node rendering, and the web demo): string -> GlyphBezier tokens in,
 // CoverageSpans -> coverage buffer out. Everything geometric in between (pen
 // advance, line wrapping, transform, clip, rasterization) is compiled Nile —
-// see nl/text.nl.
+// see roda/text.nl.
 
 import { run, type Api, type Op, type Token } from '../../../umgeni/src/cpu/runtime.js';
 import { glyphFor as stubGlyph, type Glyph, type Rgba } from './stubfont.js';
@@ -29,7 +29,7 @@ export function fallback(...fonts: FallbackFont[]): GlyphSource {
   };
 }
 
-// A GlyphBezier token (nl/text.nl): (Z : Bezier, adv, first, kind, rest). Every outline bezier of a glyph carries the glyph's advance; `first`
+// A GlyphBezier token (roda/text.nl): (Z : Bezier, adv, first, kind, rest). Every outline bezier of a glyph carries the glyph's advance; `first`
 // marks the token on which LayoutGlyphs advances the pen (and maybe wraps);
 // `kind` is 0 glyph / 1 space / 2 line break; `rest` is computed in Nile
 // (WordWidths). A space or break has no outline, so it travels as one
@@ -39,7 +39,7 @@ export const textTokens = (nile: Api, text: string, glyphFor: GlyphSource = stub
   glyphTokens(nile, text, glyphFor).tokens;
 
 // The single-colour front half: every glyph's beziers laid out, transformed
-// and clipped (TextBeziers in nl/text.nl), as the rasterizers take them.
+// and clipped (TextBeziers in roda/text.nl), as the rasterizers take them.
 export const textBeziers = (nile: Api, text: string, params: TextSpansParams, glyphFor?: GlyphSource): Token[] =>
   nile.TextBeziers(params).run(textTokens(nile, text, glyphFor));
 
@@ -119,7 +119,7 @@ export interface RenderOptions {
   glyphs?: GlyphSource;
 }
 
-// TextSpans' parameters, by name (nl/text.nl): layout is in em units, the
+// TextSpans' parameters, by name (roda/text.nl): layout is in em units, the
 // matrix maps em to pixels, min and max are the clip rectangle.
 export type TextSpansParams = {
   w: number; // wrap width, em

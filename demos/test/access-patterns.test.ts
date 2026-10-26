@@ -1,5 +1,5 @@
 // The access-patterns constructs (umgeni/README.md), end to end:
-// nl/rasterize-parallel.nl expresses the rasterizer with GroupBy / ReduceBy / a scan
+// roda/rasterize-parallel.nl expresses the rasterizer with GroupBy / ReduceBy / a scan
 // clause / ∷ windows — and must reproduce the classic Rasterize pipeline.
 //
 // Expected differences, by design:
@@ -33,7 +33,7 @@ function dropArtifacts(spans: number[][]): number[][] {
   return spans.slice(i);
 }
 
-describe('the rasterizer in access-patterns Nile (nl/rasterize-parallel.nl)', () => {
+describe('the rasterizer in access-patterns Nile (roda/rasterize-parallel.nl)', () => {
   it('compiles: GroupBy, ReduceBy, scan clause, windows', () => {
     expect(library.unsupported).toEqual([]);
     expect(('RasterizeParallel' in library.api)).toBe(true);

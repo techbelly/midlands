@@ -1,6 +1,6 @@
 // The tiger/strokes demo host code, validated headless: gezira's own kernels
-// (stroke.nl unmodified) + nl/vector.nl compiled by Umgeni, driven with flat
-// cubics from the SVG parser, painted by PaintSpans (nl/spans.nl).
+// (stroke.nl unmodified) + roda/vector.nl compiled by Umgeni, driven with flat
+// cubics from the SVG parser, painted by PaintSpans (roda/spans.nl).
 
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';

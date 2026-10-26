@@ -6,7 +6,7 @@
 //   - wall clock: median paragraph raster time (secondary; JIT-laundered)
 // plus a hard gate: every variant must produce span-identical output.
 //
-// Run: npx tsx tools/bench.ts
+// Run: npm run bench
 
 import { compileLibraryFile } from '../src/sources.js';
 import { renderText } from '../src/text/render.js';

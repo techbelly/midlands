@@ -1,4 +1,4 @@
-// The Ghostscript Tiger demo, host side — ported from chari/web, adapted to
+// The Ghostscript Tiger demo, host side:
 // umgeni's flat tokens: a cubic is 8 numbers, a span is 4. All geometry
 // (transform, cubic flattening, stroke expansion, clipping, rasterization)
 // runs in compiled Nile — gezira's own stroke/bezier/rasterize source plus

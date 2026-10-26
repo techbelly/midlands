@@ -115,7 +115,7 @@ export class Sheet {
   }
 
   /** Maps composed in order, the first applied last, as Cairo's translate,
-   *  rotate and scale calls build the transform (nl/vector.nl's Compose). */
+   *  rotate and scale calls build the transform (roda/vector.nl's Compose). */
   matrix(...maps: Matrix[]): Matrix {
     return this.nile.Compose().run(maps.map((m) => [...m]))[0] as unknown as Matrix;
   }
@@ -127,7 +127,7 @@ export class Sheet {
     this.target.paintImage(image, M, extend, pattern);
   }
 
-  /** A mesh gradient: Coons patches (nl/patch.nl). */
+  /** A mesh gradient: Coons patches (roda/patch.nl). */
   paintMesh(patches: Patch[]): void {
     this.target.paintMesh(patches);
   }
