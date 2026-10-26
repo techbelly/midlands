@@ -13,7 +13,7 @@ shapeOf scalar{}     = R
 shapeOf agg{shape}   = shape
 
 leaves scalar{expr}  = [expr]
-leaves agg{parts}    = concat (map leaves parts)
+leaves agg{parts}    = concatMap leaves parts
 
 -- The tree of a shape whose leaves are xs, in order.
 tree real{} xs          = scalar (head xs)

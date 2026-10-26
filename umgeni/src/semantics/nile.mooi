@@ -15,13 +15,14 @@ lookup ρ n = current (must (get ρ n) ("unbound name '" ++ n ++ "'"))
 current b | b.cells != null = tree b.shape (map (\c -> c.get unit) b.cells)
 current b                   = b
 cellsOf ρ n = let b = get ρ n in if b != null && b.cells != null then b else null
+bindPairs ρ pairs = foldl (\ρ [n, v] -> bind ρ n v) ρ pairs
 constCell x = {get: \_ -> x, set: \_ -> unit}
 
 scalarOf v | isScalar v = s v
 scalarOf v              = fail "an `if` statement condition must be scalar (use .x/.y to pick a component)"
 
 patternNames varPat{name}       = [name]
-patternNames tuplePat{elements} = concat (map patternNames elements)
+patternNames tuplePat{elements} = concatMap patternNames elements
 patternNames _                  = []
 
 -- Expressions denote values: trees with scalars at the leaves.
@@ -81,7 +82,7 @@ assignTo ρ n v = let c = must (cellsOf ρ n) ("'" ++ n ++ " =' must update a st
 -- A kernel: state declared by its prologue, a step per token, a flush.
 kernel k params names sig =
   let layout = stateLayout k params names
-  in { initial: concat (map (\l -> l.initial) layout)
+  in { initial: concatMap (\l -> l.initial) layout
      , init:    \_ -> execs sig (filter (\st -> not (isDecl st)) k.prologue) (phase params names layout)
      , step:    \input -> step k sig (phase params names layout) layout input
      , flush:   \_ -> execs {...sig, flush: true} k.epilogue (phase params names layout) }
@@ -91,7 +92,7 @@ stateLayout k params names = scanState (bindAll empty names params) 0 (filter is
 scanState ρ base []             = []
 scanState ρ base [st, ...rest]  =
   let vars = declared st (ascribe (expr st.value ρ) (st.type ?? null))
-  in layoutOf vars base ++ scanState (foldl (\ρ [n, v] -> bind ρ n v) ρ vars) (base + sumWidths vars) rest
+  in layoutOf vars base ++ scanState (bindPairs ρ vars) (base + sumWidths vars) rest
 declared decl{name} v           = [[name, v]]
 declared patAssign{pattern} v   = destructure pattern v
 layoutOf [] base                = []
@@ -106,19 +107,20 @@ phase params names layout = foldl (\ρ l -> bind ρ l.name (tree l.shape (map (\
 step k sig ρ layout input | length k.forAlls == 0 = if width sig.input == width sig.output then D.emit (leaves input) else unit
 step k sig ρ layout input =
   let fa     = head k.forAlls,
-      ρ1     = foldl (\ρ [n, v] -> bind ρ n v) ρ (destructure fa.pattern input),
+      ρ1     = bindPairs ρ (destructure fa.pattern input),
       ps     = primedNames fa.body,
       backs  = filter (\b -> b != null) (map (writeBack ρ1 ps) layout),
       ρ2     = foldl (\ρ b -> if b.fresh then bind ρ b.primed {cells: b.cells, shape: b.slot.shape} else ρ) ρ1 backs
   in execs sig fa.body ρ2; each (\b -> eachi (\c i -> (D.state (b.slot.base + i)).set (c.get unit)) b.cells) backs
 
-writeBack ρ ps l | member (l.name ++ "'") ps =
-  let start = leaves (lookup ρ (if bound ρ (l.name ++ "'") then l.name ++ "'" else l.name))
-  in {slot: l, primed: l.name ++ "'", fresh: true, cells: mapi (\x i -> D.cell (leafName (l.name ++ "'") i (length start)) x) start}
-writeBack ρ ps l | bound ρ (l.name ++ "'") = {slot: l, fresh: false, cells: map (\x -> constCell x) (leaves (lookup ρ (l.name ++ "'")))}
-writeBack ρ ps l = null
+writeBack ρ ps l = writeBackAs ρ ps l (l.name ++ "'")
+writeBackAs ρ ps l p | member p ps =
+  let start = leaves (lookup ρ (if bound ρ p then p else l.name))
+  in {slot: l, primed: p, fresh: true, cells: mapi (\x i -> D.cell (leafName p i (length start)) x) start}
+writeBackAs ρ ps l p | bound ρ p = {slot: l, fresh: false, cells: map constCell (leaves (lookup ρ p))}
+writeBackAs ρ ps l p = null
 
-primedNames stmts = concat (map primedIn stmts)
+primedNames stmts = concatMap primedIn stmts
 primedIn assign{name}       = [name ++ "'"]
 primedIn patAssign{pattern} = filter primed (patternNames pattern)
 primedIn if{then: t, else: f} = primedNames t ++ primedNames (f ?? [])

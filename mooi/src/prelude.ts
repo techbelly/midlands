@@ -25,6 +25,7 @@ export function prelude(fail: (msg: string) => never): Record<string, unknown> {
     foldr: (f: F, z: unknown, xs: unknown[]) => xs.reduceRight((acc, x) => app(app(f, x), acc), z),
     zipWith: (f: F, a: unknown[], b: unknown[]) => a.map((x, i) => app(app(f, x), b[i])),
     concat: (xss: unknown[][]) => xss.flat(1),
+    concatMap: (f: F, xs: unknown[]) => xs.flatMap((x) => app(f, x) as unknown[]),
     length: (xs: unknown[]) => xs.length,
     head: (xs: unknown[]) => xs[0],
     at: (xs: unknown[], i: number) => xs[i],

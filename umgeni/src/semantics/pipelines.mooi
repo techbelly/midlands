@@ -18,7 +18,8 @@
 
 -- A context: the pipeline being defined (for messages), the values its
 -- parameters are bound to, and its process-typed parameters' closures.
-pipeline who elems ρ procs input = stages {who: who, env: ρ, procs: procs} elems {shape: input, unordered: false}
+pipeline who elems ρ procs input = stages (context who ρ procs) elems {shape: input, unordered: false}
+context who env procs = {who: who, env: env, procs: procs}
 
 stages c [] s             = {stages: [], output: s.shape}
 stages c [el, ...rest] s  = let r = stage c el s, more = stages c rest r.stream
@@ -68,7 +69,7 @@ named c "DupZip" args s  = ordered c "DupZip" s;
 named c name args s | lookupProc c.procs name != null =
   if length args > 0 then fail ("process parameter '" ++ name ++ "' takes no arguments")
   else ordered c name s;
-       (let cl = lookupProc c.procs name in spliced (stages {who: c.who, env: cl.env, procs: cl.procs} cl.elems s))
+       (let cl = lookupProc c.procs name in spliced (stages (context c.who cl.env cl.procs) cl.elems s))
 -- A template: instantiated with these arguments, in place.
 named c name args s | P.template name != null = ordered c name s; spliced (instantiate c (P.template name) args s)
 -- A plain process, its arguments staged and flattened.
@@ -100,9 +101,9 @@ pipelineOf a w                                = fail (w ++ " expects a process h
 instantiate c k args s | length k.forAlls > 0 || length k.prologue != 1 || (head k.prologue).kind != "forward" =
   fail ("'" ++ k.name ++ "' takes a process parameter, so it must be a pipeline definition (⇒ …)")
 instantiate c k args s =
-  let names = concat (map (\g -> map (\n -> {name: n, type: g.type}) g.names) (k.params ?? []))
+  let names = concatMap (\g -> map (\n -> {name: n, type: g.type}) g.names) (k.params ?? [])
   in if length args != length names then fail ("'" ++ k.name ++ "' takes " ++ str (length names) ++ " arguments, given " ++ str (length args))
      else let callee = foldl (bindArg c k) {env: empty, procs: noProcs} (zipWith (\p a -> [p, a]) names args)
-          in stages {who: c.who, env: callee.env, procs: callee.procs} (head k.prologue).pipeline s
+          in stages (context c.who callee.env callee.procs) (head k.prologue).pipeline s
 bindArg c k acc [p, a] | P.isStream p.type = {...acc, procs: bindProc acc.procs p.name {elems: pipelineOf a ("'" ++ k.name ++ "'"), env: c.env, procs: c.procs}}
 bindArg c k acc [p, a] = {...acc, env: bind acc.env p.name (must (P.fit (P.expr a c.env) (P.type p.type)) ("argument '" ++ p.name ++ "' of '" ++ k.name ++ "' does not fit its parameter"))}
