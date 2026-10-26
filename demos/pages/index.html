@@ -1,0 +1,60 @@
+<meta name="width" content="880">
+<meta name="script" content="app.js">
+<style>
+  textarea { width: 100%; box-sizing: border-box; font: inherit; }
+  canvas { image-rendering: pixelated; }
+  .row { display: flex; gap: 1rem; align-items: center; margin: 0.6rem 0; flex-wrap: wrap; }
+</style>
+<h1>Text</h1>
+<section slot="lede">
+  Text set by gezira's rasterizer: each glyph's outline curves, wrapped into
+  lines, laid out, clipped and rasterized by one Nile pipeline, on the CPU or
+  the GPU.
+</section>
+<section slot="switcher">
+  <label>renderer
+    <select id="mode">
+      <option value="cpu">CPU — Nile compiled to JavaScript</option>
+      <option value="wasm">CPU — Nile compiled to WebAssembly</option>
+      <option value="gpu">GPU — WGSL, read back to the CPU</option>
+      <option value="gpu0" selected>GPU — WGSL, presented directly</option>
+    </select>
+  </label>
+</section>
+<section slot="demo">
+<textarea id="text" rows="5">Each glyph is a handful of curves. They are laid out into lines, transformed to the page, clipped, and turned into coverage spans, one pixel row at a time; the spans are painted in the text's colour. Emoji 🌈 🍩 🐯 are layers of coloured curves, painted in turn.
+A line break starts a new line. 😀🎉</textarea>
+<div class="row">
+  <label>font <select id="font">
+      <option value="serif">Source Serif 4 + Twemoji colour emoji</option>
+      <option value="stub">stub (hand-drawn skeleton)</option>
+    </select></label>
+  <label>size <input id="size" type="range" min="6" max="64" value="22"> <span id="sizeval"></span>px</label>
+</div>
+<canvas id="canvas" width="880" height="360"></canvas>
+<canvas id="canvasgpu" width="880" height="360" style="display:none"></canvas>
+</section>
+<section slot="help">
+  edit the text, drag the size, or pick a font; drop a <code>.ttf</code> file
+  onto the page to set the text in it. The renderer menu switches between the
+  CPU (JavaScript or WebAssembly) and the GPU; all three run the same Nile.
+</section>
+<section slot="stats">
+<p>Rendering: about 170 lines of Nile and 390 of TypeScript (210 of them read TrueType fonts), compiled by umgeni. The page’s interface isn’t counted.</p>
+</section>
+<section slot="description">
+<p>
+  This Nile pipeline, <code>TextSpans</code>, takes a stream of
+  <code>GlyphBezier</code>s: each glyph's outline curves, read from the font by
+  plain TypeScript, tagged with the glyph's advance. It wraps the text into
+  lines (<code>WordWidths</code> runs backwards, so each word's first glyph
+  knows how wide the word is), lays the glyphs out, transforms them onto the
+  page, clips them and rasterizes them into coverage spans.
+  <code>PaintSpans</code> turns the spans into coloured pixels, which TypeScript
+  writes to the canvas. The pipeline is parameterized by the line width, the
+  line height, a matrix that scales and places the text, and the clip
+  rectangle. Colour emoji are layers of outlines, so the page splits the stream
+  after layout and paints each colour in turn. On the GPU, the rasterizer runs
+  as WGSL (<code>RasterizeParallel</code>).
+</p>
+</section>

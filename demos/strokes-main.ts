@@ -19,6 +19,7 @@ import rasterizeNl from '../gezira/rasterize.nl';
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
 const statsEl = document.getElementById('stats')!;
+const perfEl = document.getElementById('perf')!;
 const W = canvas.width;
 const H = canvas.height;
 const I = [1, 0, 0, 1, 0, 0];
@@ -79,7 +80,8 @@ function draw(): void {
     }
   }
   const pieces = outlines.reduce((n, o) => n + o.length, 0);
-  statsEl.textContent = `${pieces} outline beziers · ${spans.toLocaleString()} spans · ${ms.toFixed(1)} ms`;
+  statsEl.textContent = `${pieces} outline beziers · ${spans.toLocaleString()} spans`;
+  perfEl.textContent = `CPU (JavaScript) · ${ms.toFixed(1)} ms`;
 }
 
 function group(id: string, set: (v: string) => void): void {

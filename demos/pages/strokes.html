@@ -1,0 +1,53 @@
+<meta name="width" content="720">
+<style>
+  .row { display: flex; gap: 1.5rem; align-items: center; margin: 0.6rem 0; flex-wrap: wrap; }
+  .seg button { font: inherit; padding: 0.2rem 0.7rem; border: 1px solid #bbb; background: #f5f5f5; cursor: pointer; }
+  .seg button.on { background: #2b6cb0; color: #fff; border-color: #2b6cb0; }
+  .seg button:first-child { border-radius: 4px 0 0 4px; }
+  .seg button:last-child { border-radius: 0 4px 4px 0; }
+</style>
+<h1>Strokes</h1>
+<section slot="lede">
+  Gezira's stroker, unmodified: caps, joins and a curve that replaces itself
+  with a pipeline mid-stream, drawn interactively on the CPU.
+</section>
+<section slot="demo">
+<div class="row">
+  <span class="seg" id="cap">cap:
+    <button data-v="0">butt</button><button data-v="-1" class="on">round</button><button data-v="1">square</button>
+  </span>
+  <span class="seg" id="join">join:
+    <button data-v="bevel">bevel</button><button data-v="round" class="on">round</button><button data-v="miter">miter</button>
+  </span>
+</div>
+<div class="row">
+  <label>width <input id="w" type="range" min="2" max="48" value="22"></label>
+  <label id="limitrow" style="opacity:0.4">miter limit <input id="limit" type="range" min="1" max="8" step="0.1" value="4"> <span id="limitv">4</span></label>
+  <label><input id="outline" type="checkbox"> show outline (gezira's offset beziers)</label>
+</div>
+<canvas id="view" width="640" height="440"></canvas>
+</section>
+<section slot="help">
+  choose a cap and a join, drag the width (and the miter limit, for miter
+  joins), and tick <i>show outline</i> to see the offset beziers the stroker
+  produces.
+</section>
+<section slot="stats">
+<p>Rendering: about 240 lines of Nile and 50 of TypeScript, compiled by umgeni. The page’s interface isn’t counted.</p>
+</section>
+<section slot="description">
+<p>
+  This Nile pipeline, <code>StrokeOutline</code>, takes a stream of cubic
+  curves (the paths, written in plain TypeScript) and outlines them with
+  gezira's <code>stroke.nl</code>, unmodified. <code>StrokeBezierPath</code>
+  offsets each curve to both sides, subdividing it where needed
+  (<code>OffsetBezier</code> replaces itself with a pipeline mid-stream), joins
+  neighbouring segments and caps the ends, stroking the second side with
+  <code>DupCat</code> and <code>Reverse</code>. <code>FillBeziers</code> then
+  clips and rasterizes the outline, and <code>PaintSpans</code> turns the spans
+  into coloured pixels, which TypeScript writes to the canvas. The pipeline is
+  parameterized by a transform, the stroke width, the join (round, or a miter
+  limit) and the cap (round, butt or square). The faint white lines are the
+  input paths.
+</p>
+</section>

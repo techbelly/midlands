@@ -31,6 +31,7 @@ const canvas = document.getElementById('view') as HTMLCanvasElement;
 const canvasGpu = document.getElementById('viewgpu') as HTMLCanvasElement;
 const modeEl = document.getElementById('mode') as HTMLSelectElement;
 const statsEl = document.getElementById('stats')!;
+const perfEl = document.getElementById('perf')!;
 const base = Math.min(canvas.width, canvas.height) / 900;
 
 // A back end rasterizes and composites the paths, and resolves to its time
@@ -113,8 +114,8 @@ async function draw(): Promise<void> {
   const paths = tigerPaths(tiger, viewMatrix(), front, canvas.width, canvas.height);
   const frontMs = performance.now() - t0;
   const backMs = await backEnd(paths);
-  statsEl.textContent =
-    `${tiger.paths.length} paths · ${segs.toLocaleString()} cubics · ${z.toFixed(1)}× · ` +
+  statsEl.textContent = `${tiger.paths.length} paths · ${segs.toLocaleString()} cubics · ${z.toFixed(1)}×`;
+  perfEl.textContent =
     `front (CPU Nile, ${isWasm ? 'wasm' : 'JS'}) ${frontMs.toFixed(0)} ms + raster & composite (${gpuBack ? 'GPU' : isWasm ? 'CPU wasm' : 'CPU JS'}) ${backMs.toFixed(0)} ms ` +
     `= ${(frontMs + backMs).toFixed(0)} ms a frame`;
 }
@@ -172,5 +173,5 @@ addViewControls(canvas);
 addViewControls(canvasGpu);
 
 modeEl.addEventListener('change', scheduleDraw);
-statsEl.textContent = 'rendering…';
+perfEl.textContent = 'rendering…';
 scheduleDraw();

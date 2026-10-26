@@ -1,0 +1,45 @@
+<meta name="width" content="720">
+<style>
+  canvas { touch-action: none; cursor: grab; }
+</style>
+<h1>Tiger</h1>
+<section slot="lede">
+  The Ghostscript tiger: every one of its 240 paths filled and stroked by
+  gezira's own kernels, the same Nile on the CPU or the GPU.
+</section>
+<section slot="switcher">
+  <label>renderer
+    <select id="mode">
+      <option value="cpu">CPU — Nile compiled to JavaScript</option>
+      <option value="wasm">CPU — Nile compiled to WebAssembly</option>
+      <option value="gpu" selected>GPU — WGSL, composited per path</option>
+    </select>
+  </label>
+</section>
+<section slot="demo">
+<canvas id="view" width="680" height="680"></canvas>
+<canvas id="viewgpu" width="680" height="680" style="display:none"></canvas>
+</section>
+<section slot="help">
+  double-click to zoom in (100%, 200%, 400%, then back), and drag to pan. The
+  renderer menu switches between the CPU (JavaScript or WebAssembly) and the
+  GPU; all three run the same Nile.
+</section>
+<section slot="stats">
+<p>Rendering: about 310 lines of Nile and 190 of TypeScript, compiled by umgeni. The page’s interface isn’t counted.</p>
+</section>
+<section slot="description">
+<p>
+  These Nile pipelines draw the Ghostscript Tiger's 240 SVG paths. Plain
+  TypeScript lexes each path's <code>d</code> attribute into
+  <code>PathCommand</code>s, and <code>PathCubics</code> interprets them into
+  cubic curves. <code>SvgFill</code> transforms a path's cubics, flattens them
+  to quadratic beziers, clips them and rasterizes them into coverage spans;
+  <code>SvgStroke</code> transforms and flattens them, then outlines them with
+  gezira's stroker. <code>PaintSpans</code> turns the spans into coloured
+  pixels, which TypeScript writes to the canvas. The pipelines are
+  parameterized by the view matrix (zoom and pan), the SVG's own transform,
+  the clip rectangle and, for strokes, the width, a minimum width, the join and
+  the cap. On the GPU, rasterizing and compositing run as WGSL.
+</p>
+</section>

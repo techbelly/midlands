@@ -37,6 +37,16 @@ root builds `dist/` and serves it; `npm run demo:build` just builds.
   pipelines that lower (the even-odd rule, the clip join, the mesh) on a real
   GPU against the CPU.
 
+The pages other than samples are fragments in [pages/](pages/): a title, a
+one-line lede, the renderer switcher, the demo, how to use it, its static
+stats, any extra pipeline panels, and the long description, each in a
+`<section slot="…">`. [tools/shell.mjs](tools/shell.mjs) assembles them in
+one fixed order with the shared nav, styles and footer, so the pages read
+the same way and cannot drift: title, switcher, demo, the live performance
+line (`#perf`), how to use, the live counts (`#stats`) and the size line,
+the Nile pipeline (`#nile`), description. `samples.html` is a full page of
+its own and is copied as it is.
+
 A page imports a Nile library as `import { nile } from './nl/vector.nl-lib'`.
 The `.nl-lib` file lists the `.nl` sources (gezira's, roda's, and the page's
 own in `nl/`), and the bundler plugin

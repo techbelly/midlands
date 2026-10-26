@@ -48,6 +48,7 @@ const modeEl = document.getElementById('mode') as HTMLSelectElement;
 const api = () => (modeEl.value === 'wasm' ? nileWasm : nile);
 const sizeVal = document.getElementById('sizeval')!;
 const stats = document.getElementById('stats')!;
+const perf = document.getElementById('perf')!;
 const ctx2d = canvas2d.getContext('2d')!;
 
 const SIZE = { width: canvas2d.width, height: canvas2d.height };
@@ -140,7 +141,7 @@ async function render(): Promise<void> {
   if (mode === 'gpu' || mode === 'gpu0') {
     const gpu = await ensureGpu();
     if (!gpu) {
-      stats.textContent = 'WebGPU unavailable in this browser/context — falling back to CPU.';
+      perf.textContent = 'WebGPU unavailable in this browser/context — falling back to CPU.';
       modeEl.value = 'cpu';
       return render();
     }
@@ -155,9 +156,9 @@ async function render(): Promise<void> {
       t0 = performance.now();
       gpu.presenter.frame(batches, gpu.context.getCurrentTexture().createView());
       const submitMs = performance.now() - t0;
-      stats.textContent =
-        `GPU zero-fence · ${batches.reduce((n, b) => n + b.n, 0)} beziers in ${batches.length} colour runs · ` +
-        `front (CPU Nile) ${frontMs.toFixed(1)} ms · submit ${submitMs.toFixed(2)} ms · fences: 0 (presented async)`;
+      stats.textContent = `${batches.reduce((n, b) => n + b.n, 0)} beziers in ${batches.length} colour runs`;
+      perf.textContent =
+        `GPU zero-fence · front (CPU Nile) ${frontMs.toFixed(1)} ms · submit ${submitMs.toFixed(2)} ms · fences: 0 (presented async)`;
       return;
     }
 
@@ -170,8 +171,9 @@ async function render(): Promise<void> {
     const coverage = await gpu.raster.render(beziers, n);
     const gpuMs = performance.now() - t0;
     const paintMs = paint(coverage);
-    stats.textContent =
-      `GPU readback · ${n} beziers · front ${frontMs.toFixed(1)} ms · ` +
+    stats.textContent = `${n} beziers`;
+    perf.textContent =
+      `GPU readback · front ${frontMs.toFixed(1)} ms · ` +
       `raster ${gpuMs.toFixed(1)} ms (1 fence) · paint ${paintMs.toFixed(1)} ms` +
       (gpu.raster.overflowed() ? ' · WORKLIST OVERFLOW' : '');
     return;
@@ -189,9 +191,8 @@ async function render(): Promise<void> {
     paintSpans(img, api(), s, rgb255(r));
   }
   ctx2d.putImageData(img, 0, 0);
-  stats.textContent =
-    `CPU (${mode === 'wasm' ? 'WebAssembly' : 'JavaScript'}) · compile ${compileMs} ms (build time) · ${colourRuns.length} colour runs → ` +
-    `${spans.toLocaleString()} spans · ${(performance.now() - t0).toFixed(1)} ms`;
+  stats.textContent = `${colourRuns.length} colour runs → ${spans.toLocaleString()} spans · compiled in ${compileMs} ms (at build time)`;
+  perf.textContent = `CPU (${mode === 'wasm' ? 'WebAssembly' : 'JavaScript'}) · ${(performance.now() - t0).toFixed(1)} ms`;
 }
 
 const rerender = frameScheduler(render);
@@ -214,7 +215,7 @@ document.addEventListener('drop', async (e) => {
     fontEl.value = key;
     rerender();
   } catch (err) {
-    stats.textContent = `Could not read ${file.name}: ${(err as Error).message}`;
+    perf.textContent = `Could not read ${file.name}: ${(err as Error).message}`;
   }
 });
 rerender();

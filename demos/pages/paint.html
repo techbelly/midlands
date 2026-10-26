@@ -1,0 +1,67 @@
+<meta name="width" content="1060">
+<style>
+  .cols { display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-start; }
+  .left { flex: 1 1 440px; min-width: 0; }
+  .right { flex: 0 1 480px; min-width: 0; }
+  textarea { width: 100%; box-sizing: border-box; height: 380px; font: 12.5px/1.45 ui-monospace, Menlo, monospace;
+             padding: 0.6rem; border: 1px solid #ccc; border-radius: 4px; tab-size: 4; white-space: pre; }
+  canvas { border-radius: 4px; }
+  #preset { font: inherit; margin-bottom: 0.5rem; }
+  #shader { font: 11.5px/1.4 ui-monospace, Menlo, monospace; background: #f6f6f6; padding: 0.6rem;
+            border-radius: 4px; max-height: 320px; overflow: auto; white-space: pre; margin: 0.4rem 0 0; }
+</style>
+<h1>Paint</h1>
+<section slot="lede">
+  Gezira's textures, gradients, compositing and filters, with the compiler in
+  the page: edit the paint and watch it recompile, to JavaScript or to a GPU
+  shader.
+</section>
+<section slot="switcher">
+  <label>renderer <select id="mode">
+    <option value="cpu">CPU — Nile compiled to JavaScript</option>
+    <option value="gpu" selected>GPU — Nile compiled to WGSL</option>
+  </select></label>
+</section>
+<section slot="demo">
+<div class="cols">
+  <div class="left">
+    <select id="preset" aria-label="Example"></select>
+    <textarea id="src" spellcheck="false" aria-label="Nile source"></textarea>
+  </div>
+  <div class="right">
+    <canvas id="view" width="480" height="360"></canvas>
+    <canvas id="viewgpu" width="480" height="360" style="display:none"></canvas>
+  </div>
+</div>
+</section>
+<section slot="help">
+  pick an example from the menu, or edit the source; the picture updates as
+  you type. <code>Paint</code> must be a texture (<code>Point &gt;&gt;
+  Color</code>). Open <i>The WGSL your Paint became</i> under the pipeline to
+  see the shader. Textures with filters paint on the CPU only.
+</section>
+<section slot="stats">
+<p>Rendering: about 540 lines of Nile (all of gezira) and 90 of TypeScript, compiled by umgeni. The page’s interface and example textures aren’t counted.</p>
+</section>
+<section slot="pipeline">
+<details>
+  <summary>The WGSL your <code>Paint</code> became</summary>
+  <pre id="shader"></pre>
+</details>
+</section>
+<section slot="description">
+<p>
+  This Nile pipeline, <code>PaintBeziers</code>, takes a stream of beziers (a
+  disc, a star and a thick stroke, made in Nile from shapes written in plain
+  TypeScript), clips and rasterizes them, and paints them with
+  <code>Paint</code>, the texture you write here. A texture is itself a
+  pipeline, from points to colours: <code>ApplyTexture</code> expands the spans
+  into pixels and asks <code>Paint</code> for each pixel's colour, and
+  TypeScript writes the pixels to the canvas. The pipeline is parameterized by
+  the clip rectangle and by the texture, which can itself take textures (a blur,
+  a blend) as parameters. The compiler runs in this page: each edit compiles
+  your <code>Paint</code> with gezira's gradients, compositors and filters to
+  JavaScript, and, for the GPU, to a WGSL function the fragment shader calls
+  for each pixel.
+</p>
+</section>

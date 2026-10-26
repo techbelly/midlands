@@ -35,7 +35,8 @@ const LIBRARY: string[] = [types, bezier, stroke, rasterize, texture, compositor
 const editor = document.getElementById('src') as HTMLTextAreaElement;
 const presetEl = document.getElementById('preset') as HTMLSelectElement;
 const modeEl = document.getElementById('mode') as HTMLSelectElement;
-const statusEl = document.getElementById('status')!;
+const statusEl = document.getElementById('perf')!; // the live line: compile and frame times, or the error
+const statsEl = document.getElementById('stats')!;
 const shaderEl = document.getElementById('shader')!;
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const canvasGpu = document.getElementById('viewgpu') as HTMLCanvasElement;
@@ -44,7 +45,8 @@ const W = canvas.width;
 const H = canvas.height;
 
 let library: CompiledLibrary | null = null;
-let compileNote = '';
+let compileNote = ''; // how long the compile took
+let compileStats = ''; // what it produced
 
 function compile(): boolean {
   const t0 = performance.now();
@@ -61,9 +63,8 @@ function compile(): boolean {
     }
     library = p;
     statusEl.className = '';
-    compileNote =
-      `Compiled in your browser in ${ms.toFixed(0)} ms: ${p.modules.reduce((n, m) => n + m.decls.length, 0)} ` +
-      `declarations → ${(p.source.length / 1024).toFixed(0)} KB of JS.`;
+    compileNote = `Compiled in your browser in ${ms.toFixed(0)} ms.`;
+    compileStats = `${p.modules.reduce((n, m) => n + m.decls.length, 0)} declarations → ${(p.source.length / 1024).toFixed(0)} KB of JS`;
     return true;
   } catch (e) {
     statusEl.textContent = String((e as Error).message ?? e);
@@ -125,6 +126,7 @@ async function render(): Promise<void> {
       shapes.map((bs) => ({ tokens: new Float32Array(bs.flat()), n: bs.length, color: [0, 0, 0] as const })),
       gpuContext!.getCurrentTexture().createView(),
     );
+    statsEl.textContent = compileStats;
     statusEl.textContent = `${compileNote}  Geometry ${geomMs.toFixed(0)} ms (CPU Nile); ` +
       `raster + paint on the GPU, submitted in ${(performance.now() - t1).toFixed(1)} ms, zero fences.`;
     return;
@@ -139,8 +141,8 @@ async function render(): Promise<void> {
     writePixels(img, p.api, out);
   }
   ctx.putImageData(img, 0, 0);
-  statusEl.textContent = `${compileNote}  Painted ${px.toLocaleString()} pixels on the CPU in ` +
-    `${(performance.now() - t0).toFixed(0)} ms.${note}`;
+  statsEl.textContent = `${compileStats} · ${px.toLocaleString()} pixels`;
+  statusEl.textContent = `${compileNote}  Painted on the CPU in ${(performance.now() - t0).toFixed(0)} ms.${note}`;
 }
 
 function update(): void {
