@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Nile library",
+  "scopeName": "source.nile-lib",
+  "patterns": [
+    {
+      "name": "comment.line.double-dash.nile-lib",
+      "match": "--.*$"
+    },
+    {
+      "name": "string.unquoted.path.nile-lib",
+      "match": "^\\s*\\S+"
+    }
+  ]
+}

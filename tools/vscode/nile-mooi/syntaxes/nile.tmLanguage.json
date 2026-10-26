@@ -1,0 +1,336 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Nile",
+  "scopeName": "source.nile",
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#typedef"
+    },
+    {
+      "include": "#processtype"
+    },
+    {
+      "include": "#processheader"
+    },
+    {
+      "include": "#opdef"
+    },
+    {
+      "include": "#forall"
+    },
+    {
+      "include": "#forward"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#fieldref"
+    },
+    {
+      "include": "#typeascription"
+    },
+    {
+      "include": "#number"
+    },
+    {
+      "include": "#punctuation"
+    },
+    {
+      "include": "#builtinops"
+    },
+    {
+      "include": "#userops"
+    },
+    {
+      "include": "#primed"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.double-dash.nile",
+      "match": "--.*$"
+    },
+    "typedef": {
+      "comment": "Name <: (x, y : Real)",
+      "begin": "^([A-Z][A-Za-z0-9]*)\\s*(<:)",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.name.type.nile"
+        },
+        "2": {
+          "name": "keyword.operator.typedef.nile"
+        }
+      },
+      "end": "$",
+      "patterns": [
+        {
+          "include": "#fieldgroups"
+        },
+        {
+          "include": "#comment"
+        }
+      ]
+    },
+    "processtype": {
+      "comment": "Name :: (params) : In >> Out, a host-supplied or abstract process type",
+      "begin": "^([A-Z][A-Za-z0-9]*)\\s*(::)",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.name.type.process.nile"
+        },
+        "2": {
+          "name": "keyword.operator.typedef.nile"
+        }
+      },
+      "end": "$",
+      "patterns": [
+        {
+          "include": "#streamtype"
+        },
+        {
+          "include": "#fieldgroups"
+        },
+        {
+          "include": "#comment"
+        }
+      ]
+    },
+    "processheader": {
+      "comment": "Name (params) : In >> Out  or  Name : In >> Out",
+      "begin": "^([A-Z][A-Za-z0-9]*)(?=\\s*(\\(|:))",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.name.function.process.nile"
+        }
+      },
+      "end": "$",
+      "patterns": [
+        {
+          "include": "#streamtype"
+        },
+        {
+          "include": "#fieldgroups"
+        },
+        {
+          "include": "#comment"
+        }
+      ]
+    },
+    "opdef": {
+      "comment": "An operator definition header: (a : Real) ◁ (b : Real) : Real, ‖ (u : Vector) ‖ : Real, ¬(a : Real) : Real",
+      "match": "^(?=[^A-Za-z\\s\\-].*\\)\\s*:\\s*[A-Z]|\\([a-z][A-Za-z0-9]*\\s*:\\s*[A-Z])(.*)$",
+      "captures": {
+        "1": {
+          "patterns": [
+            {
+              "include": "#fieldgroups"
+            },
+            {
+              "include": "#typename"
+            },
+            {
+              "include": "#userops"
+            }
+          ]
+        }
+      }
+    },
+    "fieldgroups": {
+      "comment": "names : Type inside parentheses",
+      "patterns": [
+        {
+          "match": "([A-Za-z][A-Za-z0-9']*(?:\\s*,\\s*[A-Za-z][A-Za-z0-9']*)*)\\s*(:)\\s*([A-Z][A-Za-z0-9]*)",
+          "captures": {
+            "1": {
+              "name": "variable.parameter.nile"
+            },
+            "2": {
+              "name": "punctuation.separator.type.nile"
+            },
+            "3": {
+              "name": "entity.name.type.nile"
+            }
+          }
+        },
+        {
+          "include": "#typename"
+        }
+      ]
+    },
+    "streamtype": {
+      "match": "([A-Z][A-Za-z0-9]*|\\([^)]*\\))\\s*(>>)\\s*([A-Z][A-Za-z0-9]*|\\([^)]*\\))",
+      "captures": {
+        "1": {
+          "patterns": [
+            {
+              "include": "#fieldgroups"
+            },
+            {
+              "include": "#typename"
+            }
+          ]
+        },
+        "2": {
+          "name": "keyword.operator.stream.nile"
+        },
+        "3": {
+          "patterns": [
+            {
+              "include": "#fieldgroups"
+            },
+            {
+              "include": "#typename"
+            }
+          ]
+        }
+      }
+    },
+    "forall": {
+      "comment": "∀ pattern ∷ pattern by @key with H = +[ h ] by @y",
+      "begin": "(∀)",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.forall.nile"
+        }
+      },
+      "end": "$",
+      "patterns": [
+        {
+          "match": "∷|∅",
+          "name": "keyword.control.window.nile"
+        },
+        {
+          "match": "\\b(with|by)\\b",
+          "name": "keyword.control.nile"
+        },
+        {
+          "include": "#fieldref"
+        },
+        {
+          "include": "#builtinops"
+        },
+        {
+          "include": "#userops"
+        },
+        {
+          "include": "#comment"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "match": "\\b(if|else|with|by)\\b",
+          "name": "keyword.control.nile"
+        },
+        {
+          "match": ">>|<<",
+          "name": "keyword.operator.stream.nile"
+        },
+        {
+          "match": "→",
+          "name": "keyword.operator.pipe.nile"
+        }
+      ]
+    },
+    "fieldref": {
+      "match": "(@)([a-z][A-Za-z0-9]*)",
+      "captures": {
+        "1": {
+          "name": "keyword.operator.offset.nile"
+        },
+        "2": {
+          "name": "variable.other.member.nile"
+        }
+      }
+    },
+    "typeascription": {
+      "comment": "expr : Type, inside a body",
+      "match": "(:)\\s*([A-Z][A-Za-z0-9]*)\\b",
+      "captures": {
+        "1": {
+          "name": "punctuation.separator.type.nile"
+        },
+        "2": {
+          "name": "entity.name.type.nile"
+        }
+      }
+    },
+    "number": {
+      "match": "\\b[0-9]+(\\.[0-9]+)?\\b",
+      "name": "constant.numeric.nile"
+    },
+    "builtinops": {
+      "match": "×|/|\\+|-|≤|≥|<|>|=|≠|∧|∨|√|¬|⌊|⌋|⌈|⌉|⊕",
+      "name": "keyword.operator.nile"
+    },
+    "userops": {
+      "comment": "Any other run of operator glyphs: user-defined operators (◁ ▷ ∙ ‖ ⊗ ⟂ ? % ~ ^ …)",
+      "match": "[^\\sA-Za-z0-9()\\[\\]{},:@_'\"\\\\.]+",
+      "name": "keyword.operator.user.nile"
+    },
+    "typename": {
+      "match": "\\b[A-Z][A-Za-z0-9]*\\b",
+      "name": "entity.name.type.nile"
+    },
+    "primed": {
+      "comment": "x' : the next value of state x",
+      "match": "\\b[a-z][A-Za-z0-9]*'",
+      "name": "variable.other.primed.nile"
+    },
+    "forward": {
+      "comment": "⇒ Stage → GroupBy (@y) → …: capitalised names here are processes",
+      "begin": "(⇒)",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.forward.nile"
+        }
+      },
+      "end": "$",
+      "patterns": [
+        {
+          "match": "\\b(GroupBy|ReduceBy)\\b",
+          "name": "support.function.builtin.nile"
+        },
+        {
+          "match": "\\bstable\\b",
+          "name": "keyword.other.nile"
+        },
+        {
+          "match": "→",
+          "name": "keyword.operator.pipe.nile"
+        },
+        {
+          "match": "\\b[A-Z][A-Za-z0-9]*\\b",
+          "name": "entity.name.function.nile"
+        },
+        {
+          "include": "#fieldref"
+        },
+        {
+          "include": "#number"
+        },
+        {
+          "include": "#punctuation"
+        },
+        {
+          "include": "#builtinops"
+        },
+        {
+          "include": "#userops"
+        },
+        {
+          "include": "#comment"
+        }
+      ]
+    },
+    "punctuation": {
+      "match": "[;,]",
+      "name": "punctuation.separator.nile"
+    }
+  }
+}

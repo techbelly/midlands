@@ -1,0 +1,67 @@
+{
+  "name": "nile-mooi",
+  "displayName": "Nile and Mooi",
+  "description": "Syntax highlighting for Nile (.nl, .nl-lib) and Mooi (.mooi), the languages of the midlands repository.",
+  "version": "0.1.0",
+  "publisher": "midlands",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "nile",
+        "aliases": [
+          "Nile",
+          "nile"
+        ],
+        "extensions": [
+          ".nl"
+        ],
+        "configuration": "./nile.language-configuration.json"
+      },
+      {
+        "id": "nile-lib",
+        "aliases": [
+          "Nile library"
+        ],
+        "extensions": [
+          ".nl-lib"
+        ],
+        "configuration": "./nile.language-configuration.json"
+      },
+      {
+        "id": "mooi",
+        "aliases": [
+          "Mooi",
+          "mooi"
+        ],
+        "extensions": [
+          ".mooi"
+        ],
+        "configuration": "./mooi.language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "nile",
+        "scopeName": "source.nile",
+        "path": "./syntaxes/nile.tmLanguage.json"
+      },
+      {
+        "language": "nile-lib",
+        "scopeName": "source.nile-lib",
+        "path": "./syntaxes/nile-lib.tmLanguage.json"
+      },
+      {
+        "language": "mooi",
+        "scopeName": "source.mooi",
+        "path": "./syntaxes/mooi.tmLanguage.json"
+      }
+    ]
+  }
+}

@@ -1,0 +1,190 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Mooi",
+  "scopeName": "source.mooi",
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#definition"
+    },
+    {
+      "include": "#string"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#literal"
+    },
+    {
+      "include": "#node"
+    },
+    {
+      "include": "#lambda"
+    },
+    {
+      "include": "#number"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#field"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.double-dash.mooi",
+      "match": "--.*$"
+    },
+    "definition": {
+      "comment": "A definition starts at column 0: its name, then patterns, an optional guard, and =",
+      "begin": "^([\\p{L}_][\\p{L}\\p{N}_']*)(?=\\s)",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.name.function.mooi"
+        }
+      },
+      "end": "(?<!=|!|<|>)(=)(?!=)|$",
+      "endCaptures": {
+        "1": {
+          "name": "keyword.operator.definition.mooi"
+        }
+      },
+      "patterns": [
+        {
+          "comment": "A guard is an expression, up to the =",
+          "begin": "\\|",
+          "beginCaptures": {
+            "0": {
+              "name": "keyword.control.guard.mooi"
+            }
+          },
+          "end": "(?=(?<![=!<>])=(?!=))|$",
+          "patterns": [
+            {
+              "include": "#comment"
+            },
+            {
+              "include": "#string"
+            },
+            {
+              "include": "#keywords"
+            },
+            {
+              "include": "#literal"
+            },
+            {
+              "include": "#node"
+            },
+            {
+              "include": "#lambda"
+            },
+            {
+              "include": "#number"
+            },
+            {
+              "include": "#operators"
+            },
+            {
+              "include": "#field"
+            }
+          ]
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#string"
+        },
+        {
+          "include": "#keywords"
+        },
+        {
+          "include": "#literal"
+        },
+        {
+          "include": "#node"
+        },
+        {
+          "include": "#number"
+        },
+        {
+          "include": "#operators"
+        },
+        {
+          "match": "(?<![\\p{L}\\p{N}_'])[\\p{Ll}_][\\p{L}\\p{N}_']*",
+          "name": "variable.parameter.mooi"
+        }
+      ]
+    },
+    "string": {
+      "name": "string.quoted.double.mooi",
+      "begin": "\"",
+      "end": "\""
+    },
+    "keywords": {
+      "match": "\\b(let|in|if|then|else)\\b",
+      "name": "keyword.control.mooi"
+    },
+    "literal": {
+      "match": "\\b(null|unit|true|false)\\b",
+      "name": "constant.language.mooi"
+    },
+    "node": {
+      "comment": "name{…}: a node pattern or a node expression (no space before the brace)",
+      "match": "(?<![\\p{L}\\p{N}_])([\\p{L}_][\\p{L}\\p{N}_']*)(\\{)",
+      "captures": {
+        "1": {
+          "name": "entity.name.type.node.mooi"
+        },
+        "2": {
+          "name": "punctuation.definition.node.mooi"
+        }
+      }
+    },
+    "lambda": {
+      "match": "(\\\\)\\s*([^\\->]*?)(->)",
+      "captures": {
+        "1": {
+          "name": "keyword.operator.lambda.mooi"
+        },
+        "2": {
+          "patterns": [
+            {
+              "include": "#node"
+            },
+            {
+              "match": "[\\p{L}_][\\p{L}\\p{N}_']*",
+              "name": "variable.parameter.mooi"
+            }
+          ]
+        },
+        "3": {
+          "name": "keyword.operator.lambda.mooi"
+        }
+      }
+    },
+    "number": {
+      "match": "\\b[0-9]+(\\.[0-9]+)?\\b",
+      "name": "constant.numeric.mooi"
+    },
+    "operators": {
+      "match": "\\?\\?|\\|\\||&&|==|!=|<=|>=|\\+\\+|\\.\\.\\.|;|<|>|\\+|-|\\*|/",
+      "name": "keyword.operator.mooi"
+    },
+    "field": {
+      "match": "(\\.)([\\p{L}_][\\p{L}\\p{N}_']*)",
+      "captures": {
+        "1": {
+          "name": "punctuation.accessor.mooi"
+        },
+        "2": {
+          "name": "variable.other.member.mooi"
+        }
+      }
+    }
+  }
+}
