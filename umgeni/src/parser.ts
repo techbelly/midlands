@@ -1,7 +1,7 @@
 import * as ohm from 'ohm-js';
 import { nileGrammarSource } from './grammar/source.js';
 import * as ast from './ast.js';
-import { emptyOpTable, opExtensionSource, type OpTable } from './ops.js';
+import { emptyOpTable, opExtensionSource, opKey, type OpTable } from './ops.js';
 import { preprocessMapped } from './preprocess.js';
 
 const coreSource = nileGrammarSource;
@@ -64,7 +64,7 @@ function grammarForOps(table: OpTable): CompiledGrammar {
   const actions: Record<string, (...children: ohm.Node[]) => unknown> = { ...astActions };
   [...table.outfix.entries()].forEach(([open, close], i) => {
     actions[`UserOutfix_o${i}`] = (_open: ohm.Node, e: ohm.Node, _close: ohm.Node) =>
-      ({ kind: 'unOp', op: `${open}_${close}`, operand: e.toAST() }) as ast.UnOp;
+      ({ kind: 'unOp', op: opKey('outfix', open, close), operand: e.toAST() }) as ast.UnOp;
   });
   const semantics = grammar.createSemantics().addOperation('toAST', actions);
   const compiled = { grammar, semantics };
@@ -344,7 +344,7 @@ const astActions: Record<string, (...children: N[]) => unknown> = {
   UnExpr_sqrt: (_op, e) => unOp('√_', e),
   UnExpr_neg: (_op, e) => unOp('-_', e),
   UnExpr_not: (_op, e) => unOp('¬_', e),
-  UnExpr_userpre: (op, e) => unOp(`${op.sourceString}_`, e),
+  UnExpr_userpre: (op, e) => unOp(opKey('prefix', op.sourceString), e),
   PrimExpr_cond(_o, cond, _c) {
     return cond.toAST();
   },

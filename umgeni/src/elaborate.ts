@@ -15,6 +15,7 @@ import { elabPipelineStages, type PipelineProgram } from './semantics/pipelines.
 import { stageExpr, stageGenerator, stageKernel } from './semantics/staged.js';
 import type { Program } from './semantics/domain.js';
 import { ElabError, fieldInfo, fit, fromSlots, REAL, scalar, shapeWidth, tokenLayout, type Shape, type Value } from './values.js';
+import { opKey } from './ops.js';
 
 // --- operator tables -----------------------------------------------------------
 
@@ -65,9 +66,39 @@ class Elaborator {
 
   run(modules: A.Module[]): ElabResult {
     const decls = modules.flatMap((m) => m.decls);
-    // Pass 1: types, operators, and process signatures, so later definitions
-    // can reference anything regardless of order. Types first: signatures
-    // name them.
+    this.declare(decls);
+    const signatures: Record<string, ParamSig[]> = {};
+    this.declareHostProcesses(decls, signatures);
+    const { processes, unsupported, templates } = this.compileKernels(decls, signatures);
+    const compiled = new Set([...processes.map((p) => p.name), ...this.host.map((h) => h.name)]);
+    dropBrokenPipelines(processes, compiled, unsupported);
+    for (const name of Object.keys(signatures)) if (!compiled.has(name)) delete signatures[name];
+    const ir: ModuleIR = { processes: processes.filter((p) => compiled.has(p.name)), host: this.host, signatures, types: this.tokenLayouts() };
+    return { ir, unsupported, templates };
+  }
+
+  contexts(modules: A.Module[], all = false) {
+    this.declare(modules.flatMap((m) => m.decls));
+    const program = this.program;
+    const kernels = new Map<string, { kernel: A.Kernel; params: { names: string[]; shape: Shape }[]; sig: StreamSig }>();
+    for (const [name, d] of this.kernels) {
+      const sig = this.streamSig(d.type);
+      if (!sig || this.isTemplate(d) || pipelineBody(d) || (!all && (usesSubstitution(d) || this.generators.has(name)))) continue;
+      try {
+        kernels.set(name, { kernel: desugar(d, this.fieldNames).kernel, params: this.paramGroups(d), sig });
+      } catch {
+        // unsupported here; skipped
+      }
+    }
+    return { program, kernels };
+  }
+
+  // --- the two passes ---
+
+  // Pass 1: types, operators, and process signatures, so later definitions
+  // can reference anything regardless of order. Types first: signatures
+  // name them.
+  private declare(decls: A.TopLevel[]): void {
     for (const d of decls) if (d.kind === 'typeDef') this.types.set(d.name, this.resolveType(d.type, d.name));
     for (const d of decls) {
       if (d.kind === 'typeDef') continue;
@@ -79,21 +110,26 @@ class Elaborator {
       }
     }
     this.classifyGenerators();
-    // Pass 2: kernels and pipelines.
-    const processes: ProcessIR[] = [];
-    const signatures: Record<string, ParamSig[]> = {};
-    const unsupported: { name: string; reason: string }[] = [];
-    const templates: string[] = [];
-    // A process type with parameters is a process the host supplies: its
-    // signature is all Nile knows. It takes its parameters by name like any
-    // other, and the generated code holds a place for it (rt.provide).
+  }
+
+  // A process type with parameters is a process the host supplies: its
+  // signature is all Nile knows. It takes its parameters by name like any
+  // other, and the generated code holds a place for it (rt.provide).
+  private declareHostProcesses(decls: A.TopLevel[], signatures: Record<string, ParamSig[]>): void {
     for (const d of decls) {
       if (d.kind !== 'processTypeDef' || !d.params) continue;
-      const sig = this.streamSig(d.type);
-      if (!sig) throw new ElabError(`'${d.name}' does not have a plain stream type`);
-      signatures[d.name] = d.params.flatMap((g) => g.names.map((name) => ({ name, width: shapeWidth(this.resolveType(g.type)) })));
+      const sig = this.plainSig(d);
+      signatures[d.name] = paramSigs(d.params.map((g) => ({ names: g.names, shape: this.resolveType(g.type) })));
       this.host.push({ name: d.name, paramWidth: signatures[d.name].reduce((n, p) => n + p.width, 0), inputWidth: shapeWidth(sig.input), outputWidth: shapeWidth(sig.output) });
     }
+  }
+
+  // Pass 2: kernels and pipelines. Elaboration is honest about its coverage:
+  // a kernel it cannot handle is listed as unsupported, with the reason.
+  private compileKernels(decls: A.TopLevel[], signatures: Record<string, ParamSig[]>): Omit<ElabResult, 'ir'> & { processes: ProcessIR[] } {
+    const processes: ProcessIR[] = [];
+    const unsupported: { name: string; reason: string }[] = [];
+    const templates: string[] = [];
     for (const d of decls) {
       if (d.kind !== 'kernel') continue;
       if (this.isTemplate(d)) {
@@ -102,10 +138,7 @@ class Elaborator {
       }
       try {
         processes.push(...(usesSubstitution(d) ? this.elabFamily(d) : [this.elabProcess(d)]));
-        signatures[d.name] = (d.params ?? []).flatMap((g) => {
-          const width = shapeWidth(this.paramShape(g.type, d.name));
-          return g.names.map((name) => ({ name, width }));
-        });
+        signatures[d.name] = paramSigs(this.paramGroups(d));
       } catch (e) {
         if (e instanceof ElabError || e instanceof SubstError || e instanceof SugarError) {
           unsupported.push({ name: d.name, reason: e.message });
@@ -113,47 +146,17 @@ class Elaborator {
         else throw e;
       }
     }
-    // A pipeline is only as good as its stages: anything that names a
-    // process that did not compile is unsupported too (transitively), rather
-    // than compiling to a reference that fails at run time.
-    const compiled = new Set([...processes.map((p) => p.name), ...this.host.map((h) => h.name)]);
-    for (let changed = true; changed;) {
-      changed = false;
-      for (const p of processes) {
-        if (p.k !== 'pipeline' || !compiled.has(p.name)) continue;
-        const missing = stageNames(p.stages).find((n) => !compiled.has(n));
-        if (missing === undefined) continue;
-        compiled.delete(p.name);
-        unsupported.push({ name: p.name, reason: `uses '${missing}', which did not compile` });
-        changed = true;
-      }
-    }
-    for (const name of Object.keys(signatures)) if (!compiled.has(name)) delete signatures[name];
-    const types: Record<string, TokenLayout> = {};
-    for (const [name, shape] of this.types) if (shape.k === 'record') types[name] = tokenLayout(shape);
-    return { ir: { processes: processes.filter((p) => compiled.has(p.name)), host: this.host, signatures, types }, unsupported, templates };
+    return { processes, unsupported, templates };
   }
 
-  contexts(modules: A.Module[], all = false) {
-    this.run(modules); // pass 1 tables (and validation)
-    const program = this.program;
-    const kernels = new Map<string, { kernel: A.Kernel; params: { names: string[]; shape: Shape }[]; sig: StreamSig }>();
-    for (const [name, d] of this.kernels) {
-      const sig = this.streamSig(d.type);
-      if (!sig || this.isTemplate(d) || (!all && (usesSubstitution(d) || this.generators.has(name)))) continue;
-      if (d.forAlls.length === 0 && d.prologue.length === 1 && d.prologue[0].kind === 'forward') continue; // a pipeline
-      try {
-        const { kernel } = desugar(d, (t) => {
-          const shape = this.resolveType(t);
-          return shape.k === 'record' ? shape.fields.map((f) => f.name ?? '') : [];
-        });
-        kernels.set(name, { kernel, params: (d.params ?? []).map((g) => ({ names: g.names, shape: this.paramShape(g.type, name) })), sig });
-      } catch {
-        // unsupported here; skipped
-      }
-    }
-    return { program, kernels };
+  // Every named record type's layout, for the host.
+  private tokenLayouts(): Record<string, TokenLayout> {
+    const types: Record<string, TokenLayout> = {};
+    for (const [name, shape] of this.types) if (shape.k === 'record') types[name] = tokenLayout(shape);
+    return types;
   }
+
+  // --- types, signatures, operators ---
 
   private resolveType(t: A.Type, name: string | null = null): Shape {
     switch (t.kind) {
@@ -179,6 +182,12 @@ class Elaborator {
     }
   }
 
+  // The field names of a record type, for sugar's patterns.
+  private fieldNames = (t: A.Type): string[] => {
+    const shape = this.resolveType(t);
+    return shape.k === 'record' ? shape.fields.map((f) => f.name ?? '') : [];
+  };
+
   // The stream signature of a kernel/process type, or null when it is not a
   // plain stream (we don't elaborate those yet).
   private streamSig(t: A.KernelType): StreamSig | null {
@@ -188,12 +197,50 @@ class Elaborator {
     return this.streams.get(t.name) ?? null;
   }
 
+  // The signature a process must have to be elaborated.
+  private plainSig(d: { name: string; type: A.KernelType }): StreamSig {
+    const sig = this.streamSig(d.type);
+    if (!sig) throw new ElabError(`'${d.name}' does not have a plain stream type`);
+    return sig;
+  }
+
+  // A process type names a process: the parameter that makes a template.
+  private isProcessType(t: A.Type): t is A.Type & { kind: 'namedType' } {
+    return t.kind === 'namedType' && this.streams.has(t.name);
+  }
+
+  private isTemplate(k: A.Kernel): boolean {
+    return (k.params ?? []).some((g) => this.isProcessType(g.type));
+  }
+
+  private paramShape(t: A.Type, processName: string): Shape {
+    if (this.isProcessType(t)) {
+      throw new ElabError(`'${processName}' takes a process-typed parameter ('${t.name}'); higher-order processes are not yet supported`);
+    }
+    return this.resolveType(t);
+  }
+
+  // A kernel's parameters, by group, with their shapes.
+  private paramGroups(d: A.Kernel): ParamGroup[] {
+    return (d.params ?? []).map((g) => ({ names: g.names, shape: this.paramShape(g.type, d.name) }));
+  }
+
+  // The parameters as a staged environment: each a value over consecutive
+  // parameter slots.
+  private paramEnv(d: A.Kernel): { env: Env; width: number } {
+    const env: Env = new Map();
+    let width = 0;
+    for (const group of this.paramGroups(d)) {
+      for (const name of group.names) {
+        env.set(name, fromSlots(group.shape, 'param', width));
+        width += shapeWidth(group.shape);
+      }
+    }
+    return { env, width };
+  }
+
   private addOp(d: A.OpDef): void {
-    const key =
-      d.fixity === 'infix' ? d.op
-      : d.fixity === 'prefix' ? `${d.op}_`
-      : `${d.op}_${d.closeOp}`;
-    this.ops.set(key, {
+    this.ops.set(opKey(d.fixity, d.op, d.closeOp), {
       params: d.params.map((p) => ({ name: p.name, shape: this.resolveType(p.type) })),
       result: this.resolveType(d.resultType),
       body: d.body,
@@ -209,48 +256,22 @@ class Elaborator {
       op: (key) => this.ops.get(key),
       params: (name) => {
         const k = this.kernels.get(name);
-        return k && (k.params ?? []).flatMap((g) => g.names.map(() => this.paramShape(g.type, name)));
+        return k && this.paramGroups(k).flatMap((g) => g.names.map(() => g.shape));
       },
     };
   }
 
-  // A pure expression (pipeline and template arguments), staged.
-  private expr(e: A.Expr, env: Env): Value {
-    return stageExpr(this.program, e, env);
-  }
-
+  // A body that is just `⇒ pipeline` is a pipeline definition.
   private elabProcess(d: A.Kernel): ProcessIR {
-    const sig = this.streamSig(d.type);
-    if (!sig) throw new ElabError(`'${d.name}' does not have a plain stream type`);
-
-    // Parameters -> flattened slots.
-    const { env, width: paramWidth } = this.paramEnv(d, 'param', 0);
-
-    // A body that is just `⇒ pipeline` is a pipeline definition.
-    if (
-      d.forAlls.length === 0 && d.epilogue.length === 0 &&
-      d.prologue.length === 1 && d.prologue[0].kind === 'forward'
-    ) {
-      return this.elabPipeline(d, d.prologue[0].pipeline, env, paramWidth, sig);
-    }
-
-    return this.elabKernel(d, sig);
-  }
-
-  private paramShape(t: A.Type, processName: string): Shape {
-    if (t.kind === 'namedType' && this.streams.has(t.name)) {
-      throw new ElabError(`'${processName}' takes a process-typed parameter ('${t.name}'); higher-order processes are not yet supported`);
-    }
-    return this.resolveType(t);
+    const sig = this.plainSig(d);
+    const body = pipelineBody(d);
+    return body ? this.elabPipeline(d, body, sig) : this.elabKernel(d, sig);
   }
 
   private elabKernel(source: A.Kernel, sig: StreamSig): KernelIR {
     // Scans and windows are sugar (sugar.ts); what they declared is kept as
     // `access` metadata for parallel backends.
-    const { kernel: d, declared } = desugar(source, (t) => {
-      const shape = this.resolveType(t);
-      return shape.k === 'record' ? shape.fields.map((f) => f.name ?? '') : [];
-    });
+    const { kernel: d, declared } = desugar(source, this.fieldNames);
     const realField = (name: string, what: string) => {
       const f = fieldInfo(sig.input, name);
       if (f.shape.k !== 'real') throw new ElabError(`${what} '@${name}' must be a Real field`);
@@ -261,8 +282,7 @@ class Elaborator {
       : declared.window ? { window: { key: declared.window.key === null ? null : realField(declared.window.key, 'window segment key') } }
       : undefined;
     // The kernel is the residue of staging its semantics (semantics/).
-    const params = (d.params ?? []).map((g) => ({ names: g.names, shape: this.paramShape(g.type, d.name) }));
-    return stageKernel(this.program, d, params, sig, access);
+    return stageKernel(this.program, d, this.paramGroups(d), sig, access);
   }
 
   // --- substitution (`⇒` mid-stream; see substitute.ts) ---
@@ -284,33 +304,16 @@ class Elaborator {
     }
   }
 
-  private paramEnv(d: A.Kernel, kind: 'param' | 'input', base: number): { env: Env; width: number } {
-    const env: Env = new Map();
-    let width = 0;
-    for (const group of d.params ?? []) {
-      const shape = this.paramShape(group.type, d.name);
-      for (const name of group.names) {
-        env.set(name, fromSlots(shape, kind, base + width));
-        width += shapeWidth(shape);
-      }
-    }
-    return { env, width };
-  }
-
   // A generator's body for the frame interpreter: params live in the frame
   // (input slots 1…), prologue declarations are plain locals.
   private elabGenerator(d: A.Kernel): Generator {
-    const sig = this.streamSig(d.type);
-    if (!sig) throw new ElabError(`'${d.name}' does not have a plain stream type`);
-    const params = (d.params ?? []).map((g) => ({ names: g.names, shape: this.paramShape(g.type, d.name) }));
-    return stageGenerator(this.program, d, params, sig);
+    return stageGenerator(this.program, d, this.paramGroups(d), this.plainSig(d));
   }
 
   // Everything `d` can substitute into, transitively: stream processes it may
   // become (members) and generators it may invoke.
   private elabFamily(d: A.Kernel): (KernelIR | PipelineIR)[] {
-    const sig = this.streamSig(d.type);
-    if (!sig) throw new ElabError(`'${d.name}' does not have a plain stream type`);
+    const sig = this.plainSig(d);
     const members: KernelIR[] = [];
     const generators: Generator[] = [];
     const seen = new Set<string>();
@@ -332,7 +335,7 @@ class Elaborator {
     visit(d.name);
     return assembleFamily({
       root: d.name,
-      paramWidth: this.paramEnv(d, 'param', 0).width,
+      paramWidth: this.paramEnv(d).width,
       inputWidth: shapeWidth(sig.input),
       outputWidth: shapeWidth(sig.output),
       members, generators,
@@ -341,18 +344,19 @@ class Elaborator {
 
   // --- pipelines ---
 
-  private elabPipeline(
-    d: A.Kernel,
-    elems: A.PipelineElem[],
-    env: Env,
-    paramWidth: number,
-    sig: StreamSig,
-  ): PipelineIR {
+  private elabPipeline(d: A.Kernel, elems: A.PipelineElem[], sig: StreamSig): PipelineIR {
+    const { env, width: paramWidth } = this.paramEnv(d);
     const { stages } = elabPipelineStages(this.pipelineProgram, d.name, elems, env, new Map(), sig.input);
     return { k: 'pipeline', name: d.name, paramWidth, stages };
   }
 
   // What the pipeline semantics (semantics/pipelines.mooi) asks of the program.
+  //
+  // Templates are processes with process-typed parameters. A process
+  // argument is always written out where the pipeline is built, so it is a
+  // closure — the argument's pipeline plus the caller's scope — and a use of
+  // the parameter splices that pipeline in. No process values exist at run
+  // time.
   private get pipelineProgram(): PipelineProgram {
     return {
       field: (shape, name) => fieldInfo(shape, name),
@@ -366,34 +370,50 @@ class Elaborator {
         const k = this.kernels.get(name);
         return k && this.isTemplate(k) ? k : null;
       },
-      isStream: (t) => t.kind === 'namedType' && this.streams.has(t.name),
+      isStream: (t) => this.isProcessType(t),
     };
   }
-
-  // --- templates: process-typed parameters ---
-  //
-  // A process argument is always written out where the pipeline is built, so
-  // it is a closure — the argument's pipeline plus the caller's scope — and
-  // a use of the parameter splices that pipeline in. No process values exist
-  // at run time.
-
-  private isTemplate(k: A.Kernel): boolean {
-    return (k.params ?? []).some((g) => g.type.kind === 'namedType' && this.streams.has(g.type.name));
-  }
-
 }
 
+interface ParamGroup {
+  names: string[];
+  shape: Shape;
+}
+
+// Parameters by name, in order, with their flattened widths.
+const paramSigs = (groups: ParamGroup[]): ParamSig[] =>
+  groups.flatMap((g) => g.names.map((name) => ({ name, width: shapeWidth(g.shape) })));
+
+// A pipeline is only as good as its stages: anything that names a process
+// that did not compile is unsupported too (transitively), rather than
+// compiling to a reference that fails at run time. Removes from `compiled`.
+function dropBrokenPipelines(processes: ProcessIR[], compiled: Set<string>, unsupported: { name: string; reason: string }[]): void {
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const p of processes) {
+      if (p.k !== 'pipeline' || !compiled.has(p.name)) continue;
+      const missing = stageNames(p.stages).find((n) => !compiled.has(n));
+      if (missing === undefined) continue;
+      compiled.delete(p.name);
+      unsupported.push({ name: p.name, reason: `uses '${missing}', which did not compile` });
+      changed = true;
+    }
+  }
+}
 
 function stageNames(stages: StageIR[]): string[] {
   return stages.flatMap((s) =>
     s.k === 'stage' ? [s.name] : s.k === 'dupCat' || s.k === 'dupZip' ? s.branches.flatMap(stageNames) : []);
 }
 
+// A body that is just `⇒ pipeline` is a pipeline definition: that pipeline.
+function pipelineBody(d: A.Kernel): A.PipelineElem[] | null {
+  const p = d.prologue[0];
+  return d.forAlls.length === 0 && d.epilogue.length === 0 && d.prologue.length === 1 && p.kind === 'forward' ? p.pipeline : null;
+}
 // A `⇒` anywhere but as the whole body (the pipeline-definition form).
 function usesSubstitution(d: A.Kernel): boolean {
-  const isPipelineDef = d.forAlls.length === 0 && d.epilogue.length === 0
-    && d.prologue.length === 1 && d.prologue[0].kind === 'forward';
-  return !isPipelineDef && [d.prologue, ...d.forAlls.map((f) => f.body), d.epilogue].some(hasForward);
+  return pipelineBody(d) === null && [d.prologue, ...d.forAlls.map((f) => f.body), d.epilogue].some(hasForward);
 }
 // Every statement, including those nested in if branches.
 function* allStmts(list: A.Stmt[]): IterableIterator<A.Stmt> {

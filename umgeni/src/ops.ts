@@ -10,6 +10,12 @@ export interface OpTable {
   outfix: Map<string, string>; // open glyphs -> close glyphs
 }
 
+// How an operator is keyed in the operator table and named in a UnOp: an
+// infix operator by its glyphs, a prefix one as `op_`, an outfix one as
+// `open_close` (ast.ts's UnOp).
+export const opKey = (fixity: 'infix' | 'prefix' | 'outfix', op: string, close?: string | null): string =>
+  fixity === 'infix' ? op : fixity === 'prefix' ? `${op}_` : `${op}_${close}`;
+
 export function emptyOpTable(): OpTable {
   return { infix: new Set(), prefix: new Set(), outfix: new Map() };
 }
