@@ -125,6 +125,144 @@ class Fn {
   }
 }
 
+// --- scalar expressions over an environment ---
+interface Env {
+  param(i: number): number[];
+  state(i: number): number[];
+  input(i: number): number[];
+  local(name: string): number;
+}
+const noEnv = (what: string): Env => ({
+  param: () => fail(`a parameter in ${what}`),
+  state: () => fail(`state in ${what}`),
+  input: () => fail(`an input in ${what}`),
+  local: () => fail(`a local in ${what}`),
+});
+const fail = (msg: string): never => {
+  throw new Error(`wasm: ${msg}`);
+};
+// The value of e, as f64.
+function num(f: Fn, e: ScalarExpr, env: Env): void {
+  switch (e.k) {
+    case 'const': f.emit(f64c(e.value)); return;
+    case 'param': f.emit(env.param(e.index)); return;
+    case 'state': f.emit(env.state(e.index)); return;
+    case 'input': f.emit(env.input(e.index)); return;
+    case 'local': f.emit(get(env.local(e.name))); return;
+    case 'bin':
+      if (BIN[e.op].cls === 'arith') { num(f, e.a, env); num(f, e.b, env); f.emit([BIN[e.op].wasm]); return; }
+      cond(f, e, env);
+      f.emit([OP.f64ConvertI32U]);
+      return;
+    case 'un':
+      if (UN[e.op].cls === 'logic') { cond(f, e, env); f.emit([OP.f64ConvertI32U]); return; }
+      num(f, e.a, env);
+      f.emit([UN[e.op].wasm]);
+      return;
+    case 'select':
+      num(f, e.then, env); num(f, e.else, env); cond(f, e.cond, env);
+      f.emit([OP.select]);
+      return;
+  }
+}
+// The truth of e, as i32.
+function cond(f: Fn, e: ScalarExpr, env: Env): void {
+  if (e.k === 'bin' && BIN[e.op].cls === 'cmp') { num(f, e.a, env); num(f, e.b, env); f.emit([BIN[e.op].wasm]); return; }
+  if (e.k === 'bin' && BIN[e.op].cls === 'logic') { cond(f, e.a, env); cond(f, e.b, env); f.emit([BIN[e.op].wasm]); return; }
+  if (e.k === 'un' && UN[e.op].cls === 'logic') { cond(f, e.a, env); f.emit([UN[e.op].wasm]); return; }
+  num(f, e, env);
+  f.emit(f64c(0), [OP.f64Ne]);
+}
+
+// Store a token's w values at the pointer a global holds, then move it on:
+// a worklist push, or an append to a buffer. `value(i)` emits the i-th value.
+function pushToken(f: Fn, ptr: number, w: number, value: (i: number) => void): void {
+  for (let i = 0; i < w; i++) {
+    f.emit(gget(ptr));
+    value(i);
+    f.emit(stF64(8 * i));
+  }
+  f.emit(gget(ptr), i32c(8 * w), add, gset(ptr));
+}
+
+// sort(base, top, wb, keyOff): a stable LSD radix sort of the tokens in
+// [base, top) by the f64 at keyOff: the key's bits made monotonic (-0 as 0,
+// negatives flipped), eight 8-bit digits, indices permuted, the tokens
+// gathered once at the end. Scratch sits above the heap and is dropped.
+function sortBody(f: Fn, HEAP: number, ENSURE: number): void {
+  const [base, top, wb, keyOff] = [0, 1, 2, 3];
+  const n = f.local(I32), keys = f.local(I32), idxA = f.local(I32), idxB = f.local(I32), counts = f.local(I32), copy = f.local(I32);
+  const i = f.local(I32), d = f.local(I32), c = f.local(I32), t = f.local(I32), bits = f.local(I64), vary = f.local(I64), first = f.local(I64);
+  // The digit of the key at the address on the stack.
+  const digit = [...ldI64(), ...get(d), OP.i64ExtendI32U, OP.i64ShrU, ...i64c(0xffn), OP.i64And, OP.i32WrapI64];
+  const at = (arr: number, idx: number[], shift: number) => [...get(arr), ...idx, ...shl(shift), ...add];
+  f.emit(get(top), get(base), sub, get(wb), [OP.i32DivU], set(n));
+  // Scratch: keys u64[n], idxA i32[n], idxB i32[n], counts i32[256], a copy of the tokens.
+  f.emit(gget(HEAP), set(keys));
+  f.emit(at(keys, get(n), 3), set(idxA));
+  f.emit(at(idxA, get(n), 2), set(idxB));
+  f.emit(at(idxB, get(n), 2), set(counts));
+  f.emit(get(counts), i32c(1024), add, set(copy));
+  f.emit(get(copy), get(top), add, get(base), sub, gget(HEAP), sub, call(ENSURE));
+  // Keys and identity indices; `vary` collects the bits in which any two
+  // keys differ, so passes over digits no key varies in are skipped.
+  f.emit(i64c(0n), set(vary), i64c(0n), set(first));
+  f.emit(forRange(i, i32c(0), get(n), i32c(1), [
+    ...get(base), ...get(i), ...get(wb), ...mul, ...add, ...get(keyOff), ...add, ...ldF64(), ...f64c(0), OP.f64Add, OP.i64ReinterpretF64, ...set(bits),
+    ...get(bits), ...i64c(0n), OP.i64LtS, OP.if, I64, ...get(bits), ...i64c(-1n), OP.i64Xor, OP.else, ...get(bits), ...i64c(1n << 63n), OP.i64Xor, OP.end, ...set(bits),
+    ...ifThen([...get(i), OP.i32Eqz], [...get(bits), ...set(first)]),
+    ...get(vary), ...get(bits), ...get(first), OP.i64Xor, OP.i64Or, ...set(vary),
+    ...at(keys, get(i), 3), ...get(bits), ...stI64(),
+    ...at(idxA, get(i), 2), ...get(i), ...stI32(),
+  ]));
+  f.emit(get(copy), get(base), get(top), get(base), sub, MEMCOPY);
+  // Eight digit passes, least significant first.
+  f.emit(forRange(d, i32c(0), i32c(64), i32c(8), [
+    OP.block, VOID, // skipped when no key varies in this digit
+    ...ifThen([...get(vary), ...get(d), OP.i64ExtendI32U, OP.i64ShrU, ...i64c(0xffn), OP.i64And, OP.i64Eqz], [OP.br, 1]),
+    ...get(counts), ...i32c(0), ...i32c(1024), ...MEMFILL,
+    ...forRange(i, i32c(0), get(n), i32c(1), [
+      ...at(keys, [...at(idxA, get(i), 2), ...ldI32()], 3), ...digit, ...shl(2), ...get(counts), ...add, ...set(c),
+      ...get(c), ...get(c), ...ldI32(), ...i32c(1), ...add, ...stI32(),
+    ]),
+    // Exclusive prefix sums: counts[c] = number of keys with a smaller digit.
+    ...i32c(0), ...set(t),
+    ...forRange(c, i32c(0), i32c(256), i32c(1), [
+      ...at(counts, get(c), 2), ...tee(i), ...ldI32(), ...get(i), ...get(t), ...stI32(), ...get(t), ...add, ...set(t),
+    ]),
+    // Scatter, in order: stable.
+    ...forRange(i, i32c(0), get(n), i32c(1), [
+      ...at(idxA, get(i), 2), ...ldI32(), ...set(c),
+      ...at(keys, get(c), 3), ...digit, ...shl(2), ...get(counts), ...add, ...set(t),
+      ...at(idxB, [...get(t), ...ldI32()], 2), ...get(c), ...stI32(),
+      ...get(t), ...get(t), ...ldI32(), ...i32c(1), ...add, ...stI32(),
+    ]),
+    ...get(idxA), ...get(idxB), ...set(idxA), ...set(idxB),
+    OP.end,
+  ]));
+  // Gather the tokens into their sorted places.
+  f.emit(forRange(i, i32c(0), get(n), i32c(1), [
+    ...get(base), ...get(i), ...get(wb), ...mul, ...add,
+    ...get(copy), ...at(idxA, get(i), 2), ...ldI32(), ...get(wb), ...mul, ...add,
+    ...get(wb), ...MEMCOPY,
+  ]));
+}
+
+// reverse(base, top, wb): tokens swapped from both ends, word by word.
+function reverseBody(f: Fn): void {
+  const [base, top, wb] = [0, 1, 2];
+  const a = f.local(I32), b = f.local(I32), k = f.local(I32), t = f.local(I64);
+  f.emit(get(base), set(a), get(top), get(wb), sub, set(b));
+  f.emit(loopWhile([...get(a), ...get(b), OP.i32GeU], [
+    ...forRange(k, i32c(0), get(wb), i32c(8), [
+      ...get(a), ...get(k), ...add, ...ldI64(), ...set(t),
+      ...get(a), ...get(k), ...add, ...get(b), ...get(k), ...add, ...ldI64(), ...stI64(),
+      ...get(b), ...get(k), ...add, ...get(t), ...stI64(),
+    ]),
+    ...get(a), ...get(wb), ...add, ...set(a), ...get(b), ...get(wb), ...sub, ...set(b),
+  ]));
+}
+
 // --- the pipeline compiler ----------------------------------------------------------
 
 // Memory layout: [0, PARAMS) pipeline params; the output buffer; the batch
@@ -269,6 +407,9 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
   const HEAP = g(I32, i32c(heap0));
   const LIMIT = g(I32, i32c(pages * PAGE));
 
+  // A buffer opens at the heap top: empty, above everything allocated so far.
+  const openBuffer = (f: Fn, out: { base: number; top: number }) => f.emit(gget(HEAP), gset(out.base), gget(HEAP), gset(out.top));
+
   const SORT = declare([I32, I32, I32, I32]); // sort(base, top, wb, keyOff)
   const REVERSE = declare([I32, I32, I32]); // reverse(base, top, wb)
   const INIT = declare([]);
@@ -283,55 +424,6 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
       ...Array.from({ length: width }, (_, i) => [...get(cur), ...ldF64(8 * i)]).flat(),
       ...call(entry),
     ]);
-
-  // --- scalar expressions over an environment ---
-  interface Env {
-    param(i: number): number[];
-    state(i: number): number[];
-    input(i: number): number[];
-    local(name: string): number;
-  }
-  const noEnv = (what: string): Env => ({
-    param: () => fail(`a parameter in ${what}`),
-    state: () => fail(`state in ${what}`),
-    input: () => fail(`an input in ${what}`),
-    local: () => fail(`a local in ${what}`),
-  });
-  const fail = (msg: string): never => {
-    throw new Error(`wasm: ${msg}`);
-  };
-  // The value of e, as f64.
-  function num(f: Fn, e: ScalarExpr, env: Env): void {
-    switch (e.k) {
-      case 'const': f.emit(f64c(e.value)); return;
-      case 'param': f.emit(env.param(e.index)); return;
-      case 'state': f.emit(env.state(e.index)); return;
-      case 'input': f.emit(env.input(e.index)); return;
-      case 'local': f.emit(get(env.local(e.name))); return;
-      case 'bin':
-        if (BIN[e.op].cls === 'arith') { num(f, e.a, env); num(f, e.b, env); f.emit([BIN[e.op].wasm]); return; }
-        cond(f, e, env);
-        f.emit([OP.f64ConvertI32U]);
-        return;
-      case 'un':
-        if (UN[e.op].cls === 'logic') { cond(f, e, env); f.emit([OP.f64ConvertI32U]); return; }
-        num(f, e.a, env);
-        f.emit([UN[e.op].wasm]);
-        return;
-      case 'select':
-        num(f, e.then, env); num(f, e.else, env); cond(f, e.cond, env);
-        f.emit([OP.select]);
-        return;
-    }
-  }
-  // The truth of e, as i32.
-  function cond(f: Fn, e: ScalarExpr, env: Env): void {
-    if (e.k === 'bin' && BIN[e.op].cls === 'cmp') { num(f, e.a, env); num(f, e.b, env); f.emit([BIN[e.op].wasm]); return; }
-    if (e.k === 'bin' && BIN[e.op].cls === 'logic') { cond(f, e.a, env); cond(f, e.b, env); f.emit([BIN[e.op].wasm]); return; }
-    if (e.k === 'un' && UN[e.op].cls === 'logic') { cond(f, e.a, env); f.emit([UN[e.op].wasm]); return; }
-    num(f, e, env);
-    f.emit(f64c(0), [OP.f64Ne]);
-  }
 
   // --- stages ---
   for (const s of slots) {
@@ -378,8 +470,7 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
                 f.emit([OP.br, ...uleb(depth)]);
                 break;
               }
-              st.values.forEach((v, i) => { f.emit(gget(sp)); num(f, v, env); f.emit(stF64(8 * i)); });
-              f.emit(gget(sp), i32c(8 * w), add, gset(sp));
+              pushToken(f, sp, w, (i) => num(f, st.values[i], env));
               f.emit(ifThen([...gget(sp), ...i32c(stackBase + STACK_BYTES), OP.i32GtU], [OP.unreachable]));
               break;
             case 'if':
@@ -397,8 +488,7 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
         // the next token at the bottom of the loop until the worklist is empty
         // — depth-first, exactly the JS segment's loop. A tail feed branches
         // to the top of the loop, past the pop.
-        for (let i = 0; i < w; i++) f.emit(gget(sp), get(i), stF64(8 * i));
-        f.emit(gget(sp), i32c(8 * w), add, gset(sp));
+        pushToken(f, sp, w, (i) => f.emit(get(i)));
         const pop = [...gget(sp), ...i32c(8 * w), ...sub, ...gset(sp)];
         for (let i = 0; i < w; i++) pop.push(...gget(sp), ...ldF64(8 * i), ...set(inputs[i]));
         f.emit(pop, [OP.block, VOID, OP.loop, VOID]);
@@ -435,11 +525,10 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
     if (part.out) {
       const { top } = part.out;
       f.emit(i32c(8 * w), call(ENSURE));
-      for (let i = 0; i < w; i++) f.emit(gget(top), get(i), stF64(8 * i));
-      f.emit(gget(top), i32c(8 * w), add, gset(top), gget(top), gset(HEAP));
+      pushToken(f, top, w, (i) => f.emit(get(i)));
+      f.emit(gget(top), gset(HEAP));
     } else {
-      for (let i = 0; i < w; i++) f.emit(gget(OUTP), get(i), stF64(8 * i));
-      f.emit(gget(OUTP), i32c(8 * w), add, gset(OUTP));
+      pushToken(f, OUTP, w, (i) => f.emit(get(i)));
       f.emit(ifThen([...gget(OUTP), ...i32c(outLimit), OP.i32GeU], call(DRAIN)));
     }
   });
@@ -450,83 +539,8 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
     f.emit(call(part.slots[0]?.st ?? part.emit));
   });
 
-  // sort(base, top, wb, keyOff): a stable LSD radix sort of the tokens in
-  // [base, top) by the f64 at keyOff: the key's bits made monotonic (-0 as 0,
-  // negatives flipped), eight 8-bit digits, indices permuted, the tokens
-  // gathered once at the end. Scratch sits above the heap and is dropped.
-  define(SORT, (f) => {
-    const [base, top, wb, keyOff] = [0, 1, 2, 3];
-    const n = f.local(I32), keys = f.local(I32), idxA = f.local(I32), idxB = f.local(I32), counts = f.local(I32), copy = f.local(I32);
-    const i = f.local(I32), d = f.local(I32), c = f.local(I32), t = f.local(I32), bits = f.local(I64), vary = f.local(I64), first = f.local(I64);
-    // The digit of the key at the address on the stack.
-    const digit = [...ldI64(), ...get(d), OP.i64ExtendI32U, OP.i64ShrU, ...i64c(0xffn), OP.i64And, OP.i32WrapI64];
-    const at = (arr: number, idx: number[], shift: number) => [...get(arr), ...idx, ...shl(shift), ...add];
-    f.emit(get(top), get(base), sub, get(wb), [OP.i32DivU], set(n));
-    // Scratch: keys u64[n], idxA i32[n], idxB i32[n], counts i32[256], a copy of the tokens.
-    f.emit(gget(HEAP), set(keys));
-    f.emit(at(keys, get(n), 3), set(idxA));
-    f.emit(at(idxA, get(n), 2), set(idxB));
-    f.emit(at(idxB, get(n), 2), set(counts));
-    f.emit(get(counts), i32c(1024), add, set(copy));
-    f.emit(get(copy), get(top), add, get(base), sub, gget(HEAP), sub, call(ENSURE));
-    // Keys and identity indices; `vary` collects the bits in which any two
-    // keys differ, so passes over digits no key varies in are skipped.
-    f.emit(i64c(0n), set(vary), i64c(0n), set(first));
-    f.emit(forRange(i, i32c(0), get(n), i32c(1), [
-      ...get(base), ...get(i), ...get(wb), ...mul, ...add, ...get(keyOff), ...add, ...ldF64(), ...f64c(0), OP.f64Add, OP.i64ReinterpretF64, ...set(bits),
-      ...get(bits), ...i64c(0n), OP.i64LtS, OP.if, I64, ...get(bits), ...i64c(-1n), OP.i64Xor, OP.else, ...get(bits), ...i64c(1n << 63n), OP.i64Xor, OP.end, ...set(bits),
-      ...ifThen([...get(i), OP.i32Eqz], [...get(bits), ...set(first)]),
-      ...get(vary), ...get(bits), ...get(first), OP.i64Xor, OP.i64Or, ...set(vary),
-      ...at(keys, get(i), 3), ...get(bits), ...stI64(),
-      ...at(idxA, get(i), 2), ...get(i), ...stI32(),
-    ]));
-    f.emit(get(copy), get(base), get(top), get(base), sub, MEMCOPY);
-    // Eight digit passes, least significant first.
-    f.emit(forRange(d, i32c(0), i32c(64), i32c(8), [
-      OP.block, VOID, // skipped when no key varies in this digit
-      ...ifThen([...get(vary), ...get(d), OP.i64ExtendI32U, OP.i64ShrU, ...i64c(0xffn), OP.i64And, OP.i64Eqz], [OP.br, 1]),
-      ...get(counts), ...i32c(0), ...i32c(1024), ...MEMFILL,
-      ...forRange(i, i32c(0), get(n), i32c(1), [
-        ...at(keys, [...at(idxA, get(i), 2), ...ldI32()], 3), ...digit, ...shl(2), ...get(counts), ...add, ...set(c),
-        ...get(c), ...get(c), ...ldI32(), ...i32c(1), ...add, ...stI32(),
-      ]),
-      // Exclusive prefix sums: counts[c] = number of keys with a smaller digit.
-      ...i32c(0), ...set(t),
-      ...forRange(c, i32c(0), i32c(256), i32c(1), [
-        ...at(counts, get(c), 2), ...tee(i), ...ldI32(), ...get(i), ...get(t), ...stI32(), ...get(t), ...add, ...set(t),
-      ]),
-      // Scatter, in order: stable.
-      ...forRange(i, i32c(0), get(n), i32c(1), [
-        ...at(idxA, get(i), 2), ...ldI32(), ...set(c),
-        ...at(keys, get(c), 3), ...digit, ...shl(2), ...get(counts), ...add, ...set(t),
-        ...at(idxB, [...get(t), ...ldI32()], 2), ...get(c), ...stI32(),
-        ...get(t), ...get(t), ...ldI32(), ...i32c(1), ...add, ...stI32(),
-      ]),
-      ...get(idxA), ...get(idxB), ...set(idxA), ...set(idxB),
-      OP.end,
-    ]));
-    // Gather the tokens into their sorted places.
-    f.emit(forRange(i, i32c(0), get(n), i32c(1), [
-      ...get(base), ...get(i), ...get(wb), ...mul, ...add,
-      ...get(copy), ...at(idxA, get(i), 2), ...ldI32(), ...get(wb), ...mul, ...add,
-      ...get(wb), ...MEMCOPY,
-    ]));
-  });
-
-  // reverse(base, top, wb): tokens swapped from both ends, word by word.
-  define(REVERSE, (f) => {
-    const [base, top, wb] = [0, 1, 2];
-    const a = f.local(I32), b = f.local(I32), k = f.local(I32), t = f.local(I64);
-    f.emit(get(base), set(a), get(top), get(wb), sub, set(b));
-    f.emit(loopWhile([...get(a), ...get(b), OP.i32GeU], [
-      ...forRange(k, i32c(0), get(wb), i32c(8), [
-        ...get(a), ...get(k), ...add, ...ldI64(), ...set(t),
-        ...get(a), ...get(k), ...add, ...get(b), ...get(k), ...add, ...ldI64(), ...stI64(),
-        ...get(b), ...get(k), ...add, ...get(t), ...stI64(),
-      ]),
-      ...get(a), ...get(wb), ...add, ...set(a), ...get(b), ...get(wb), ...sub, ...set(b),
-    ]));
-  });
+  define(SORT, (f) => sortBody(f, HEAP, ENSURE));
+  define(REVERSE, reverseBody);
 
   // reduce: merge adjacent same-key tokens of a buffer in place (the GroupBy
   // before it made equal keys adjacent); listed fields combine, the others
@@ -570,7 +584,7 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
   // arguments (over the pipeline params in memory) and state initializers.
   define(INIT, (f) => {
     f.emit(i32c(outBase), gset(OUTP), i32c(heap0), gset(HEAP), [OP.memorySize, 0x00], i32c(PAGE), mul, gset(LIMIT));
-    if (parts[0].out) f.emit(gget(HEAP), gset(parts[0].out.base), gget(HEAP), gset(parts[0].out.top));
+    if (parts[0].out) openBuffer(f, parts[0].out);
     const argEnv: Env = { ...noEnv('a stage argument'), param: (i) => [...i32c(0), ...ldF64(8 * i)] };
     for (const s of slots) {
       f.emit(i32c(s.stackBase), gset(s.sp));
@@ -600,7 +614,7 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
       }
       // The next part's buffer starts at the heap top, above this one.
       const next = parts[p + 1];
-      if (next.out) f.emit(gget(HEAP), gset(next.out.base), gget(HEAP), gset(next.out.top));
+      if (next.out) openBuffer(f, next.out);
       f.emit(stream(cur, gget(base), gget(top), wb, next.inputWidth, next.entry));
     });
     f.emit(gget(OUTP));
