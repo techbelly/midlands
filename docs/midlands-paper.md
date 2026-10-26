@@ -381,27 +381,27 @@ Counted by `npm run sizes`, lines of source with comments:
 | gezira, unmodified | 593 |
 | roda | 342 |
 | the demos' own Nile | 104 |
-| mooi | 368 |
-| umgeni: Nile to syntax tree (grammar, offside rule, operators, parser) | 925 |
-| umgeni: Nile's meaning, in Mooi | 361 |
-| umgeni: the Mooi hosts, value algebra, substitution, the IR, the passes | 1,958 |
-| umgeni: IR to JavaScript, with the CPU runtime | 836 |
-| umgeni: IR to WebAssembly | 615 |
-| umgeni: IR to GPU (WGSL, lowering, execution, presentation) | 1,258 |
+| mooi | 373 |
+| umgeni: Nile to syntax tree (grammar, offside rule, operators, parser) | 908 |
+| umgeni: Nile's meaning, in Mooi | 391 |
+| umgeni: the Mooi hosts, value algebra, substitution, the IR, the passes | 1,908 |
+| umgeni: IR to JavaScript, with the CPU runtime | 839 |
+| umgeni: IR to WebAssembly | 672 |
+| umgeni: IR to GPU (WGSL, lowering, execution, presentation) | 1,185 |
 
 The claim this project can make is narrower than gezira's. A 2D graphics
 library in 930 lines of Nile, with a compiler to three targets in about
 6,000, is a system one person can read in a few sittings. The back ends
 are optional, and any one of them is a working compiler, so the smallest
 reading is about 4,000 lines plus the library. But the compiler is not yet
-a few pages of mathematics. The meaning of Nile is 361 lines of equations,
-and 1,958 lines of TypeScript stand around them.
+a few pages of mathematics. The meaning of Nile is 391 lines of equations,
+and 1,908 lines of TypeScript stand around them.
 
 Some of that is substrate: the IR itself, the two domains, the shapes and
-layouts of values. Some of it is meaning that has not moved. The 205 lines
+layouts of values. Some of it is meaning that has not moved. The 233 lines
 that turn mid-stream `⇒` into a state machine are, a research note (not in
 the repository) shows,
-a specialisation of about fifteen lines of semantics, done by hand. The 210
+a specialisation of about fifteen lines of semantics, done by hand. The 175
 lines of common subexpression elimination are sharing in the residue, which
 a different domain could do for free. Templates and fusion are the same
 story. A generic specialiser would absorb all three, and the estimate, not
