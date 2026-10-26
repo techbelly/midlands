@@ -3,8 +3,8 @@
 // comparisons with the CPU. Deno with WebGPU only; tsc skips demos/tools,
 // so `deno check demos/tools/*.ts` is their typecheck.
 
-import { lowerPipeline, type Plan } from '../../umgeni/src/gpu/lower.js';
-import { coverageSink } from '../../umgeni/src/gpu/execute.js';
+import type { Plan } from '../../umgeni/src/gpu/lower.js';
+import { framePlan } from '../../umgeni/src/gpu/present.js';
 import { requestDevice } from '../../umgeni/src/gpu/device.js';
 import { fusedPipeline, type ModuleIR } from '../../umgeni/src/ir.js';
 
@@ -14,9 +14,8 @@ export async function requireDevice(): Promise<GPUDevice> {
   return device;
 }
 
-// A fused pipeline lowered to accumulate coverage over a W × H image.
-export const coveragePlan = (ir: ModuleIR, name: string, W: number, H: number): Plan =>
-  lowerPipeline(fusedPipeline(ir, name), { extent: [H, W], sink: coverageSink });
+// The named fused pipeline, lowered to accumulate coverage over a W × H image.
+export const coveragePlan = (ir: ModuleIR, name: string, W: number, H: number): Plan => framePlan(fusedPipeline(ir, name), W, H);
 
 // A W × H rgba texture the presenter can draw into and a check can read.
 export const offscreenTexture = (device: GPUDevice, W: number, H: number): GPUTexture =>

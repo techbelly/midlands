@@ -16,8 +16,9 @@
 // another (they share the grids), so a frame costs roughly a fixed amount
 // per path; rasterizing all paths in one batch is the next step.
 
-import { createExecutor, metaWords, type Executor } from './execute.js';
-import { META_BYTES, type Plan } from './lower.js';
+import type { FusedIR } from '../ir.js';
+import { coverageSink, createExecutor, metaWords, type Executor } from './execute.js';
+import { lowerPipeline, META_BYTES, type Plan } from './lower.js';
 
 export interface PathBatch {
   tokens: Float32Array<ArrayBuffer>; // n × plan.inputWidth flat, already transformed/clipped
@@ -63,6 +64,10 @@ ${paint ?? ''}
 `;
 
 // The plans' grid is the frame: extent [height, width], their sink COV.
+// framePlan lowers a fused pipeline that way.
+export const framePlan = (fused: FusedIR, width: number, height: number): Plan =>
+  lowerPipeline(fused, { extent: [height, width], sink: coverageSink });
+
 const isPlan = (p: Plan | Record<string, Plan>): p is Plan => Array.isArray((p as Plan).passes);
 
 export function createPresenter(

@@ -12,10 +12,8 @@ import { SCENES } from './src/samples/scenes.js';
 import { parseSvg } from './src/vector/svg.js';
 import { drawTiger, fitView } from './src/vector/tiger.js';
 import { quoteNile } from './src/quote.js';
-import { createPresenter, type PathBatch, type Presenter } from '../umgeni/src/gpu/present.js';
-import { lowerPipeline } from '../umgeni/src/gpu/lower.js';
-import { coverageSink } from '../umgeni/src/gpu/execute.js';
-import { requestDevice } from '../umgeni/src/gpu/device.js';
+import { createPresenter, framePlan, type PathBatch, type Presenter } from '../umgeni/src/gpu/present.js';
+import { configureCanvas, gpuDevice, showOnly } from './src/gpu-page.js';
 import { blankImage } from './src/vector/spans.js';
 import tigerSvg from './tiger.svg';
 // Source Serif 4: SIL OFL 1.1 (fonts/OFL.txt). Cairo's samples ask for Sans.
@@ -77,12 +75,11 @@ const cards: Card[] = SCENES.map((scene) => {
 let gpu: { device: GPUDevice; presenter: Presenter; format: GPUTextureFormat } | 'unavailable' | null = null;
 async function ensureGpu() {
   if (gpu === null) {
-    const device = await requestDevice();
+    const device = await gpuDevice();
     if (!device) gpu = 'unavailable';
     else {
       const format = navigator.gpu.getPreferredCanvasFormat();
-      const opts = { extent: [SIZE, SIZE], sink: coverageSink };
-      const plans = { RasterizePixels: lowerPipeline(RasterizePixelsIR, opts), RasterizePixelsEvenOdd: lowerPipeline(RasterizePixelsEvenOddIR, opts) };
+      const plans = { RasterizePixels: framePlan(RasterizePixelsIR, SIZE, SIZE), RasterizePixelsEvenOdd: framePlan(RasterizePixelsEvenOddIR, SIZE, SIZE) };
       gpu = { device, presenter: createPresenter(device, plans, { format }), format };
     }
   }
@@ -96,8 +93,7 @@ function drawCpu(i: number): void {
   img.data.fill(255);
   SCENES[i].draw(new Sheet(nile, new CpuTarget(nile, img)), font, tiger);
   ctx.putImageData(img, 0, 0);
-  cpu.style.display = '';
-  gpuCanvas.style.display = 'none';
+  showOnly(cpu, cpu, gpuCanvas);
 }
 
 async function draw(): Promise<void> {
@@ -123,11 +119,9 @@ async function draw(): Promise<void> {
       card.where.textContent = `On the CPU: ${e.message}.`;
       return;
     }
-    const context = card.gpu.getContext('webgpu')!;
-    context.configure({ device: g.device, format: g.format, alphaMode: 'opaque' });
+    const { context } = configureCanvas(g.device, card.gpu)!;
     g.presenter.frame(batches, context.getCurrentTexture().createView());
-    card.cpu.style.display = 'none';
-    card.gpu.style.display = '';
+    showOnly(card.gpu, card.cpu, card.gpu);
     card.where.textContent = `On the GPU: ${batches.length} path${batches.length === 1 ? '' : 's'}, each rasterized by ${[...new Set(batches.map((b) => b.plan))].join(' or ')} as WGSL lowered from its IR; the geometry is the same Nile on the CPU.`;
     onGpu++;
   });

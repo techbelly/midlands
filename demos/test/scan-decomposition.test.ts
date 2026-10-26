@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 import { read } from '../src/sources.js';
 import { compileLibrary } from '../../umgeni/src/compile.js';
 import * as rt from '../../umgeni/src/cpu/runtime.js';
-import { textSpansParams, textTokens } from '../src/text/host.js';
+import { textBeziers, textSpansParams } from '../src/text/host.js';
 
 
 const library = compileLibrary([
@@ -109,11 +109,7 @@ describe('CombineEdgeSamples ≡ SumByPixel → WindScanline → SpansOfPixels',
 
   it('RasterizeScan matches Rasterize on real text geometry', () => {
     const params = textSpansParams({ size: 14, width: 200, height: 60, margin: 4 });
-    const front = library.api.TextBeziers(params);
-    const beziers: number[][] = [];
-    front.setEmit((t) => beziers.push(t));
-    for (const t of textTokens(library.api, 'HELLO WORLD')) front.push(t);
-    front.end();
+    const beziers = textBeziers(library.api, 'HELLO WORLD', params);
 
     const ref = rt.run(library.api.Rasterize(), beziers);
     const dec = rt.run(library.api.RasterizeScan(), beziers);

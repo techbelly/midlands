@@ -12,7 +12,7 @@
 //   gpu0 — the colour runs rasterized and composited on the GPU in one
 //          submission to a WebGPU canvas: zero fences per frame.
 
-import { colorRuns, fallback, textSpansParams, textTokens, type ColorRun, type GlyphSource, type TextSpansParams } from './src/text/host.js';
+import { colorRuns, fallback, textBeziers, textSpansParams, type ColorRun, type GlyphSource, type TextSpansParams } from './src/text/host.js';
 import { glyphFor as stubGlyph } from './src/text/stubfont.js';
 import { parseTrueType } from './src/text/ttf.js';
 import { paintSpans, type RGB } from './src/vector/spans.js';
@@ -21,10 +21,8 @@ import sourceSerif from './fonts/SourceSerif4.ttf';
 // Twemoji Mozilla: CC-BY 4.0 art (fonts/TWEMOJI-LICENSE.md)
 import twemoji from './fonts/Twemoji.Mozilla.ttf';
 import { createRasterHost, type GpuRasterizer } from '../umgeni/src/gpu/raster.js';
-import { createPresenter, type Presenter } from '../umgeni/src/gpu/present.js';
-import { lowerPipeline } from '../umgeni/src/gpu/lower.js';
-import { coverageSink } from '../umgeni/src/gpu/execute.js';
-import { requestDevice } from '../umgeni/src/gpu/device.js';
+import { createPresenter, framePlan, type Presenter } from '../umgeni/src/gpu/present.js';
+import { configureCanvas, gpuDevice, showOnly } from './src/gpu-page.js';
 import { compileMs, nile, nileWasm, sources, RasterizePixelsIR } from './nl/text.nl-lib';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
@@ -71,15 +69,9 @@ function placed(api: Api, run: ColorRun, { M, min, max }: TextSpansParams): numb
   return api.PlaceBeziers({ M, min, max }).run(run.beziers);
 }
 
-// The single-colour front half, for the readback path: every glyph's beziers.
-function textBeziers(text: string, params: TextSpansParams): Float32Array<ArrayBuffer> {
-  const op = nile.TextBeziers(params);
-  const out: number[] = [];
-  op.setEmit((t: number[]) => out.push(...t));
-  for (const t of textTokens(nile, text, currentFont().glyphs)) op.push(t);
-  op.end();
-  return new Float32Array(out);
-}
+// The single-colour front half, for the readback path: every glyph's beziers, flat.
+const glyphBeziers = (text: string, params: TextSpansParams): Float32Array<ArrayBuffer> =>
+  new Float32Array(textBeziers(nile, text, params, currentFont().glyphs).flat());
 
 // --- the renderers: one per entry in the renderer menu ---
 
@@ -122,7 +114,7 @@ function readbackRenderer(gpu: Gpu): Renderer {
     canvas: canvas2d,
     async frame(text, params) {
       let t0 = performance.now();
-      const beziers = textBeziers(text, params);
+      const beziers = glyphBeziers(text, params);
       const frontMs = performance.now() - t0;
       const n = beziers.length / 6;
       t0 = performance.now();
@@ -190,21 +182,18 @@ let gpuState: Gpu | 'unavailable' | null = null;
 async function ensureGpu(): Promise<Gpu | null> {
   if (gpuState === 'unavailable') return null;
   if (gpuState) return gpuState;
-  const device = await requestDevice();
-  const context = canvasGpu.getContext('webgpu');
-  if (!device || !context) {
+  const device = await gpuDevice();
+  const target = device && configureCanvas(device, canvasGpu);
+  if (!device || !target) {
     gpuState = 'unavailable';
     return null;
   }
-  const format = navigator.gpu.getPreferredCanvasFormat();
-  context.configure({ device, format, alphaMode: 'opaque' });
-  // WGSL from IR, in-browser: the frame is the grid, [rows, columns].
-  const plan = lowerPipeline(RasterizePixelsIR, { extent: [SIZE.height, SIZE.width], sink: coverageSink });
+  const plan = framePlan(RasterizePixelsIR, SIZE.width, SIZE.height); // WGSL from IR, in-browser
   gpuState = {
     device,
-    context,
+    context: target.context,
     raster: createRasterHost(device, plan),
-    presenter: createPresenter(device, plan, { format }), // one black path
+    presenter: createPresenter(device, plan, { format: target.format }), // one black path
   };
   return gpuState;
 }
@@ -228,7 +217,7 @@ async function render(): Promise<void> {
     modeEl.value = 'cpu';
     return render();
   }
-  for (const c of [canvas2d, canvasGpu]) c.style.display = c === r.canvas ? '' : 'none';
+  showOnly(r.canvas, canvas2d, canvasGpu);
   const done = await r.frame(textEl.value, params);
   stats.textContent = done.stats;
   perf.textContent = done.perf;

@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { read } from '../src/sources.js';
 import { compileLibrary } from '../../umgeni/src/compile.js';
 import * as rt from '../../umgeni/src/cpu/runtime.js';
-import { paintCoverage, textSpansParams, textTokens } from '../src/text/host.js';
+import { paintCoverage, textBeziers, textSpansParams } from '../src/text/host.js';
 
 
 const SOURCES = [
@@ -68,11 +68,7 @@ describe('the rasterizer in access-patterns Nile (nl/rasterize-parallel.nl)', ()
     const W = 220;
     const H = 60;
     const params = textSpansParams({ size: 14, width: W, height: H, margin: 4 });
-    const front = library.api.TextBeziers(params);
-    const beziers: number[][] = [];
-    front.setEmit((t) => beziers.push(t));
-    for (const t of textTokens(library.api, 'QUICK BROWN FOX')) front.push(t);
-    front.end();
+    const beziers = textBeziers(library.api, 'QUICK BROWN FOX', params);
 
     const ref = dropArtifacts(rt.run(library.api.Rasterize(), beziers));
     const neu = rt.run(library.api.RasterizeParallel(), beziers);

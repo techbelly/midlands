@@ -5,10 +5,8 @@ import { parseSvg } from './src/vector/svg.js';
 import type { Api } from './src/vector/draw.js';
 import { paintPaths, tigerPaths, toBatches, type TigerPath } from './src/vector/tiger.js';
 import type { FusedIR } from '../umgeni/src/ir.js';
-import { createPresenter } from '../umgeni/src/gpu/present.js';
-import { lowerPipeline } from '../umgeni/src/gpu/lower.js';
-import { coverageSink } from '../umgeni/src/gpu/execute.js';
-import { requestDevice } from '../umgeni/src/gpu/device.js';
+import { createPresenter, framePlan } from '../umgeni/src/gpu/present.js';
+import { configureCanvas, gpuDevice, showOnly, type GpuCanvas } from './src/gpu-page.js';
 import { nile, nileWasm, sources, RasterizePixelsIR } from './nl/vector.nl-lib';
 import svgSrc from './tiger.svg';
 import { quoteNile } from './src/quote.js';
@@ -46,12 +44,9 @@ function cpuBackEnd(nile: Api, ctx: CanvasRenderingContext2D): BackEnd {
   };
 }
 
-function gpuBackEnd(ir: FusedIR, device: GPUDevice, context: GPUCanvasContext): BackEnd {
+function gpuBackEnd(ir: FusedIR, { device, context, format }: GpuCanvas): BackEnd {
   const { width, height } = context.canvas;
-  const format = navigator.gpu.getPreferredCanvasFormat();
-  context.configure({ device, format, alphaMode: 'opaque' });
-  const plan = lowerPipeline(ir, { extent: [height, width], sink: coverageSink }); // WGSL from IR, in-browser
-  const presenter = createPresenter(device, plan, { format });
+  const presenter = createPresenter(device, framePlan(ir, width, height), { format }); // WGSL from IR, in-browser
   return async (paths) => {
     const t0 = performance.now();
     presenter.frame(toBatches(paths), context.getCurrentTexture().createView());
@@ -69,12 +64,28 @@ const wasm = cpuBackEnd(nileWasm, canvas.getContext('2d')!);
 let gpu: BackEnd | 'unavailable' | null = null;
 async function ensureGpu(): Promise<BackEnd | null> {
   if (gpu === null) {
-    const device = await requestDevice();
-    const context = canvasGpu.getContext('webgpu');
-    gpu = device && context ? gpuBackEnd(RasterizePixelsIR, device, context) : 'unavailable';
+    const device = await gpuDevice();
+    const target = device && configureCanvas(device, canvasGpu);
+    gpu = target ? gpuBackEnd(RasterizePixelsIR, target) : 'unavailable';
   }
   return gpu === 'unavailable' ? null : gpu;
 }
+
+// What the renderer menu's entries mean: which Nile runs the front half,
+// which back end finishes the frame (null when this browser has no GPU),
+// on which canvas, and how the timings name them.
+interface Mode {
+  front: Api;
+  frontLabel: string;
+  back: () => Promise<BackEnd | null>;
+  backLabel: string;
+  canvas: HTMLCanvasElement;
+}
+const MODES: Record<string, Mode> = {
+  cpu: { front: nile, frontLabel: 'JS', back: async () => cpu, backLabel: 'CPU JS', canvas },
+  wasm: { front: nileWasm, frontLabel: 'wasm', back: async () => wasm, backLabel: 'CPU wasm', canvas },
+  gpu: { front: nile, frontLabel: 'JS', back: ensureGpu, backLabel: 'GPU', canvas: canvasGpu },
+};
 
 // View state: the viewBox point (fx, fy) sits at the canvas centre, scaled by z.
 let z = 1;
@@ -88,29 +99,25 @@ const viewMatrix = (): number[] => {
 
 const segs = tiger.paths.reduce((a, p) => a + p.cubics.length, 0);
 
-// Only one canvas is visible at a time.
-function show(el: HTMLCanvasElement): void {
-  canvas.style.display = el === canvas ? '' : 'none';
-  canvasGpu.style.display = el === canvasGpu ? '' : 'none';
-}
-
-// The front half (geometry, compiled Nile on the CPU) is the same in both
-// modes; only the back end — rasterize and composite — differs.
+// The front half (geometry, compiled Nile on the CPU) is the same in every
+// mode; only the back end — rasterize and composite — differs.
 async function draw(): Promise<void> {
-  const gpuBack = modeEl.value === 'gpu' ? await ensureGpu() : null;
-  if (modeEl.value === 'gpu' && !gpuBack) modeEl.value = 'cpu'; // the fallback when WebGPU is unavailable
-  show(gpuBack ? canvasGpu : canvas);
-  const isWasm = !gpuBack && modeEl.value === 'wasm';
-  const backEnd = gpuBack ?? (isWasm ? wasm : cpu);
-  const front = isWasm ? nileWasm : nile; // the front half runs as wasm only in the wasm mode
+  let mode = MODES[modeEl.value];
+  let backEnd = await mode.back();
+  if (!backEnd) { // the fallback when WebGPU is unavailable
+    modeEl.value = 'cpu';
+    mode = MODES.cpu;
+    backEnd = cpu;
+  }
+  showOnly(mode.canvas, canvas, canvasGpu);
 
   const t0 = performance.now();
-  const paths = tigerPaths(tiger, viewMatrix(), front, canvas.width, canvas.height);
+  const paths = tigerPaths(tiger, viewMatrix(), mode.front, canvas.width, canvas.height);
   const frontMs = performance.now() - t0;
   const backMs = await backEnd(paths);
   statsEl.textContent = `${tiger.paths.length} paths · ${segs.toLocaleString()} cubics · ${z.toFixed(1)}×`;
   perfEl.textContent =
-    `front (CPU Nile, ${isWasm ? 'wasm' : 'JS'}) ${frontMs.toFixed(0)} ms + raster & composite (${gpuBack ? 'GPU' : isWasm ? 'CPU wasm' : 'CPU JS'}) ${backMs.toFixed(0)} ms ` +
+    `front (CPU Nile, ${mode.frontLabel}) ${frontMs.toFixed(0)} ms + raster & composite (${mode.backLabel}) ${backMs.toFixed(0)} ms ` +
     `= ${(frontMs + backMs).toFixed(0)} ms a frame`;
 }
 
