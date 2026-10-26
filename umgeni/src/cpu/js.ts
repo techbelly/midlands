@@ -5,7 +5,7 @@
 // and returns a runtime Op. The generated source is a first-class artifact:
 // compileLibrary exposes it for inspection alongside the executable form.
 
-import { anyStmt, inputWidthOf, opCount, type FusedIR, type FusedSegment, type FusedStage, type KernelIR, type ModuleIR, type PipelineIR, type ScalarExpr, type Stmt } from '../ir.js';
+import { anyStmt, inputWidthOf, opCount, type FusedIR, type FusedRun, type FusedStage, type KernelIR, type ModuleIR, type PipelineIR, type ScalarExpr, type Stmt } from '../ir.js';
 import { compilePipeline, inWasm } from './wasm.js';
 import { stageShape } from '../passes/tail.js';
 import { renderCond, renderExpr, type Dialect, sanitize } from '../scalar.js';
@@ -19,7 +19,7 @@ export interface CodegenOptions {
   // rt.opsCounter(R). Counts bin/un/select nodes per executed statement (ternary
   // short-circuiting is not modelled: both arms count).
   countOps?: boolean;
-  // Compile fused kernel segments to WebAssembly instead of JS (wasm.ts).
+  // Compile fused kernel runs to WebAssembly instead of JS (wasm.ts).
   // Output is bit-identical; barriers and unfused pipelines stay JS.
   target?: 'js' | 'wasm';
 }
@@ -114,7 +114,7 @@ function genStmts(stmts: Stmt[], indent: string, o: CodegenOptions, env: GenEnv)
 // A standalone kernel is a segment of one, its arguments its own params.
 function genKernel(k: KernelIR, o: CodegenOptions): string {
   const own: ScalarExpr[] = Array.from({ length: k.paramWidth }, (_, i) => ({ k: 'param', index: i }));
-  return `R[${JSON.stringify(k.name)}] = (P = []) => ${genSegment([{ name: k.name, kernel: k, args: [own] }], o)};`;
+  return `R[${JSON.stringify(k.name)}] = (P = []) => ${genRun([{ name: k.name, kernel: k, args: [own] }], o)};`;
 }
 
 // The runtime expression for a non-kernel stage (shared by the fused and
@@ -154,7 +154,7 @@ function genPipeline(p: PipelineIR, o: CodegenOptions): string {
   return `R[${JSON.stringify(p.name)}] = (P = []) => ${genStages(p.stages, o)};`;
 }
 
-// --- segments: the one execution model for kernels ---
+// --- runs: the one execution model for kernels ---
 // A run of kernels becomes one op: each stage is a local function taking its
 // input token as scalar arguments; emit is a direct call to the next stage
 // (the last stage calls the op's emit). A standalone kernel is a segment of
@@ -166,9 +166,9 @@ function genPipeline(p: PipelineIR, o: CodegenOptions): string {
 
 const stmtsFeed = (stmts: Stmt[]) => anyStmt(stmts, (s) => s.k === 'feed');
 
-function genSegment(stages: FusedStage[], o: CodegenOptions): string {
+function genRun(stages: FusedStage[], o: CodegenOptions): string {
   const lines: string[] = [];
-  lines.push(`(() => { // segment: ${stages.map((s) => s.name).join(' → ')}`);
+  lines.push(`(() => { // run: ${stages.map((s) => s.name).join(' → ')}`);
   lines.push(`  let EMIT = (t) => {};`);
   const ends: string[] = [];
 
@@ -258,28 +258,28 @@ function genSegment(stages: FusedStage[], o: CodegenOptions): string {
 // Wasm modules are compiled once, when the registry is built (`wasmModules`
 // collects their definitions); each pipeline instance then borrows an
 // instance of one (rt.wasmPipeline).
-function genWasm(segments: FusedSegment[], inputWidth: number, paramWidth: number, wasmModules: string[]): string {
-  const w = compilePipeline(segments, inputWidth, paramWidth);
+function genWasm(runs: FusedRun[], inputWidth: number, paramWidth: number, wasmModules: string[]): string {
+  const w = compilePipeline(runs, inputWidth, paramWidth);
   const name = `W${wasmModules.length}`;
-  const names = segments.map((s) => (s.k === 'kernels' ? s.stages.map((st) => st.name).join(' → ') : s.k)).join(' → ');
+  const names = runs.map((s) => (s.k === 'kernels' ? s.stages.map((st) => st.name).join(' → ') : s.k)).join(' → ');
   wasmModules.push(`const ${name} = rt.wasmModule([${w.bytes.join(',')}]); // ${names}`);
   return `rt.wasmPipeline(${name}, ${JSON.stringify(w.layout)}, P)`;
 }
 
 function genFused(p: FusedIR, o: CodegenOptions, wasmModules: string[]): string {
-  if (o.target === 'wasm' && p.segments.every(inWasm)) {
+  if (o.target === 'wasm' && p.runs.every(inWasm)) {
     const w = inputWidthOf(p);
     if (w === null) throw new Error(`'${p.name}': cannot tell its input width`);
-    return `R[${JSON.stringify(p.name)}] = (P = []) => ${genWasm(p.segments, w, p.paramWidth, wasmModules)};`;
+    return `R[${JSON.stringify(p.name)}] = (P = []) => ${genWasm(p.runs, w, p.paramWidth, wasmModules)};`;
   }
-  const segs = p.segments.map((s) => {
+  const runs = p.runs.map((s) => {
     if (s.k !== 'kernels') return `    ${genBuiltinStage(s, o)},`;
     if (o.target === 'wasm' && inWasm(s)) return `    ${genWasm([s], s.stages[0].kernel.inputWidth, p.paramWidth, wasmModules)},`;
-    return `    ${genSegment(s.stages, o)},`;
+    return `    ${genRun(s.stages, o)},`;
   });
   return [
     `R[${JSON.stringify(p.name)}] = (P = []) => rt.pipeline([`,
-    ...segs,
+    ...runs,
     `]);`,
   ].join('\n');
 }

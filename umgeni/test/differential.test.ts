@@ -21,7 +21,7 @@ describe.each([
   ['fused', { fuse: true }],
 ])('differential vs chari (%s)', (_, opts) => {
   const library = compileLibrary([MIDPOINT_PRELUDE, kernels], opts);
-  if (opts.fuse) it('fuses', () => expect(library.source).toContain('// segment:'));
+  if (opts.fuse) it('fuses', () => expect(library.source).toContain('// run:'));
   for (const c of oracle.cases) {
     it(`${c.process}: ${c.what}`, () => {
       expect(c.process in library.api, `umgeni has '${c.process}'`).toBe(true);

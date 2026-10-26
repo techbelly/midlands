@@ -1,5 +1,5 @@
 // The WebAssembly backend (src/cpu/wasm.ts) against the JS backend: wasm f64 is
-// IEEE-identical to JS numbers, so every fused segment compiled to wasm must
+// IEEE-identical to JS numbers, so every fused run compiled to wasm must
 // produce BIT-IDENTICAL output. Inputs are the oracle suites' cases;
 // demos/test/wasm.test.ts does the same for the text and tiger demos.
 import { describe, expect, it } from 'vitest';

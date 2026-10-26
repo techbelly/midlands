@@ -125,7 +125,7 @@ describe('the text pipeline (roda/text.nl)', () => {
 
   it('renders identically with kernel fusion (incl. the nested Rasterize splice)', () => {
     const fused = compileLibraryFile('demos/nl/text.nl-lib', { fuse: true });
-    expect(fused.source).toContain('// segment: LayoutGlyphs → TransformBeziers → ClipBeziers → DecomposeBeziers');
+    expect(fused.source).toContain('// run: LayoutGlyphs → TransformBeziers → ClipBeziers → DecomposeBeziers');
     const W = 76;
     const H = 14;
     const a = renderText(library, 'HELLO WRAP', { size: 12, width: W, height: H, margin: 2 });

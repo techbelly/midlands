@@ -10,7 +10,7 @@
 // point and reduce them with a stateful kernel. lowerTexture refuses those
 // with a reason, and the caller paints on the CPU.
 
-import type { FusedSegment, KernelIR, ModuleIR, ProcessIR, StageIR } from '../ir.js';
+import type { FusedRun, KernelIR, ModuleIR, ProcessIR, StageIR } from '../ir.js';
 import { isMapKernel } from './classify.js';
 import { mangle, paramsOnly, wgslBody, wgslExpr, type WgslEnv, type WgslExprEnv } from './wgsl.js';
 
@@ -52,12 +52,12 @@ export function lowerTexture(mod: ModuleIR, name: string): LoweredTexture {
     if (p.k === 'kernel') return kernel(p, params, inputs);
     const env = paramEnv(params);
     if (p.k === 'pipeline') return stages(p.stages, env, inputs);
-    return p.segments.reduce((xs, seg) => segment(seg, env, xs), inputs);
+    return p.runs.reduce((xs, run) => kernelRun(run, env, xs), inputs);
   }
 
-  function segment(seg: FusedSegment, env: WgslExprEnv, inputs: string[]): string[] {
-    if (seg.k !== 'kernels') return stages([seg], env, inputs);
-    return seg.stages.reduce(
+  function kernelRun(run: FusedRun, env: WgslExprEnv, inputs: string[]): string[] {
+    if (run.k !== 'kernels') return stages([run], env, inputs);
+    return run.stages.reduce(
       (xs, st) => kernel(st.kernel, st.args.flat().map((a) => wgslExpr(a, env)), xs), inputs);
   }
 

@@ -26,10 +26,10 @@
 //
 // Not here yet: DupCat, DupZip, and a kernel with a prologue (a seed feed
 // or an emit before any input). A pipeline using one keeps its other kernel
-// runs in wasm and that segment in JS (js.ts falls back per segment; inWasm
+// runs in wasm and that run in JS (js.ts falls back per run; inWasm
 // says which).
 
-import { type FusedSegment, type FusedStage, type ScalarExpr, type Stmt } from '../ir.js';
+import { type FusedRun, type FusedStage, type ScalarExpr, type Stmt } from '../ir.js';
 import { BIN, UN } from '../scalar.js';
 import { stageShape, type StageShape } from '../passes/tail.js';
 import type { WasmLayout } from './runtime.js';
@@ -273,11 +273,11 @@ const OUT_TOKENS = 256;
 const IN_TOKENS = 256;
 const STACK_BYTES = 1 << 15;
 
-type Barrier = Extract<FusedSegment, { k: 'sortBy' | 'groupBy' | 'reduceBy' | 'reverse' }>;
+type Barrier = Extract<FusedRun, { k: 'sortBy' | 'groupBy' | 'reduceBy' | 'reverse' }>;
 
 // What this file compiles: kernel runs with no prologue, and the four
 // in-place barriers.
-export const inWasm = (s: FusedSegment): boolean =>
+export const inWasm = (s: FusedRun): boolean =>
   s.k === 'kernels' ? s.stages.every((st) => st.kernel.prologue.length === 0) : s.k !== 'dupCat' && s.k !== 'dupZip';
 
 export interface WasmPipeline {
@@ -285,39 +285,39 @@ export interface WasmPipeline {
   layout: WasmLayout; // what runtime.ts's wasmPipeline needs to drive it
 }
 
-// A run of kernels, and the barriers applied to its output before the next
-// run reads it (none after the last). A pipeline that starts or ends with a
-// barrier has an empty run there.
-interface Run {
+// A section of the pipeline: a run of kernels, and the barriers applied to
+// its output before the next section reads it (none after the last). A
+// pipeline that starts or ends with a barrier has an empty section there.
+interface Section {
   stages: FusedStage[];
   inputWidth: number;
   outputWidth: number; // what the stages leave: the width of the buffer's tokens
   barriers: Barrier[];
 }
 
-function partition(segments: FusedSegment[], inputWidth: number): Run[] {
-  const runs: Run[] = [];
+function partition(runs: FusedRun[], inputWidth: number): Section[] {
+  const sections: Section[] = [];
   let width = inputWidth; // the stream's width at this point in the pipeline
-  const open = (): Run => {
-    const run = { stages: [], inputWidth: width, outputWidth: width, barriers: [] };
-    runs.push(run);
-    return run;
+  const open = (): Section => {
+    const section = { stages: [], inputWidth: width, outputWidth: width, barriers: [] };
+    sections.push(section);
+    return section;
   };
-  let run = open();
-  for (const s of segments) {
+  let section = open();
+  for (const s of runs) {
     if (!inWasm(s)) throw new Error(`wasm: ${s.k === 'kernels' ? 'a prologue' : s.k} is not compiled to wasm yet`);
     if (s.k === 'identity' || s.k === 'dupCat' || s.k === 'dupZip') continue; // dup: refused above
     if (s.k === 'kernels') {
-      if (run.barriers.length > 0) run = open(); // a new run reads what the barriers leave
-      run.stages.push(...s.stages);
-      width = run.outputWidth = s.stages[s.stages.length - 1].kernel.outputWidth;
+      if (section.barriers.length > 0) section = open(); // a new section reads what the barriers leave
+      section.stages.push(...s.stages);
+      width = section.outputWidth = s.stages[s.stages.length - 1].kernel.outputWidth;
     } else {
-      run.barriers.push(s);
+      section.barriers.push(s);
       if (s.k === 'reduceBy') width = s.width;
     }
   }
-  if (run.barriers.length > 0) open();
-  return runs;
+  if (section.barriers.length > 0) open();
+  return sections;
 }
 
 // A stage's place in the module: how its body runs (passes/tail.ts), its
@@ -336,7 +336,7 @@ interface Slot {
   next: number;
 }
 
-// A run's place in the module: its stages' slots, its entry (the first
+// A section's place in the module: its stages' slots, its entry (the first
 // stage, or with no stages its emit), its last stage's emit, and, unless it
 // is the last, the buffer its output goes to (base and top globals) with
 // the barriers applied there, each ReduceBy as a function of its own.
@@ -349,10 +349,10 @@ interface Part {
   out: { base: number; top: number; barriers: { b: Barrier; reduce: number }[] } | null;
 }
 
-export function compilePipeline(segments: FusedSegment[], inputWidth: number, pipelineParams: number): WasmPipeline {
-  const runs = partition(segments, inputWidth);
-  const w0 = runs[0].inputWidth;
-  const outWidth = runs[runs.length - 1].outputWidth;
+export function compilePipeline(runs: FusedRun[], inputWidth: number, pipelineParams: number): WasmPipeline {
+  const sections = partition(runs, inputWidth);
+  const w0 = sections[0].inputWidth;
+  const outWidth = sections[sections.length - 1].outputWidth;
 
   // The fixed layout.
   const outBase = 8 * pipelineParams;
@@ -378,10 +378,10 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
   const DRAIN = 0;
   const ENSURE = declare([I32]); // ensure(bytes): grow until HEAP + bytes fits
 
-  const parts: Part[] = runs.map((run, p): Part => {
-    const emit = declare(Array(run.outputWidth).fill(F64));
-    const entry = declare(Array(run.inputWidth).fill(F64));
-    const slots = run.stages.map((stage): Slot => {
+  const parts: Part[] = sections.map((section, p): Part => {
+    const emit = declare(Array(section.outputWidth).fill(F64));
+    const entry = declare(Array(section.inputWidth).fill(F64));
+    const slots = section.stages.map((stage): Slot => {
       const shape = stageShape(stage.kernel.body);
       const stackBase = top;
       if (shape === 'worklist') top += STACK_BYTES;
@@ -396,10 +396,10 @@ export function compilePipeline(segments: FusedSegment[], inputWidth: number, pi
       };
     });
     slots.forEach((s, j) => { s.next = j + 1 < slots.length ? slots[j + 1].st : emit; });
-    const out = p + 1 < runs.length
-      ? { base: g(I32, i32c(0)), top: g(I32, i32c(0)), barriers: run.barriers.map((b) => ({ b, reduce: b.k === 'reduceBy' ? declare([]) : -1 })) }
+    const out = p + 1 < sections.length
+      ? { base: g(I32, i32c(0)), top: g(I32, i32c(0)), barriers: section.barriers.map((b) => ({ b, reduce: b.k === 'reduceBy' ? declare([]) : -1 })) }
       : null;
-    return { inputWidth: run.inputWidth, outputWidth: run.outputWidth, slots, entry, emit, out };
+    return { inputWidth: section.inputWidth, outputWidth: section.outputWidth, slots, entry, emit, out };
   });
   const slots = parts.flatMap((part) => part.slots);
   const heap0 = top;

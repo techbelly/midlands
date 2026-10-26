@@ -31,7 +31,7 @@ const VARIANTS: Variant[] = [
   { name: '+fuse', opts: { cse: false, boolCond: false, fuse: true } },
   { name: 'all -tail', opts: { cse: true, boolCond: true, fuse: true, tail: false } },
   { name: 'all four', opts: { cse: true, boolCond: true, fuse: true } },
-  // Fused segments as WebAssembly (op counting is a JS-codegen feature).
+  // Fused runs as WebAssembly (op counting is a JS-codegen feature).
   { name: 'all + wasm', opts: { cse: true, boolCond: true, fuse: true, target: 'wasm' } },
 ];
 

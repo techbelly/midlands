@@ -1,6 +1,6 @@
 // GPU lowering of fused pipelines: one rule per declaration.
 //
-// The lowering folds over a fused pipeline's segments, carrying the stream's
+// The lowering folds over a fused pipeline's runs, carrying the stream's
 // representation on the GPU:
 //
 //   Dense   a buffer of n tokens (the host's upload)
@@ -127,16 +127,16 @@ export function lowerPipeline(fused: FusedIR, opts: LowerOptions): Plan {
     kernels = [];
   };
 
-  const segs = fused.segments;
-  for (let i = 0; i < segs.length; i++) {
-    const s = segs[i];
+  const runs = fused.runs;
+  for (let i = 0; i < runs.length; i++) {
+    const s = runs[i];
     if (s.k === 'identity') continue;
     if (s.k === 'kernels') {
       kernels.push(...s.stages);
       continue;
     }
     if (s.k === 'groupBy') {
-      const r = segs[i + 1];
+      const r = runs[i + 1];
       if (r?.k !== 'reduceBy') throw new LowerError(`'${name}': GroupBy without a ReduceBy after it needs a sort, which has no parallel lowering`);
       if (s.stable) throw new LowerError(`'${name}': GroupBy stable cannot lower to atomic grids (order would matter)`);
       if (s.keyIndexes.length !== extent.length) throw new LowerError(`'${name}': GroupBy has ${s.keyIndexes.length} keys, but the host gave ${extent.length} extents`);

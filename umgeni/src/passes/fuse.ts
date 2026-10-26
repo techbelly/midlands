@@ -1,6 +1,6 @@
 // Kernel fusion: rewrite each PipelineIR into a FusedIR by inlining nested
-// pipeline references and grouping consecutive kernel stages into segments.
-// The payoff happens at codegen: within a segment, a stage's emit becomes a
+// pipeline references and grouping consecutive kernel stages into runs.
+// The payoff happens at codegen: within a run, a stage's emit becomes a
 // direct call to the next stage with scalar arguments, eliminating the
 // per-token arrays and queues the unfused runtime pays between stages.
 //
@@ -12,7 +12,7 @@
 // correct): a stage that isn't a compiled kernel or pipeline, or pipelines
 // nested more than eight deep.
 
-import { mapExpr, type FusedIR, type FusedSegment, type FusedStage, type ModuleIR, type PipelineIR, type ProcessIR, type ScalarExpr, type StageIR } from '../ir.js';
+import { mapExpr, type FusedIR, type FusedRun, type FusedStage, type ModuleIR, type PipelineIR, type ProcessIR, type ScalarExpr, type StageIR } from '../ir.js';
 
 export function fuseModule(mod: ModuleIR): ModuleIR {
   const byName = new Map(mod.processes.map((p) => [p.name, p]));
@@ -30,19 +30,19 @@ function fusePipeline(p: PipelineIR, byName: Map<string, ProcessIR>): ProcessIR 
   const flat = flatten(p.stages, byName, 0);
   if (flat === null) return p;
 
-  const segments: FusedSegment[] = [];
+  const runs: FusedRun[] = [];
   for (const r of flat) {
-    const last = segments[segments.length - 1];
+    const last = runs[runs.length - 1];
     if (r.k === 'kernel') {
       if (last?.k === 'kernels') last.stages.push(r.stage);
-      else segments.push({ k: 'kernels', stages: [r.stage] });
+      else runs.push({ k: 'kernels', stages: [r.stage] });
     } else if (r.k === 'sortBy' && last?.k === 'sortBy') {
-      segments[segments.length - 1] = { k: 'sortBy', keyIndexes: [...r.keyIndexes, ...last.keyIndexes] };
+      runs[runs.length - 1] = { k: 'sortBy', keyIndexes: [...r.keyIndexes, ...last.keyIndexes] };
     } else {
-      segments.push(r); // barrier stages pass through
+      runs.push(r); // barrier stages pass through
     }
   }
-  return { k: 'fused', name: p.name, paramWidth: p.paramWidth, segments };
+  return { k: 'fused', name: p.name, paramWidth: p.paramWidth, runs };
 }
 
 // Resolve stages to kernels, splicing nested pipelines (their stage-argument

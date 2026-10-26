@@ -8,7 +8,7 @@
 //     PipelineIR    a wiring diagram: StageIR stages by name with arguments,
 //                   or whole-stream builtins (sort, group, reduce, reverse…)
 //     FusedIR       a pipeline after passes/fuse.ts: nested pipelines inlined,
-//                   runs of kernels grouped into FusedSegments. A PipelineIR
+//                   runs of kernels grouped into FusedRuns. A PipelineIR
 //                   survives fusion only when fusion bailed.
 //   Stmt, ScalarExpr   inside a kernel, where everything is flattened to
 //                 scalars. Records and tuples are gone: a Bezier is six Reals,
@@ -105,17 +105,17 @@ export type StageIR =
   | { k: 'reduceBy'; width: number; keyIndexes: number[]; fields: { index: number; op: ScalarExpr }[] };
 
 // A pipeline after fusion (passes/fuse.ts): nested pipeline refs are inlined
-// and consecutive kernels are grouped into segments. Codegen turns each
-// kernel segment into one op whose stages call each other directly with
+// and consecutive kernels are grouped into runs. Codegen turns each
+// kernel run into one op whose stages call each other directly with
 // scalar arguments — no token arrays or queues between fused stages. SortBy
-// is a buffering barrier, so it always splits segments.
+// is a buffering barrier, so it always splits runs.
 export interface FusedIR {
   k: 'fused';
   name: string;
   paramWidth: number;
-  segments: FusedSegment[];
+  runs: FusedRun[];
 }
-export type FusedSegment =
+export type FusedRun =
   | { k: 'kernels'; stages: FusedStage[] }
   | Exclude<StageIR, { k: 'stage' }>; // whole-stream stages: the barriers (sortBy, groupBy, reduceBy, reverse), identity, dupCat, dupZip
 export interface FusedStage {
@@ -165,7 +165,7 @@ export interface TokenLayout {
 // A fused pipeline's input width: that of its first kernel, or of the
 // reduce that starts it. Null when nothing in it says.
 export function inputWidthOf(f: FusedIR): number | null {
-  for (const s of f.segments) {
+  for (const s of f.runs) {
     if (s.k === 'kernels') return s.stages[0].kernel.inputWidth;
     if (s.k === 'reduceBy') return s.width;
   }
@@ -181,11 +181,11 @@ export function fusedPipeline(mod: ModuleIR, name: string): FusedIR {
 }
 
 // Every kernel in a module, rewritten by f: on its own, or inside a fused
-// segment. A pipeline (left unfused only when fusion bailed) holds none.
+// run. A pipeline (left unfused only when fusion bailed) holds none.
 export function mapKernels(mod: ModuleIR, f: (k: KernelIR) => KernelIR): ModuleIR {
   const process = (p: ProcessIR): ProcessIR =>
     p.k === 'kernel' ? f(p)
-    : p.k === 'fused' ? { ...p, segments: p.segments.map((seg) => (seg.k === 'kernels' ? { ...seg, stages: seg.stages.map((st) => ({ ...st, kernel: f(st.kernel) })) } : seg)) }
+    : p.k === 'fused' ? { ...p, runs: p.runs.map((run) => (run.k === 'kernels' ? { ...run, stages: run.stages.map((st) => ({ ...st, kernel: f(st.kernel) })) } : run)) }
     : p;
   return { ...mod, processes: mod.processes.map(process) };
 }

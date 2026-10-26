@@ -69,7 +69,7 @@ describe('sort fusion', () => {
     const plain = compileLibrary([gezira('types.nl'), gezira('rasterize.nl')], { fuse: false });
     const r = fused.ir.processes.find((p) => p.name === 'Rasterize');
     if (!r || r.k !== 'fused') throw new Error('Rasterize should be fused');
-    expect(r.segments.filter((s) => s.k === 'sortBy')).toEqual([{ k: 'sortBy', keyIndexes: [1, 0] }]);
+    expect(r.runs.filter((s) => s.k === 'sortBy')).toEqual([{ k: 'sortBy', keyIndexes: [1, 0] }]);
     const path = [[0.2, 0.3, 5.1, 3.7, 9.8, 1.1], [9.8, 1.1, 4.4, 8.9, 0.2, 0.3]];
     expect(run(fused.api.Rasterize(), path)).toEqual(run(plain.api.Rasterize(), path));
   });

@@ -5,7 +5,7 @@
 import { bandSegments, META_BYTES, type Band, type Binding, type Plan, type Sink } from './lower.js';
 import { WORKGROUP_SIZE } from './wgsl.js';
 
-// The host's buffers for a run. `size` bounds a dynamic binding (every offset
+// The host's buffers for a dispatch. `size` bounds a dynamic binding (every offset
 // binds this many bytes).
 export interface Resources {
   meta: GPUBuffer;
@@ -15,10 +15,10 @@ export interface Resources {
   sink: Record<string, GPUBuffer>;
 }
 
-// One run of the plan: n input tokens, over a band of the grid (the same
-// band META was written with), with META and INBUF at these offsets when
-// the executor binds them dynamically.
-export interface Run {
+// One dispatch of the plan: n input tokens, over a band of the grid (the
+// same band META was written with), with META and INBUF at these offsets
+// when the executor binds them dynamically.
+export interface Dispatch {
   n: number;
   band: Band;
   metaOffset?: number;
@@ -30,13 +30,13 @@ export interface Executor {
   readonly grids: GPUBuffer[]; // plan.grids, cells × 4 bytes each
   readonly overflow: GPUBuffer;
   bind(res: Resources): GPUBindGroup[];
-  encode(enc: GPUCommandEncoder, groups: GPUBindGroup[], run: Run): void;
+  encode(enc: GPUCommandEncoder, groups: GPUBindGroup[], dispatch: Dispatch): void;
   /** Clear the grids' cells [from, from + count). */
   clearGrids(enc: GPUCommandEncoder, from: number, count: number): void;
   dispose(): void;
 }
 
-// `dynamic`: META and INBUF bind with per-run offsets (a presenter encoding
+// `dynamic`: META and INBUF bind with per-dispatch offsets (a presenter encoding
 // many paths into one submission); otherwise they bind whole.
 export function createExecutor(device: GPUDevice, plan: Plan, opts: { dynamic?: boolean } = {}): Executor {
   const dynamic = opts.dynamic ?? false;
@@ -81,10 +81,10 @@ export function createExecutor(device: GPUDevice, plan: Plan, opts: { dynamic?: 
       return plan.passes.map((p, i) =>
         device.createBindGroup({ layout: layouts[i], entries: p.bindings.map((b, j) => ({ binding: j, resource: resource(b) })) }));
     },
-    encode(enc, groups, run) {
+    encode(enc, groups, d) {
       plan.passes.forEach((p, i) => {
-        const offsets = p.bindings.filter(isDynamic).map((b) => (b.role === 'meta' ? run.metaOffset ?? 0 : run.inputOffset ?? 0));
-        const threads = p.over === 'tokens' ? run.n : bandSegments(run.band);
+        const offsets = p.bindings.filter(isDynamic).map((b) => (b.role === 'meta' ? d.metaOffset ?? 0 : d.inputOffset ?? 0));
+        const threads = p.over === 'tokens' ? d.n : bandSegments(d.band);
         if (threads === 0) return;
         const pass = enc.beginComputePass({ label: p.name });
         pass.setPipeline(pipelines[i]);

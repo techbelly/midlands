@@ -4,7 +4,7 @@
 // typed-array batching.
 //
 // Kernels themselves are generated code (js.ts: every kernel runs as a
-// segment, with feedback as a LIFO worklist — recursive subdivision runs
+// run of one, with feedback as a LIFO worklist — recursive subdivision runs
 // depth-first as iteration, not JS recursion). This module supplies the
 // builtin stages, composition, and the boundary to the host.
 
