@@ -17,6 +17,7 @@
     "check:present": "deno run --allow-read --allow-env --unstable-sloppy-imports demos/tools/check-present.ts",
     "check:lowering": "deno run --allow-read --allow-env --unstable-sloppy-imports demos/tools/check-lowering.ts",
     "check:samples": "deno run --allow-read --allow-env --unstable-sloppy-imports demos/tools/check-samples-gpu.ts",
+    "record:gpu": "deno run --allow-read --allow-write --allow-env --unstable-sloppy-imports demos/tools/check-lowering.ts --record && deno run --allow-read --allow-write --allow-env --unstable-sloppy-imports demos/tools/check-samples-gpu.ts --record",
     "check:tiger": "deno run --allow-read --allow-env --unstable-sloppy-imports demos/tools/check-tiger-gpu.ts",
     "check:paint": "deno run --allow-read --allow-env --unstable-sloppy-imports demos/tools/check-paint-gpu.ts",
     "check:tools": "deno check --unstable-sloppy-imports demos/tools/*.ts"

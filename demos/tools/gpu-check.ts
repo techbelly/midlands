@@ -3,10 +3,7 @@
 // comparisons with the CPU. Deno with WebGPU only; tsc skips demos/tools,
 // so `deno check demos/tools/*.ts` is their typecheck.
 
-import type { Plan } from '../../umgeni/src/gpu/lower.js';
-import { framePlan } from '../../umgeni/src/gpu/present.js';
 import { requestDevice } from '../../umgeni/src/gpu/device.js';
-import { fusedPipeline, type ModuleIR } from '../../umgeni/src/ir.js';
 
 export async function requireDevice(): Promise<GPUDevice> {
   const device = await requestDevice();
@@ -14,8 +11,7 @@ export async function requireDevice(): Promise<GPUDevice> {
   return device;
 }
 
-// The named fused pipeline, lowered to accumulate coverage over a W × H image.
-export const coveragePlan = (ir: ModuleIR, name: string, W: number, H: number): Plan => framePlan(fusedPipeline(ir, name), W, H);
+export { coveragePlan } from './gpu-scenarios.js';
 
 // A W × H rgba texture the presenter can draw into and a check can read.
 export const offscreenTexture = (device: GPUDevice, W: number, H: number): GPUTexture =>
@@ -43,32 +39,7 @@ export async function readTexture(device: GPUDevice, tex: GPUTexture, W: number,
   return px;
 }
 
-// Two coverage images: the largest and mean difference, and how many pixels
-// the CPU covers (a bound on what the check drew at all).
-export function coverageDiff(cpu: ArrayLike<number>, gpu: ArrayLike<number>): { max: number; mean: number; covered: number } {
-  let max = 0;
-  let sum = 0;
-  let covered = 0;
-  for (let i = 0; i < cpu.length; i++) {
-    const d = Math.abs(cpu[i] - gpu[i]);
-    max = Math.max(max, d);
-    sum += d;
-    if (cpu[i] > 0.5) covered++;
-  }
-  return { max, mean: sum / cpu.length, covered };
-}
-
-// The check: the two agree to the tolerance, and the CPU covered a plausible
-// number of pixels. Logs one line, throws naming what failed.
-export function compareCoverage(what: string, cpu: ArrayLike<number>, gpu: ArrayLike<number>, tolerance: number, covered: { min: number; max?: number }): void {
-  const d = coverageDiff(cpu, gpu);
-  if (d.covered < covered.min || (covered.max !== undefined && d.covered > covered.max)) {
-    const expected = covered.max === undefined ? `at least ${covered.min}` : `${covered.min}..${covered.max}`;
-    throw new Error(`${what}: ${d.covered} covered pixels, expected ${expected}`);
-  }
-  if (d.max > tolerance) throw new Error(`${what}: CPU and GPU disagree, max ${d.max.toFixed(4)} > ${tolerance}`);
-  console.log(`${what}: ok, ${d.covered} px covered, max diff ${d.max.toFixed(4)}`);
-}
+export { coverageDiff } from './gpu-scenarios.js';
 
 // Two rgba images, both packed as ImageData, compared on r, g and b: the
 // largest and mean channel difference, how many pixels differ at all, how

@@ -362,7 +362,10 @@ ancestors, and umgeni is.
   in two fonts and the whole tiger.
 - **The GPU against the CPU**, under Deno, which has WebGPU: the lowering
   checks above, the tiger, the paint shaders, the samples. These are
-  tolerance checks, for the reason in section 7.
+  tolerance checks, for the reason in section 7. The lowering and samples
+  checks also record the GPU's answers in the tree, and a Node test holds
+  the CPU to them, so a machine without a GPU still checks the lowering
+  against what a GPU last produced.
 - **The tiger's pixel checksum** and snapshots of the generated text, so a
   change that moves a pixel is a change someone meant.
 

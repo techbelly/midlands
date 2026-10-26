@@ -1,6 +1,7 @@
 // Node-side tests for the GPU backend's pure parts (classification, WGSL
 // generation, lowering). Actual GPU execution runs under Deno: the
-// `npm run check:*` scripts compare GPU output with the CPU's.
+// `npm run check:*` scripts compare GPU output with the CPU's, and
+// demos/test/gpu-oracle.test.ts holds the CPU to the GPU's recorded answers.
 
 import { describe, expect, it } from 'vitest';
 import { gezira, roda } from './sources.js';

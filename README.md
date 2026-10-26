@@ -39,6 +39,8 @@ npm run demo:serve    # build demos/dist and serve it
 The demos are a static site (`npm run demo:build` → `demos/dist`). They use
 WebGPU where the browser has it. The checks and benchmarks that need a real
 GPU run under [Deno](https://deno.com), which has WebGPU: see `package.json`.
+`npm run record:gpu` stores the GPU's answers in `demos/test/fixtures`, and
+`npm test` checks the CPU against them, so CI covers the lowering without a GPU.
 
 For syntax highlighting of Nile and Mooi in VS Code, link the extension in
 [tools/vscode/](tools/vscode/) into your extensions folder and reload:
