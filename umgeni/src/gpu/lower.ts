@@ -98,16 +98,17 @@ export function lowerPipeline(fused: FusedIR, opts: LowerOptions): Plan {
   if (extent.length < 1 || extent.length > 2) throw new LowerError(`'${name}': grids have one or two keys, given ${extent.length} extents`);
   const passes: Pass[] = [];
   const grids: string[] = [];
-  let repr: Grid | null = null; // null: Dense
   const inputWidth = inputWidthOf(fused) ?? (() => { throw new LowerError(`'${name}': cannot tell its input width`); })();
+  // A pass is the run of kernels since the last barrier, over tokens (the
+  // input) or over the segments of the grid the last GroupBy → ReduceBy made.
+  let grid: Grid | null = null;
   let width = inputWidth;
-  let pending: FusedStage[] = [];
-
-  const flush = (sink: Sink) => {
+  let kernels: FusedStage[] = [];
+  const closePass = (sink: Sink) => {
     const o = { name, paramWidth, cap: opts.stackCap ?? 128, sink };
-    passes.push(repr ? segmentsPass(repr, pending, o) : tokensPass(width, pending, o));
-    if (pending.length > 0) width = pending[pending.length - 1].kernel.outputWidth;
-    pending = [];
+    passes.push(grid ? segmentsPass(grid, kernels, o) : tokensPass(width, kernels, o));
+    if (kernels.length > 0) width = kernels[kernels.length - 1].kernel.outputWidth;
+    kernels = [];
   };
 
   const segs = fused.segments;
@@ -115,7 +116,7 @@ export function lowerPipeline(fused: FusedIR, opts: LowerOptions): Plan {
     const s = segs[i];
     if (s.k === 'identity') continue;
     if (s.k === 'kernels') {
-      pending.push(...s.stages);
+      kernels.push(...s.stages);
       continue;
     }
     if (s.k === 'groupBy') {
@@ -128,19 +129,19 @@ export function lowerPipeline(fused: FusedIR, opts: LowerOptions): Plan {
       }
       const covered = new Set([...s.keyIndexes, ...r.fields.map((f) => f.index)]);
       if (covered.size !== r.width) throw new LowerError(`'${name}': a grid holds keys and reduced fields only; the token has other fields too`);
-      const grid: Grid = { keys: s.keyIndexes, width: r.width, fields: r.fields.map((f) => ({ index: f.index, grid: `G${grids.length + r.fields.indexOf(f)}` })) };
-      grids.push(...grid.fields.map((f) => f.grid));
-      flush(gridSink(grid));
-      repr = grid;
+      const made: Grid = { keys: s.keyIndexes, width: r.width, fields: r.fields.map((f) => ({ index: f.index, grid: `G${grids.length + r.fields.indexOf(f)}` })) };
+      grids.push(...made.fields.map((f) => f.grid));
+      closePass(gridSink(made));
+      grid = made;
       width = r.width;
       i++; // the ReduceBy
       continue;
     }
     if (s.k === 'reduceBy') throw new LowerError(`'${name}': ReduceBy without a GroupBy before it`);
-    const nile = { sortBy: 'SortBy', reverse: 'Reverse', dupCat: 'DupCat', dupZip: 'DupZip' }[s.k];
-    throw new LowerError(`'${name}': ${nile} needs the whole stream in order, which has no parallel lowering`);
+    const written = { sortBy: 'SortBy', reverse: 'Reverse', dupCat: 'DupCat', dupZip: 'DupZip' }[s.k];
+    throw new LowerError(`'${name}': ${written} needs the whole stream in order, which has no parallel lowering`);
   }
-  flush(opts.sink);
+  closePass(opts.sink);
   return { name, passes, inputWidth, paramWidth, extent, cells: extent.reduce((a, b) => a * b, 1), grids };
 }
 
@@ -174,11 +175,52 @@ function carried(k: KernelIR, key: number): number | null {
   return null;
 }
 
+// What a kernel must declare to run one thread per token or per segment:
+// no prologue; a flush body, carried state, a scan or a window only over a
+// grouped stream, and then by the grid's major key. `key`: the input slot
+// carrying that key into this stage (null: a tokens pass). Returns the slot
+// carrying it out, for the next stage.
+function admit(k: KernelIR, key: number | null, pipeline: string): number | null {
+  const who = `'${k.name}' in '${pipeline}'`;
+  if (k.init.length > 0) throw new LowerError(`${who}: a prologue runs once per stream, which has no parallel lowering`);
+  if (key === null && k.epilogue.length > 0) throw new LowerError(`${who}: a flush body runs once per stream; it needs a segment (GroupBy → ReduceBy before it)`);
+  if (writesState(k)) {
+    const a = k.access;
+    if (key === null) throw new LowerError(`${who}: carries state across tokens; it needs a declared scan or window over a grouped stream (GroupBy → ReduceBy before it)`);
+    if (!a) throw new LowerError(`${who}: carries state across tokens without declaring a scan or window by the grid's major key`);
+    if (a.scan && a.scan.key !== key) throw new LowerError(`${who}: scans by a field that is not the grid's major key`);
+    if (a.window && a.window.key === null) throw new LowerError(`${who}: the window must declare its segment ('∷ … by @key') to run one segment per thread`);
+    if (a.window && a.window.key !== key) throw new LowerError(`${who}: windows by a field that is not the grid's major key carried through the stages before it`);
+  }
+  return key === null ? null : carried(k, key);
+}
+
+// Turns of a stage's loop before it gives up: a runaway feed must not hang
+// the GPU.
+const LOOP_GUARD = 1_000_000;
+
+// A stage whose body runs in a guarded loop: `before` it (the token array
+// and its setup), `top` at the start of every turn, `after` the body.
+const loopFn = (j: number, params: string, before: string[], top: string[], after: string[], body: string): string => [
+  `fn st${j}(${params}) {`,
+  ...before,
+  `  var again = false;`,
+  `  var guard = 0u;`,
+  `  loop {`,
+  `    if (guard > ${LOOP_GUARD}u) { break; }`,
+  `    guard += 1u;`,
+  ...top,
+  body,
+  ...after,
+  `  }`,
+  `}`,
+].join('\n');
+
 // Stage j's body as fn st{j}(a0, …): emit calls st{j+1} (or the sink), feed
 // pushes onto the stage's worklist, state is the stage's private array.
-// `key`: the input slot carrying the grid's major key (segments passes), so a
-// stage declaring a scan or window can be checked against it.
-function genStages(stages: FusedStage[], width: number, o: PassOptions, key: number | null): Stages {
+// `key`: the input slot carrying the grid's major key (segments passes),
+// checked by admit and followed through the stages.
+function genStages(stages: FusedStage[], width: number, o: PassOptions, majorKey: number | null): Stages {
   const P: WgslEnv = { param: (i) => `P[${i}u]`, state: () => fail('state'), input: () => fail('input'), emit: () => '', feed: () => '' };
   const out: Stages = { decls: [], fns: [], init: [], flush: [], feeds: false };
   const call = (j: number, vals: string[]) => `st${j}(${vals.join(', ')});`;
@@ -188,20 +230,10 @@ function genStages(stages: FusedStage[], width: number, o: PassOptions, key: num
     return out;
   }
   const fns: string[] = [];
+  let key = majorKey;
   stages.forEach((stage, j) => {
     const k = stage.kernel;
-    const who = `'${k.name}' in '${o.name}'`;
-    if (k.init.length > 0) throw new LowerError(`${who}: a prologue runs once per stream, which has no parallel lowering`);
-    if (key === null && k.epilogue.length > 0) throw new LowerError(`${who}: a flush body runs once per stream; it needs a segment (GroupBy → ReduceBy before it)`);
-    if (writesState(k)) {
-      const a = k.access;
-      if (key === null) throw new LowerError(`${who}: carries state across tokens; it needs a declared scan or window over a grouped stream (GroupBy → ReduceBy before it)`);
-      if (!a) throw new LowerError(`${who}: carries state across tokens without declaring a scan or window by the grid's major key`);
-      if (a.scan && a.scan.key !== key) throw new LowerError(`${who}: scans by a field that is not the grid's major key`);
-      if (a.window && a.window.key === null) throw new LowerError(`${who}: the window must declare its segment ('∷ … by @key') to run one segment per thread`);
-      if (a.window && a.window.key !== key) throw new LowerError(`${who}: windows by a field that is not the grid's major key carried through the stages before it`);
-    }
-    if (key !== null) key = carried(k, key);
+    key = admit(k, key, o.name);
 
     const args = stage.args.flat().map((a) => wgslExpr(a, P));
     const shape = stageShape(k.body); // passes/tail.ts
@@ -218,43 +250,23 @@ function genStages(stages: FusedStage[], width: number, o: PassOptions, key: num
     out.decls.push(`var<private> S${j} : array<f32, ${Math.max(1, k.stateInit.length)}>;`);
     k.stateInit.forEach((e, i) => out.init.push(`  S${j}[${i}] = ${wgslExpr(e, env)};`));
     const params = Array.from({ length: w }, (_, i) => `a${i} : f32`).join(', ');
+    const T = `  var T${j} : array<f32, ${w}>;`;
     if (shape === 'loop') {
-      fns.push([
-        `fn st${j}(${params}) {`,
-        `  var T${j} : array<f32, ${w}>;`,
-        ...Array.from({ length: w }, (_, i) => `  T${j}[${i}] = a${i};`),
-        `  var again = false;`,
-        `  var guard = 0u;`,
-        `  loop {`,
-        `    if (guard > 1000000u) { break; }`,
-        `    guard += 1u;`,
-        wgslBody(k.body, '    ', env),
-        `    break;`,
-        `  }`,
-        `}`,
-      ].join('\n'));
+      // The token into T, then the body, round again on a tail feed, else done.
+      fns.push(loopFn(j, params, [T, ...Array.from({ length: w }, (_, i) => `  T${j}[${i}] = a${i};`)], [], [`    break;`], wgslBody(k.body, '    ', env)));
     } else if (shape === 'worklist') {
+      // The token onto the worklist; each turn pops the next into T, unless
+      // the last turn ended in a tail feed, which left the next in T already.
       out.decls.push(`var<private> F${j} : array<f32, ${o.cap * w}>;`, `var<private> sp${j} : u32;`);
       out.init.push(`  sp${j} = 0u;`);
-      fns.push([
-        `fn st${j}(${params}) {`,
-        push(j, w, o.cap, Array.from({ length: w }, (_, i) => `a${i}`), '  '),
-        `  var T${j} : array<f32, ${w}>;`,
-        `  var again = false;`,
-        `  var guard = 0u;`,
-        `  loop {`,
-        `    if (guard > 1000000u) { break; }`,
-        `    guard += 1u;`,
+      fns.push(loopFn(j, params, [push(j, w, o.cap, Array.from({ length: w }, (_, i) => `a${i}`), '  '), T], [
         `    if (!again) {`,
         `      if (sp${j} == 0u) { break; }`,
         `      sp${j} -= 1u;`,
         `      for (var k = 0u; k < ${w}u; k += 1u) { T${j}[k] = F${j}[sp${j} * ${w}u + k]; }`,
         `    }`,
         `    again = false;`,
-        wgslBody(k.body, '    ', env),
-        `  }`,
-        `}`,
-      ].join('\n'));
+      ], [], wgslBody(k.body, '    ', env)));
     } else {
       fns.push(`fn st${j}(${params}) {\n${wgslBody(k.body, '  ', env)}\n}`);
     }
