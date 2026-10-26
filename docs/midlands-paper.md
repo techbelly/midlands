@@ -305,8 +305,8 @@ Each construct promises exactly as much as the back end needs and no more.
   reads tokens in arrival order after a plain `GroupBy` is a compile-time
   error naming the word to add.
 - `ReduceBy (…; a ⊕ +, h ⊕ +)` merges each group with `+`. The operator is
-  declared so the compiler can check that it is commutative, which is what
-  makes the missing order harmless.
+  declared so the compiler can check it against the short list of operators
+  it knows to be commutative, which is what makes the missing order harmless.
 - `with H = +[ h ] by @y` is a running sum of `h`, restarting at each new
   `y`. The segment structure of the scan is in the source.
 - `p ∷ q by @y` is a window of adjacent tokens within a row, and `p ∷ ∅`
@@ -335,13 +335,18 @@ refused with a message naming the declaration that would allow it, and the
 page falls back to the CPU and says why.
 
 One consequence is worth a paragraph. The GPU and CPU rasterizers agree to
-within rounding, not exactly, partly because the GPU works in single
-precision and partly because floating-point addition is not associative: `(a+b)+c` and `a+(b+c)` can differ in the last
-bit. By declaring `+` as the reducer, the source grants a freedom that real
-addition does not quite have. The resolution is that the declaration
-defines what counts as correct: any grouping of the sum is an answer. The
-bit-exact test the project uses everywhere else was, for this one stage,
-over-strict.
+within rounding, not exactly. The GPU works in single precision where the
+CPU works in double, and each contribution to a cell is rounded to a fixed
+point, 1/65536, before it is added, because the atomic add is on integers.
+Floating-point addition is not associative, `(a+b)+c` and `a+(b+c)` can
+differ in the last bit, so by declaring `+` as the reducer the source
+grants a freedom that real addition does not quite have. The fixed-point
+sum happens to have it exactly: integer addition is associative, so the
+threads' order cannot change the total. What remains is the quantisation
+and the precision, and the resolution is the same either way: the
+declaration defines what counts as correct, and any grouping of the sum is
+an answer. The bit-exact test the project uses everywhere else was, for
+this one stage, over-strict.
 
 ## 8. How we know it is right
 
