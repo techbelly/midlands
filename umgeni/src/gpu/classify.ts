@@ -13,9 +13,8 @@ import { anyStmt, type KernelIR } from '../ir.js';
 export function isMapKernel(k: KernelIR): boolean {
   if (k.init.length > 0 || k.epilogue.length > 0) return false;
   if (anyStmt(k.body, (s) => s.k === 'feed' || s.k === 'assign' || s.k === 'setState')) return false;
-  const emits = k.body.filter((s) => s.k === 'emit');
-  if (emits.length !== 1 || k.body[k.body.length - 1].k !== 'emit') return false;
-  // No emit hidden in a branch: every token emits exactly once.
-  if (anyStmt(k.body.slice(0, -1), (s) => s.k === 'emit')) return false;
-  return true;
+  // The last statement emits, and nothing before it does (not in a branch
+  // either): every token emits exactly once.
+  if (k.body[k.body.length - 1]?.k !== 'emit') return false;
+  return !anyStmt(k.body.slice(0, -1), (s) => s.k === 'emit');
 }

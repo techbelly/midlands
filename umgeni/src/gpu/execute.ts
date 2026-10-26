@@ -2,15 +2,8 @@
 // dispatches, plus the two sinks a host can give the lowering for the
 // pipeline's final emits. Nothing here knows which Nile it is running.
 
-import { META_BYTES, type Binding, type Plan, type Sink } from './lower.js';
+import { bandSegments, META_BYTES, type Band, type Binding, type Plan, type Sink } from './lower.js';
 import { WORKGROUP_SIZE } from './wgsl.js';
-
-// The uniform every pass reads (META_WGSL in lower.ts): token count, the grid's
-// extents, and the band to work on.
-export function metaWords(n: number, extent: number[], band: { segBase: number; segEnd: number; minBase: number; minEnd: number }): Uint32Array<ArrayBuffer> {
-  return new Uint32Array([n, extent[0], extent[1] ?? 1, band.segBase, band.segEnd, band.minBase, band.minEnd, 0]);
-}
-export const wholeGrid = (extent: number[]) => ({ segBase: 0, segEnd: extent[0], minBase: 0, minEnd: extent[1] ?? 1 });
 
 // The host's buffers for a run. `size` bounds a dynamic binding (every offset
 // binds this many bytes).
@@ -22,9 +15,12 @@ export interface Resources {
   sink: Record<string, GPUBuffer>;
 }
 
+// One run of the plan: n input tokens, over a band of the grid (the same
+// band META was written with), with META and INBUF at these offsets when
+// the executor binds them dynamically.
 export interface Run {
-  n: number; // input tokens
-  segments: number; // major-key buckets in the band
+  n: number;
+  band: Band;
   metaOffset?: number;
   inputOffset?: number;
 }
@@ -88,7 +84,7 @@ export function createExecutor(device: GPUDevice, plan: Plan, opts: { dynamic?: 
     encode(enc, groups, run) {
       plan.passes.forEach((p, i) => {
         const offsets = p.bindings.filter(isDynamic).map((b) => (b.role === 'meta' ? run.metaOffset ?? 0 : run.inputOffset ?? 0));
-        const threads = p.over === 'tokens' ? run.n : run.segments;
+        const threads = p.over === 'tokens' ? run.n : bandSegments(run.band);
         if (threads === 0) return;
         const pass = enc.beginComputePass({ label: p.name });
         pass.setPipeline(pipelines[i]);

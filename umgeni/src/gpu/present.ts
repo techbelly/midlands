@@ -17,8 +17,8 @@
 // per path; rasterizing all paths in one batch is the next step.
 
 import type { FusedIR } from '../ir.js';
-import { coverageSink, createExecutor, metaWords, type Executor } from './execute.js';
-import { lowerPipeline, META_BYTES, type Plan } from './lower.js';
+import { coverageSink, createExecutor, type Executor } from './execute.js';
+import { bandSegments, lowerPipeline, META_BYTES, metaWords, wholeGrid, type Band, type Plan } from './lower.js';
 
 export interface PathBatch {
   tokens: Float32Array<ArrayBuffer>; // n × plan.inputWidth flat, already transformed/clipped
@@ -96,7 +96,13 @@ export function createPresenter(
     if (!lane) throw new Error(`no plan '${p.plan}' in this presenter`);
     return lane;
   };
-  const aligned = (p: PathBatch) => Math.ceil((p.n * laneOf(p).plan.inputWidth * 4) / sAlign) * sAlign;
+  // A path in a frame: its lane, the band of the frame it touches, and the
+  // bytes its tokens take at the storage alignment.
+  interface Item { p: PathBatch; lane: Lane; band: Band; bytes: number }
+  const item = (p: PathBatch): Item => {
+    const lane = laneOf(p);
+    return { p, lane, band: bandOf(p, lane.plan.inputWidth), bytes: Math.ceil((p.n * lane.plan.inputWidth * 4) / sAlign) * sAlign };
+  };
 
   const frameBuf = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   device.queue.writeBuffer(frameBuf, 0, new Uint32Array([width, height, 0, 0]));
@@ -128,12 +134,12 @@ export function createPresenter(
   const release = (b: FrameBuffers) => { for (const buf of [b.meta, b.color, b.input]) buf.destroy(); };
 
   // Buffers that hold these paths: the current ones if they fit, else larger.
-  function ensure(paths: PathBatch[]): FrameBuffers {
+  function ensure(items: Item[]): FrameBuffers {
     let needIn = 0;
     let maxBytes = 4096;
-    for (const p of paths) {
-      needIn += aligned(p);
-      maxBytes = Math.max(maxBytes, aligned(p));
+    for (const it of items) {
+      needIn += it.bytes;
+      maxBytes = Math.max(maxBytes, it.bytes);
     }
     // Every path binds maxPathBytes at its own offset, so the buffer must
     // extend that far past the last offset — not just hold the paths. (Short
@@ -141,18 +147,19 @@ export function createPresenter(
     // dropped: the tiger went black at 4× zoom.)
     maxBytes = Math.max(maxBytes, buffers?.maxPathBytes ?? 0);
     needIn += maxBytes;
-    if (buffers && paths.length <= buffers.pathCap && needIn <= buffers.inCap && maxBytes <= buffers.maxPathBytes) return buffers;
+    if (buffers && items.length <= buffers.pathCap && needIn <= buffers.inCap && maxBytes <= buffers.maxPathBytes) return buffers;
     const old = buffers;
-    buffers = allocate(Math.max(paths.length, old?.pathCap ?? 0, 64), Math.max(needIn, (old?.inCap ?? 0) * 2, 1 << 20), maxBytes);
+    buffers = allocate(Math.max(items.length, old?.pathCap ?? 0, 64), Math.max(needIn, (old?.inCap ?? 0) * 2, 1 << 20), maxBytes);
     if (old) release(old);
     return buffers;
   }
 
-  // A path's bounding box, as a band of rows and a range of columns, each
-  // padded a pixel; or the whole frame.
-  function box(p: PathBatch): Box {
-    if (opts.disableBands) return { r0: 0, r1: height, c0: 0, c1: width };
-    const w = laneOf(p).plan.inputWidth;
+  // The band of the frame a path touches: its bounding box padded a pixel,
+  // rows as segments and columns as the minor key; or the whole frame. A
+  // token is (x, y) pairs throughout (a Bezier is three points), so every
+  // even slot is an x and every odd one a y.
+  function bandOf(p: PathBatch, w: number): Band {
+    if (opts.disableBands) return wholeGrid(first.extent);
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     for (let j = 0; j < p.n * w; j += 2) {
       const px = p.tokens[j], py = p.tokens[j + 1];
@@ -161,27 +168,24 @@ export function createPresenter(
       if (py < y0) y0 = py;
       if (py > y1) y1 = py;
     }
-    const r0 = Math.max(0, Math.floor(y0) - 1);
-    const c0 = Math.max(0, Math.floor(x0) - 1);
-    return { r0, r1: Math.max(r0, Math.min(height, Math.ceil(y1) + 2)), c0, c1: Math.max(c0, Math.min(width, Math.ceil(x1) + 2)) };
+    const segBase = Math.max(0, Math.floor(y0) - 1);
+    const minBase = Math.max(0, Math.floor(x0) - 1);
+    return { segBase, segEnd: Math.max(segBase, Math.min(height, Math.ceil(y1) + 2)), minBase, minEnd: Math.max(minBase, Math.min(width, Math.ceil(x1) + 2)) };
   }
 
   return {
     frame(paths, target) {
-      const drawable = paths.filter((p) => p.n > 0);
-      const b = ensure(drawable);
+      const items = paths.filter((p) => p.n > 0).map(item);
+      const b = ensure(items);
       // Upload per-path meta, colours and tokens at aligned offsets.
-      const boxes = drawable.map(box);
       const inOffsets: number[] = [];
       let at = 0;
-      drawable.forEach((p, i) => {
-        const { r0, r1, c0, c1 } = boxes[i];
-        const { plan } = laneOf(p);
+      items.forEach(({ p, lane, band, bytes }, i) => {
         inOffsets.push(at);
-        device.queue.writeBuffer(b.meta, i * uStride, metaWords(p.n, plan.extent, { segBase: r0, segEnd: r1, minBase: c0, minEnd: c1 }));
+        device.queue.writeBuffer(b.meta, i * uStride, metaWords(p.n, lane.plan.extent, band));
         device.queue.writeBuffer(b.color, i * uStride, new Float32Array([p.color[0], p.color[1], p.color[2], p.color[3] ?? 1]));
-        device.queue.writeBuffer(b.input, at, p.tokens, 0, p.n * plan.inputWidth);
-        at += aligned(p);
+        device.queue.writeBuffer(b.input, at, p.tokens, 0, p.n * lane.plan.inputWidth);
+        at += bytes;
       });
 
       const enc = device.createCommandEncoder({ label: 'present-frame' });
@@ -193,15 +197,13 @@ export function createPresenter(
       }).end();
       // Each path clears, computes and draws only its own row band: rows
       // outside it hold earlier paths' (or frames') coverage.
-      drawable.forEach((p, i) => {
-        const bx = boxes[i];
-        const rows = bx.r1 - bx.r0;
-        if (rows === 0 || bx.c1 === bx.c0) return;
-        const { name, executor } = laneOf(p);
-        executor.clearGrids(enc, bx.r0 * width, rows * width);
-        enc.clearBuffer(cov, bx.r0 * width * 4, rows * width * 4);
-        executor.encode(enc, b.groups[name], { n: p.n, segments: rows, metaOffset: i * uStride, inputOffset: inOffsets[i] });
-        compositor.draw(enc, target, b.composite, i * uStride, bx);
+      items.forEach(({ p, lane, band }, i) => {
+        const rows = bandSegments(band);
+        if (rows === 0 || band.minEnd === band.minBase) return;
+        lane.executor.clearGrids(enc, band.segBase * width, rows * width);
+        enc.clearBuffer(cov, band.segBase * width * 4, rows * width * 4);
+        lane.executor.encode(enc, b.groups[lane.name], { n: p.n, band, metaOffset: i * uStride, inputOffset: inOffsets[i] });
+        compositor.draw(enc, target, b.composite, i * uStride, band);
       });
       device.queue.submit([enc.finish()]); // one submission, zero fences
     },
@@ -214,10 +216,8 @@ export function createPresenter(
   };
 }
 
-interface Box { r0: number; r1: number; c0: number; c1: number }
-
 // The composite pass: a fullscreen draw of the coverage in a path's colour
-// (or paint), blended onto the target and scissored to the path's box.
+// (or paint), blended onto the target and scissored to the path's band.
 function createCompositor(device: GPUDevice, format: GPUTextureFormat, paint: string | undefined, frameBuf: GPUBuffer, cov: GPUBuffer) {
   const layout = device.createBindGroupLayout({
     entries: [
@@ -255,11 +255,11 @@ function createCompositor(device: GPUDevice, format: GPUTextureFormat, paint: st
           { binding: 2, resource: { buffer: color, size: 16 } },
         ],
       }),
-    draw(enc: GPUCommandEncoder, target: GPUTextureView, bind: GPUBindGroup, colorOffset: number, box: Box): void {
+    draw(enc: GPUCommandEncoder, target: GPUTextureView, bind: GPUBindGroup, colorOffset: number, band: Band): void {
       const rp = enc.beginRenderPass({ colorAttachments: [{ view: target, loadOp: 'load', storeOp: 'store' }] });
       rp.setPipeline(pipeline);
       rp.setBindGroup(0, bind, [colorOffset]);
-      rp.setScissorRect(box.c0, box.r0, box.c1 - box.c0, box.r1 - box.r0);
+      rp.setScissorRect(band.minBase, band.segBase, band.minEnd - band.minBase, bandSegments(band));
       rp.draw(3);
       rp.end();
     },

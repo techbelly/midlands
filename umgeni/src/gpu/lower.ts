@@ -86,6 +86,21 @@ export const META_WGSL = 'struct Meta { n : u32, major : u32, minor : u32, segBa
 export const META_BYTES = 32;
 const META: Binding = { name: 'META', role: 'meta', access: 'uniform', type: 'Meta' };
 
+// The part of the grid a run works on: segments [segBase, segEnd) of the
+// major key, [minBase, minEnd) of the minor. A segments pass runs one thread
+// per segment of its band.
+export interface Band {
+  segBase: number;
+  segEnd: number;
+  minBase: number;
+  minEnd: number;
+}
+export const wholeGrid = (extent: number[]): Band => ({ segBase: 0, segEnd: extent[0], minBase: 0, minEnd: extent[1] ?? 1 });
+export const bandSegments = (b: Band): number => b.segEnd - b.segBase;
+// The uniform's words, as META_WGSL lays them out.
+export const metaWords = (n: number, extent: number[], band: Band): Uint32Array<ArrayBuffer> =>
+  new Uint32Array([n, extent[0], extent[1] ?? 1, band.segBase, band.segEnd, band.minBase, band.minEnd, 0]);
+
 interface Grid {
   keys: number[]; // token slots, major first
   fields: { index: number; grid: string }[];
@@ -98,7 +113,8 @@ export function lowerPipeline(fused: FusedIR, opts: LowerOptions): Plan {
   if (extent.length < 1 || extent.length > 2) throw new LowerError(`'${name}': grids have one or two keys, given ${extent.length} extents`);
   const passes: Pass[] = [];
   const grids: string[] = [];
-  const inputWidth = inputWidthOf(fused) ?? (() => { throw new LowerError(`'${name}': cannot tell its input width`); })();
+  const inputWidth = inputWidthOf(fused);
+  if (inputWidth === null) throw new LowerError(`'${name}': cannot tell its input width`);
   // A pass is the run of kernels since the last barrier, over tokens (the
   // input) or over the segments of the grid the last GroupBy → ReduceBy made.
   let grid: Grid | null = null;
@@ -129,7 +145,7 @@ export function lowerPipeline(fused: FusedIR, opts: LowerOptions): Plan {
       }
       const covered = new Set([...s.keyIndexes, ...r.fields.map((f) => f.index)]);
       if (covered.size !== r.width) throw new LowerError(`'${name}': a grid holds keys and reduced fields only; the token has other fields too`);
-      const made: Grid = { keys: s.keyIndexes, width: r.width, fields: r.fields.map((f) => ({ index: f.index, grid: `G${grids.length + r.fields.indexOf(f)}` })) };
+      const made: Grid = { keys: s.keyIndexes, width: r.width, fields: r.fields.map((f, i) => ({ index: f.index, grid: `G${grids.length + i}` })) };
       grids.push(...made.fields.map((f) => f.grid));
       closePass(gridSink(made));
       grid = made;
@@ -159,7 +175,7 @@ interface Stages {
   fns: string[]; // st0…, fl0…: callees first
   init: string[]; // at thread start
   flush: string[]; // at segment end
-  feeds: boolean;
+  overflows: boolean; // some stage has a worklist, which can overflow
 }
 
 const writesState = (k: KernelIR) => anyStmt([...k.body, ...k.epilogue], (s) => s.k === 'setState');
@@ -170,7 +186,7 @@ function carried(k: KernelIR, key: number): number | null {
   const emits = [...allStmts(k.body)].flatMap((s) => (s.k === 'emit' ? [s.values] : []));
   if (emits.length === 0) return null;
   for (let j = 0; j < k.outputWidth; j++) {
-    if (emits.every((v) => v[j].k === 'input' && (v[j] as { index: number }).index === key)) return j;
+    if (emits.every((v) => { const x = v[j]; return x.k === 'input' && x.index === key; })) return j;
   }
   return null;
 }
@@ -222,7 +238,7 @@ const loopFn = (j: number, params: string, before: string[], top: string[], afte
 // checked by admit and followed through the stages.
 function genStages(stages: FusedStage[], width: number, o: PassOptions, majorKey: number | null): Stages {
   const P = paramsOnly((i) => `P[${i}u]`, fail);
-  const out: Stages = { decls: [], fns: [], init: [], flush: [], feeds: false };
+  const out: Stages = { decls: [], fns: [], init: [], flush: [], overflows: false };
   const call = (j: number, vals: string[]) => `st${j}(${vals.join(', ')});`;
   if (stages.length === 0) {
     const args = Array.from({ length: width }, (_, i) => `a${i}`);
@@ -237,13 +253,13 @@ function genStages(stages: FusedStage[], width: number, o: PassOptions, majorKey
 
     const args = stage.args.flat().map((a) => wgslExpr(a, P));
     const shape = stageShape(k.body); // passes/tail.ts
-    const feeds = shape !== 'straight';
-    out.feeds ||= shape === 'worklist';
+    const inT = shape !== 'straight'; // the token lives in T, round after round
+    out.overflows ||= shape === 'worklist';
     const w = k.inputWidth;
     const env: WgslEnv = {
       param: (i) => args[i],
       state: (i) => `S${j}[${i}]`,
-      input: (i) => (feeds ? `T${j}[${i}u]` : `a${i}`),
+      input: (i) => (inT ? `T${j}[${i}u]` : `a${i}`),
       emit: (vals, ind) => (j + 1 < stages.length ? `${ind}${call(j + 1, vals)}` : o.sink.emit(vals, ind)),
       feed: (vals, ind, tail) => (tail ? again(j, vals, ind) : push(j, w, o.cap, vals, ind)),
     };
@@ -337,7 +353,7 @@ function shader(title: string, bindings: Binding[], s: Stages, main: string[]): 
 function tokensPass(width: number, stages: FusedStage[], o: PassOptions): Pass {
   const s = genStages(stages, width, o, null);
   const INBUF: Binding = { name: 'INBUF', role: 'input', access: 'read', type: 'array<f32>' };
-  const bindings = [META, INBUF, ...(o.paramWidth > 0 ? [PARAMS] : []), ...(s.feeds ? [OVERFLOW] : []), ...o.sink.bindings];
+  const bindings = [META, INBUF, ...(o.paramWidth > 0 ? [PARAMS] : []), ...(s.overflows ? [OVERFLOW] : []), ...o.sink.bindings];
   const names = stages.map((st) => st.name).join(' → ') || '(→)';
   const main = [
     `  let i = gid.x;`,
@@ -352,7 +368,7 @@ function tokensPass(width: number, stages: FusedStage[], o: PassOptions): Pass {
 function segmentsPass(g: Grid, stages: FusedStage[], o: PassOptions): Pass {
   const s = genStages(stages, g.width, o, g.keys[0]);
   const reads = g.fields.map((f): Binding => ({ name: f.grid, role: 'grid', access: 'read', type: 'array<i32>' }));
-  const bindings = [META, ...(o.paramWidth > 0 ? [PARAMS] : []), ...reads, ...(s.feeds ? [OVERFLOW] : []), ...o.sink.bindings];
+  const bindings = [META, ...(o.paramWidth > 0 ? [PARAMS] : []), ...reads, ...(s.overflows ? [OVERFLOW] : []), ...o.sink.bindings];
   const names = stages.map((st) => st.name).join(' → ') || '(→)';
   const slot = (i: number): string => {
     const f = g.fields.find((x) => x.index === i);

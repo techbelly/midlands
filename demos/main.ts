@@ -20,7 +20,7 @@ import { paintSpans, type RGB } from './src/vector/spans.js';
 import sourceSerif from './fonts/SourceSerif4.ttf';
 // Twemoji Mozilla: CC-BY 4.0 art (fonts/TWEMOJI-LICENSE.md)
 import twemoji from './fonts/Twemoji.Mozilla.ttf';
-import { createRasterHost, type GpuRasterizer } from '../umgeni/src/gpu/raster.js';
+import { createCoverageReadback, type CoverageReadback } from '../umgeni/src/gpu/readback.js';
 import { createPresenter, framePlan, type Presenter } from '../umgeni/src/gpu/present.js';
 import { configureCanvas, gpuDevice, showOnly } from './src/gpu-page.js';
 import { compileMs, nile, nileWasm, sources, RasterizePixelsIR } from './nl/text.nl-lib';
@@ -173,7 +173,7 @@ function drawCoverage(buf: ArrayLike<number>): number {
 
 interface Gpu {
   device: GPUDevice;
-  raster: GpuRasterizer;
+  raster: CoverageReadback;
   presenter: Presenter;
   context: GPUCanvasContext;
 }
@@ -192,7 +192,7 @@ async function ensureGpu(): Promise<Gpu | null> {
   gpuState = {
     device,
     context: target.context,
-    raster: createRasterHost(device, plan),
+    raster: createCoverageReadback(device, plan),
     presenter: createPresenter(device, plan, { format: target.format }), // one black path
   };
   return gpuState;

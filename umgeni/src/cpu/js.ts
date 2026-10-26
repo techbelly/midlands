@@ -8,7 +8,7 @@
 import { anyStmt, inputWidthOf, opCount, type FusedIR, type FusedSegment, type FusedStage, type KernelIR, type ModuleIR, type PipelineIR, type ScalarExpr, type Stmt } from '../ir.js';
 import { compilePipeline, inWasm } from './wasm.js';
 import { stageShape } from '../passes/tail.js';
-import { renderCond, renderExpr, type Dialect } from '../scalar.js';
+import { renderCond, renderExpr, type Dialect, sanitize } from '../scalar.js';
 
 export interface CodegenOptions {
   // Emit conditions as JS booleans (`a < b`) instead of round-tripping
@@ -27,9 +27,7 @@ export interface CodegenOptions {
 // Local names come from Nile identifiers (letters/digits, an optional prime)
 // plus '#n' leaf suffixes from elaboration. Nile identifiers contain no
 // underscore, so the mangled forms cannot collide.
-function mangle(name: string): string {
-  return '_' + name.replace(/'/g, '_p').replace(/#/g, '_');
-}
+const mangle = (name: string): string => '_' + sanitize(name);
 
 // How slot references and emit/feed render: the standalone-kernel default is
 // P/S/IN arrays with runtime emit/feed; fused stages rebind these (arguments
@@ -58,7 +56,7 @@ const jsDialect = (o: CodegenOptions, env: GenEnv): Dialect => ({
     e.k === 'param' ? env.param(e.index)
     : e.k === 'state' ? env.state(e.index)
     : e.k === 'input' ? env.input(e.index)
-    : mangle((e as { name: string }).name),
+    : mangle(e.name),
   ofBool: (c) => `(${c} ? 1 : 0)`,
   truthy: (x) => `(${x} !== 0)`,
   select: (c, a, b) => `(${c} ? ${a} : ${b})`,

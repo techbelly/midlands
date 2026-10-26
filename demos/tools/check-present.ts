@@ -7,7 +7,7 @@
 // Run: npm run check:present  (deno, with WebGPU)
 
 import { compileLibraryFile } from '../src/sources.js';
-import { createRasterHost } from '../../umgeni/src/gpu/raster.js';
+import { createCoverageReadback } from '../../umgeni/src/gpu/readback.js';
 import { createPresenter } from '../../umgeni/src/gpu/present.js';
 import { textBeziers, textSpansParams } from '../src/text/host.js';
 import { coveragePlan, offscreenTexture, readTexture, requireDevice } from './gpu-check.js';
@@ -26,7 +26,7 @@ const device = await requireDevice();
 const plan = coveragePlan(library.ir, 'RasterizePixels', W, H);
 
 // Reference: compute-only coverage (one fence).
-const raster = createRasterHost(device, plan);
+const raster = createCoverageReadback(device, plan);
 const cov = await raster.render(beziers, n);
 
 // Presenter into an offscreen texture (no fence in frame()).

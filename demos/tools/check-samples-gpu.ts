@@ -12,7 +12,7 @@
 // Run: npm run check:samples  (deno, with WebGPU)
 
 import { compileLibraryFile } from '../src/sources.js';
-import { createRasterHost, readAppended } from '../../umgeni/src/gpu/raster.js';
+import { createCoverageReadback, readAppended } from '../../umgeni/src/gpu/readback.js';
 import { lowerPipeline } from '../../umgeni/src/gpu/lower.js';
 import { appendSink } from '../../umgeni/src/gpu/execute.js';
 import { fusedPipeline } from '../../umgeni/src/ir.js';
@@ -46,7 +46,7 @@ const W = 64, H = 64;
 // 1. The even-odd rule: a square wound twice is a ring of about 1600 pixels.
 {
   const twice = [...square(4, 4, 54, 54), ...square(14, 14, 44, 44)];
-  const gpu = createRasterHost(device, coveragePlan(library.ir, 'RasterizePixelsEvenOdd', W, H));
+  const gpu = createCoverageReadback(device, coveragePlan(library.ir, 'RasterizePixelsEvenOdd', W, H));
   const cov = await gpu.render(new Float32Array(twice.flat()), twice.length);
   if (gpu.overflowed()) throw new Error('RasterizePixelsEvenOdd: worklist overflow');
   const cpu = paintCoverage(nile.RasterizeEvenOdd().run(twice), W, H);

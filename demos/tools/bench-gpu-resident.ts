@@ -9,7 +9,7 @@
 // Run: npm run bench:gpu:resident   (Deno; panics at exit — wgpu teardown bug)
 
 import { compileLibraryFile } from '../src/sources.js';
-import { createRasterHost } from '../../umgeni/src/gpu/raster.js';
+import { createCoverageReadback } from '../../umgeni/src/gpu/readback.js';
 import { paintCoverage, textBeziers, textSpansParams } from '../src/text/host.js';
 import { coverageDiff, coveragePlan, requireDevice } from './gpu-check.js';
 
@@ -48,7 +48,7 @@ for (const c of CASES) {
   const n = flat.length / 6;
   const beziers = Array.from({ length: n }, (_, i) => Array.from(flat.subarray(i * 6, i * 6 + 6)));
 
-  const gpu = createRasterHost(device, coveragePlan(library.ir, 'RasterizePixels', c.width, c.height));
+  const gpu = createCoverageReadback(device, coveragePlan(library.ir, 'RasterizePixels', c.width, c.height));
   const cpuCov = cpuCoverage(beziers, c.width, c.height);
   const gpuCov = await gpu.render(flat, n);
   if (gpu.overflowed()) throw new Error('worklist overflow');

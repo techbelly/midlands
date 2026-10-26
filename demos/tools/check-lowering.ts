@@ -12,7 +12,7 @@
 
 import { librarySourceTexts } from '../src/sources.js';
 import { compileLibrary } from '../../umgeni/src/compile.js';
-import { createRasterHost, readAppended } from '../../umgeni/src/gpu/raster.js';
+import { createCoverageReadback, readAppended } from '../../umgeni/src/gpu/readback.js';
 import { lowerPipeline, type Sink } from '../../umgeni/src/gpu/lower.js';
 import { appendSink } from '../../umgeni/src/gpu/execute.js';
 import { fusedPipeline } from '../../umgeni/src/ir.js';
@@ -62,8 +62,8 @@ const drew = { min: 100 };
 // vs the GPU's own spans painted by the hand-written loop (spanSink), which
 // the Nile ExpandSpans must reproduce exactly.
 {
-  const pixels = createRasterHost(device, coveragePlan(library.ir, 'RasterizePixels', W, H));
-  const spans = createRasterHost(device, spanPlan('RasterizeParallel'));
+  const pixels = createCoverageReadback(device, coveragePlan(library.ir, 'RasterizePixels', W, H));
+  const spans = createCoverageReadback(device, spanPlan('RasterizeParallel'));
   const cov = await pixels.render(flat, n);
   if (pixels.overflowed()) throw new Error('RasterizePixels: worklist overflow');
   compareCoverage('RasterizePixels vs the span loop, both on the GPU', await spans.render(flat, n), cov, 0, drew);
@@ -79,7 +79,7 @@ const drew = { min: 100 };
   // RasterizeMapped emits spans, so its sink is the span loop.
   const plan = spanPlan('RasterizeMapped');
   if (!plan.passes[0].bindings.some((b) => b.role === 'params')) throw new Error('RasterizeMapped: no params binding');
-  const gpu = createRasterHost(device, plan, M);
+  const gpu = createCoverageReadback(device, plan, M);
   const cov = await gpu.render(flat, n);
   compareCoverage('RasterizeMapped (TransformBeziers (M) fused ahead, M from P) vs the CPU', paintCoverage(nile.RasterizeMapped({ M }).run(beziers), W, H), cov, 0.2, drew);
   gpu.dispose();

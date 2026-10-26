@@ -43,9 +43,16 @@ export const UN: Record<UnOpName, OpDef<(a: number) => number>> = {
 
 // --- C-like text rendering (JS and WGSL differ only in spelling) ---
 
+// A name as Nile wrote it, made legal in a C-like language: the prime of a
+// primed state local and the # of a compiler temporary become underscores.
+// Each back end adds its own prefix, since no Nile name starts with one.
+export const sanitize = (name: string): string => name.replace(/'/g, '_p').replace(/#/g, '_');
+
+export type Leaf = Extract<ScalarExpr, { k: 'param' | 'state' | 'input' | 'local' }>;
+
 export interface Dialect {
   num(v: number): string;
-  leaf(e: ScalarExpr): string; // param / state / input / local
+  leaf(e: Leaf): string;
   ofBool(c: string): string; // a truth value where a number is needed
   truthy(x: string): string; // a number used as a condition
   select(c: string, a: string, b: string): string;

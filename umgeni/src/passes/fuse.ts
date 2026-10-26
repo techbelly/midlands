@@ -9,7 +9,8 @@
 // same permutation and passes over the stream once.
 //
 // Conservative bail (the whole pipeline is left unfused, which stays
-// correct): a stage that isn't a compiled kernel or pipeline.
+// correct): a stage that isn't a compiled kernel or pipeline, or pipelines
+// nested more than eight deep.
 
 import { mapExpr, type FusedIR, type FusedSegment, type FusedStage, type ModuleIR, type PipelineIR, type ProcessIR, type ScalarExpr, type StageIR } from '../ir.js';
 
