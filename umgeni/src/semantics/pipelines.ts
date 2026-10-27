@@ -5,7 +5,8 @@
 
 import type * as A from '../ast.js';
 import type { StageIR } from '../ir.js';
-import { elabFail, REAL, type Shape, type Stream, type Value } from '../values.js';
+import { REAL, type Shape, type Stream, type Value } from '../values.js';
+import { elabFail } from '../unsupported.js';
 import { load } from '../../../mooi/src/mooi.js';
 import { prelude } from '../../../mooi/src/prelude.js';
 import { pipelinesSource, valuesSource } from './source.js';

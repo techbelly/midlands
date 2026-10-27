@@ -22,6 +22,7 @@
 // Nothing here survives into the IR that later passes see.
 
 import { mapExpr, type KernelIR, type PipelineIR, type ScalarExpr, type Stmt } from './ir.js';
+import { ElabError } from './unsupported.js';
 
 // The transient statement elaboration produces for `⇒` (null stage: `(→)`).
 // Only this module consumes it.
@@ -69,8 +70,6 @@ export interface Family {
   generators: Generator[];
 }
 
-export class SubstError extends Error {}
-
 // Substitution chains (a member becoming a member becoming…) are inlined,
 // so they end somewhere: this deep.
 const MAX_SUBSTITUTION_DEPTH = 8;
@@ -91,7 +90,7 @@ function dispatch(tag: ScalarExpr, arms: { key: number; stmts: Stmt[] }[]): Stmt
 function checkTail(stmts: StagedStmt[], tail: boolean, where: string): void {
   stmts.forEach((s, i) => {
     const t = tail && i === stmts.length - 1;
-    if (s.k === 'forward' && !t) throw new SubstError(`${where}: statements follow a mid-stream ⇒`);
+    if (s.k === 'forward' && !t) throw new ElabError(`${where}: statements follow a mid-stream ⇒`);
     if (s.k === 'if') {
       checkTail(s.then, t, where);
       checkTail(s.else, t, where);
@@ -107,7 +106,7 @@ export function assembleFamily(f: Family): (KernelIR | PipelineIR)[] {
     [c(tag), ...values, ...Array.from({ length: frameWidth - 1 - values.length }, () => c(0))];
   const genFrame = (stage: { name: string; args: ScalarExpr[] }, where: string): ScalarExpr[] => {
     const tag = genIndex.get(stage.name);
-    if (tag === undefined) throw new SubstError(`${where}: '${stage.name}' is not a generator, so only the first stage of a mid-stream ⇒ may name it`);
+    if (tag === undefined) throw new ElabError(`${where}: '${stage.name}' is not a generator, so only the first stage of a mid-stream ⇒ may name it`);
     return frame(tag, stage.args);
   };
 
@@ -143,7 +142,7 @@ export function assembleFamily(f: Family): (KernelIR | PipelineIR)[] {
           then: lower(s.then, mi, atEnd, depth, rename), else: lower(s.else, mi, atEnd, depth, rename),
         }];
         case 'forward': {
-          if (depth > MAX_SUBSTITUTION_DEPTH) throw new SubstError(`${where}: substitution chain too deep`);
+          if (depth > MAX_SUBSTITUTION_DEPTH) throw new ElabError(`${where}: substitution chain too deep`);
           const stages = s.stages.map((g) => g && { name: g.name, args: g.args.map(rx) });
           const out: Stmt[] = [];
           // Downstream generators run first, last stage first.
@@ -155,7 +154,7 @@ export function assembleFamily(f: Family): (KernelIR | PipelineIR)[] {
           if (head === null) return [...out, setState(0, c(PASS))];
           if (genIndex.has(head.name)) return [...out, { k: 'emit', values: genFrame(head, where) }, setState(0, c(PASS))];
           const ni = memberIndex.get(head.name);
-          if (ni === undefined) throw new SubstError(`${where}: unknown substitution target '${head.name}'`);
+          if (ni === undefined) throw new ElabError(`${where}: unknown substitution target '${head.name}'`);
           return [...out, ...become(ni, head.args, atEnd, depth)];
         }
       }

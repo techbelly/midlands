@@ -5,7 +5,8 @@
 import type * as A from '../ast.js';
 import type { BinOpName, UnOpName } from '../ir.js';
 import { BIN, UN } from '../scalar.js';
-import { elabFail, REAL, type Stream, type Value } from '../values.js';
+import { REAL, type Stream, type Value } from '../values.js';
+import { elabFail } from '../unsupported.js';
 import { load } from '../../../mooi/src/mooi.js';
 import { prelude } from '../../../mooi/src/prelude.js';
 import type { Domain, Program } from './domain.js';

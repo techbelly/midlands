@@ -30,7 +30,7 @@ const total = (fs: string[]) => fs.reduce((n, f) => n + lines(f), 0);
 
 const umgeniFront = ['umgeni/src/grammar/nile.ohm', 'umgeni/src/preprocess.ts', 'umgeni/src/ops.ts', 'umgeni/src/parser.ts', 'umgeni/src/ast.ts', 'umgeni/src/grammar/source.ts', 'umgeni/src/grammar/source.browser.ts'];
 const umgeniMooi = files('umgeni/src/semantics', /\.mooi$/);
-const umgeniMiddle = ['umgeni/src/compile.ts', 'umgeni/src/elaborate.ts', 'umgeni/src/values.ts', 'umgeni/src/substitute.ts', 'umgeni/src/ir.ts', 'umgeni/src/scalar.ts', 'umgeni/src/clike.ts', ...files('umgeni/src/semantics', /\.ts$/), ...files('umgeni/src/passes', /\.ts$/)];
+const umgeniMiddle = ['umgeni/src/compile.ts', 'umgeni/src/elaborate.ts', 'umgeni/src/values.ts', 'umgeni/src/substitute.ts', 'umgeni/src/ir.ts', 'umgeni/src/scalar.ts', 'umgeni/src/clike.ts', 'umgeni/src/unsupported.ts', ...files('umgeni/src/semantics', /\.ts$/), ...files('umgeni/src/passes', /\.ts$/)];
 const umgeniJs = files('umgeni/src/cpu', /\.ts$/).filter((f) => !f.endsWith('wasm.ts'));
 const umgeniWasm = ['umgeni/src/cpu/wasm.ts'];
 const umgeniGpu = files('umgeni/src/gpu', /\.ts$/);

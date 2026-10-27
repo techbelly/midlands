@@ -6,17 +6,14 @@ import type * as A from '../ast.js';
 import { load } from '../../../mooi/src/mooi.js';
 import { prelude } from '../../../mooi/src/prelude.js';
 import { sugarSource } from './source.js';
+import { elabFail } from '../unsupported.js';
 
 export interface Declared {
   scan?: { key: string; op: string; identity: number };
   window?: { key: string | null };
 }
 
-export class SugarError extends Error {}
-
-const m = load(sugarSource, prelude((msg) => {
-  throw new SugarError(msg);
-})) as { desugar: (k: A.Process, fieldsOf: unknown) => { kernel: A.Process; declared: Declared } };
+const m = load(sugarSource, prelude(elabFail)) as { desugar: (k: A.Process, fieldsOf: unknown) => { kernel: A.Process; declared: Declared } };
 
 // `fieldsOf` names a record type's top-level fields (types are resolved by
 // the elaborator).

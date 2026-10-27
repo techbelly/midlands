@@ -10,12 +10,13 @@
 import type * as A from './ast.js';
 import { forwardTargets, hasForward, pipelineBody, processStmts } from './ast.js';
 import type { HostProcess, KernelIR, ModuleIR, ParamSig, PipelineIR, ProcessIR, StageIR, TokenLayout } from './ir.js';
-import { assembleFamily, plainKernel, SubstError, type Generator, type StagedKernel } from './substitute.js';
-import { desugar, SugarError } from './semantics/sugar.js';
+import { assembleFamily, plainKernel, type Generator, type StagedKernel } from './substitute.js';
+import { desugar } from './semantics/sugar.js';
 import { elabPipelineStages, type PipelineProgram } from './semantics/pipelines.js';
 import { stageExpr, stageGenerator, stageKernel } from './semantics/staged.js';
 import type { KernelContext, Program } from './semantics/domain.js';
-import { ElabError, fieldInfo, fromSlots, paramEnv, paramWidth, REAL, realField, shapeWidth, tokenLayout, type ParamGroup, type Shape, type Stream } from './values.js';
+import { fieldInfo, fromSlots, paramEnv, paramWidth, REAL, realField, shapeWidth, tokenLayout, type ParamGroup, type Shape, type Stream } from './values.js';
+import { ElabError } from './unsupported.js';
 import { opKey } from './ops.js';
 
 // A user operator: its parameters' shapes, its result's, and its body.
@@ -63,8 +64,8 @@ interface Compiled {
   templates: string[];
 }
 
-// What elaboration reports as unsupported, rather than a bug.
-const isElabError = (e: unknown): e is Error => e instanceof ElabError || e instanceof SubstError || e instanceof SugarError;
+// What elaboration reports as unsupported, rather than a bug (unsupported.ts).
+const isElabError = (e: unknown): e is Error => e instanceof ElabError;
 
 class Elaborator {
 

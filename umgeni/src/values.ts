@@ -8,6 +8,7 @@
 // Everything here is pure.
 
 import type { ScalarExpr, TokenLayout } from './ir.js';
+import { ElabError } from './unsupported.js';
 
 // --- shapes ------------------------------------------------------------------
 
@@ -65,12 +66,6 @@ export function realField(shape: Shape, name: string, what: string): number {
   if (f.shape.k !== 'real') throw new ElabError(`${what} '@${name}' must be a Real field`);
   return f.offset;
 }
-
-export class ElabError extends Error {}
-// The equations' `fail`: an elaboration error, as the hosts bind it.
-export const elabFail = (msg: string): never => {
-  throw new ElabError(msg);
-};
 
 // --- values ------------------------------------------------------------------
 // A value under elaboration mirrors its shape: a scalar expression, or an
