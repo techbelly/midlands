@@ -84,26 +84,29 @@ export interface Target {
 }
 
 export class Sheet {
-  constructor(private readonly nile: Api, private readonly target: Target) {}
+  /** `k` scales the page: Cairo's samples are drawn for 256 × 256, and a
+   *  sheet with k = 2 draws the same picture on a 512 × 512 target. */
+  constructor(private readonly nile: Api, private readonly target: Target, private readonly k = 1) {}
 
   fill(path: Path, color: Rgba, rule: Rule = 'winding'): void {
-    this.target.shade(this.flatten(path.cubics), color, rule);
+    this.target.shade(this.flatten(this.at(path.cubics)), color, rule);
   }
 
   stroke(path: Path, color: Rgba, s: Stroke): void {
     const l = s.join === 'round' ? -1 : s.join === 'bevel' ? 1 : (s.miterLimit ?? 10); // gezira's l
     const c = CAP[s.cap ?? 'butt'];
+    const w = s.width * this.k;
     const outline = path.subpaths.flatMap((sub) => {
-      if (!s.dash) return this.nile.StrokeOutline({ M: IDENTITY, w: s.width, l, c }).run(sub);
-      const [on1, off1, on2, off2] = dashLengths(s.dash.pattern);
-      return this.nile.DashedStroke({ M: IDENTITY, w: s.width, l, c, on1, off1, on2, off2, phase: s.dash.offset }).run(sub);
+      if (!s.dash) return this.nile.StrokeOutline({ M: IDENTITY, w, l, c }).run(this.at(sub));
+      const [on1, off1, on2, off2] = dashLengths(s.dash.pattern).map((d) => d * this.k);
+      return this.nile.DashedStroke({ M: IDENTITY, w, l, c, on1, off1, on2, off2, phase: s.dash.offset * this.k }).run(this.at(sub));
     });
     this.target.shade(outline, color, 'winding');
   }
 
   /** From now on, paint only inside this path (and any clip already set). */
   clip(path: Path): void {
-    this.target.clip(this.flatten(path.cubics));
+    this.target.clip(this.flatten(this.at(path.cubics)));
   }
   resetClip(): void {
     this.target.resetClip();
@@ -111,7 +114,7 @@ export class Sheet {
 
   /** Fill a path with one of the samples' textures (nl/samples.nl). */
   paintTexture(texture: 'PaintSky' | 'PaintSun', path: Path): void {
-    this.target.paintTexture(texture, this.flatten(path.cubics));
+    this.target.paintTexture(texture, this.flatten(this.at(path.cubics)));
   }
 
   /** Maps composed in order, the first applied last, as Cairo's translate,
@@ -124,16 +127,22 @@ export class Sheet {
    *  from the image placed by M (the transform in force), either once or
    *  repeated as a pattern, whose own matrix maps user space to the image. */
   paintImage(image: ImgLike, M: Matrix, extend: 'none' | 'repeat' = 'none', pattern: Matrix = IDENTITY): void {
-    this.target.paintImage(image, M, extend, pattern);
+    this.target.paintImage(image, this.k === 1 ? M : this.matrix(scale(this.k, this.k), M), extend, pattern);
   }
 
   /** A mesh gradient: Coons patches (roda/patch.nl). */
   paintMesh(patches: Patch[]): void {
-    this.target.paintMesh(patches);
+    const side = (s: number[]) => s.map((v) => v * this.k);
+    this.target.paintMesh(this.k === 1 ? patches : patches.map((p) => ({ ...p, T: side(p.T), B: side(p.B), L: side(p.L), R: side(p.R) })));
   }
 
   private flatten(cubics: number[][]): number[][] {
     return this.nile.FlattenCubics().run(cubics);
+  }
+
+  // Cubics scaled to the page: the sheet's one piece of geometry.
+  private at(cubics: readonly number[][]): number[][] {
+    return this.k === 1 ? (cubics as number[][]) : cubics.map((c) => c.map((v) => v * this.k));
   }
 }
 

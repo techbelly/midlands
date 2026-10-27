@@ -11,6 +11,7 @@ import { nile, nileWasm, sources, RasterizePixelsIR } from './nl/vector.nl-lib';
 import svgSrc from './tiger.svg';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
+import { Resolution } from './src/resolution.js';
 
 (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
   sources,
@@ -24,7 +25,10 @@ const canvasGpu = document.getElementById('viewgpu') as HTMLCanvasElement;
 const modeEl = document.getElementById('mode') as HTMLSelectElement;
 const statsEl = document.getElementById('stats')!;
 const perfEl = document.getElementById('perf')!;
-const base = Math.min(canvas.width, canvas.height) / 900;
+// The picture's size as the page declares it; drawn at that or at device
+// resolution (see draw). The viewBox is 900 across: `base` fits it.
+const DECLARED = { width: canvas.width, height: canvas.height };
+const base = () => Math.min(canvas.width, canvas.height) / 900;
 
 // A back end rasterizes and composites the paths, and resolves to its time
 // in ms. Each is built once from the compiled library and the canvas it
@@ -33,9 +37,9 @@ const base = Math.min(canvas.width, canvas.height) / 900;
 type BackEnd = (paths: TigerPath[]) => Promise<number>;
 
 function cpuBackEnd(nile: Api, ctx: CanvasRenderingContext2D): BackEnd {
-  const { width, height } = ctx.canvas;
   return async (paths) => {
     const t0 = performance.now();
+    const { width, height } = ctx.canvas;
     const img = ctx.createImageData(width, height);
     img.data.fill(255);
     paintPaths(img, nile, paths);
@@ -44,10 +48,13 @@ function cpuBackEnd(nile: Api, ctx: CanvasRenderingContext2D): BackEnd {
   };
 }
 
-function gpuBackEnd(ir: FusedIR, { device, context, format }: GpuCanvas): BackEnd {
+// The GPU's plan is built for the canvas's size, so a back end remembers
+// the size it was built for, and is rebuilt when that changes.
+interface GpuBackEnd { run: BackEnd; width: number; height: number; dispose: () => void }
+function gpuBackEnd(ir: FusedIR, { device, context, format }: GpuCanvas): GpuBackEnd {
   const { width, height } = context.canvas;
   const presenter = createPresenter(device, framePlan(ir, width, height), { format }); // WGSL from IR, in-browser
-  return async (paths) => {
+  const run: BackEnd = async (paths) => {
     const t0 = performance.now();
     presenter.frame(toBatches(paths), context.getCurrentTexture().createView());
     // The GPU runs after submit; wait for it, so the next frame starts on a
@@ -55,20 +62,27 @@ function gpuBackEnd(ir: FusedIR, { device, context, format }: GpuCanvas): BackEn
     await device.queue.onSubmittedWorkDone();
     return performance.now() - t0;
   };
+  return { run, width, height, dispose: () => presenter.dispose() };
 }
 
 const cpu = cpuBackEnd(nile, canvas.getContext('2d')!);
 const wasm = cpuBackEnd(nileWasm, canvas.getContext('2d')!);
 
-// The GPU back end is built on first use, if WebGPU is there.
-let gpu: BackEnd | 'unavailable' | null = null;
+// The GPU back end is built on first use, if WebGPU is there, and again
+// when the canvas changes size.
+let gpu: GpuBackEnd | 'unavailable' | null = null;
+let gpuTarget: GpuCanvas | null = null;
 async function ensureGpu(): Promise<BackEnd | null> {
+  if (gpu !== null && gpu !== 'unavailable' && (gpu.width !== canvasGpu.width || gpu.height !== canvasGpu.height)) {
+    gpu.dispose();
+    gpu = null;
+  }
   if (gpu === null) {
     const device = await gpuDevice();
-    const target = device && configureCanvas(device, canvasGpu);
-    gpu = target ? gpuBackEnd(RasterizePixelsIR, target) : 'unavailable';
+    gpuTarget ??= device && configureCanvas(device, canvasGpu);
+    gpu = gpuTarget ? gpuBackEnd(RasterizePixelsIR, gpuTarget) : 'unavailable';
   }
-  return gpu === 'unavailable' ? null : gpu;
+  return gpu === 'unavailable' ? null : gpu.run;
 }
 
 // What the renderer menu's entries mean: which Nile runs the front half,
@@ -93,7 +107,7 @@ let fx = 450;
 let fy = 450;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const viewMatrix = (): number[] => {
-  const s = base * z;
+  const s = base() * z;
   return [s, 0, 0, s, canvas.width / 2 - s * fx, canvas.height / 2 - s * fy];
 };
 
@@ -102,6 +116,8 @@ const segs = tiger.paths.reduce((a, p) => a + p.cubics.length, 0);
 // The front half (geometry, compiled Nile on the CPU) is the same in every
 // mode; only the back end — rasterize and composite — differs.
 async function draw(): Promise<void> {
+  resolution.fit(canvas, DECLARED.width, DECLARED.height);
+  resolution.fit(canvasGpu, DECLARED.width, DECLARED.height);
   let mode = MODES[modeEl.value];
   let backEnd = await mode.back();
   if (!backEnd) { // the fallback when WebGPU is unavailable
@@ -115,13 +131,14 @@ async function draw(): Promise<void> {
   const paths = tigerPaths(tiger, viewMatrix(), mode.front, canvas.width, canvas.height);
   const frontMs = performance.now() - t0;
   const backMs = await backEnd(paths);
-  statsEl.textContent = `${tiger.paths.length} paths · ${segs.toLocaleString()} cubics · ${z.toFixed(1)}× · ${canvas.width} × ${canvas.height} px`;
+  statsEl.textContent = `${tiger.paths.length} paths · ${segs.toLocaleString()} cubics · ${z.toFixed(1)}× · ${resolution.label(canvas.width, canvas.height)}`;
   perfEl.textContent =
     `front (CPU Nile, ${mode.frontLabel}) ${frontMs.toFixed(0)} ms + raster & composite (${mode.backLabel}) ${backMs.toFixed(0)} ms ` +
     `= ${(frontMs + backMs).toFixed(0)} ms a frame`;
 }
 
 const scheduleDraw = frameScheduler(draw);
+const resolution = new Resolution(scheduleDraw);
 
 // View controls, attached to BOTH canvases (only one is visible at a time;
 // the GPU canvas needs its own listeners too). Double-click cycles the zoom
@@ -134,11 +151,11 @@ function addViewControls(el: HTMLCanvasElement): void {
     const r = el.getBoundingClientRect();
     const mx = ((e.clientX - r.left) * el.width) / r.width;
     const my = ((e.clientY - r.top) * el.height) / r.height;
-    const s = base * z;
+    const s = base() * z;
     const vx = fx + (mx - el.width / 2) / s;
     const vy = fy + (my - el.height / 2) / s;
     z = z >= 4 ? 1 : clamp(z * 2, 1, 4);
-    const s2 = base * z;
+    const s2 = base() * z;
     fx = vx - (mx - el.width / 2) / s2;
     fy = vy - (my - el.height / 2) / s2;
     scheduleDraw();
@@ -159,7 +176,7 @@ function addViewControls(el: HTMLCanvasElement): void {
   el.addEventListener('pointermove', (e) => {
     if (!dragging) return;
     const r = el.getBoundingClientRect();
-    const s = (base * z * r.width) / el.width;
+    const s = (base() * z * r.width) / el.width;
     fx -= (e.clientX - lastX) / s;
     fy -= (e.clientY - lastY) / s;
     lastX = e.clientX;

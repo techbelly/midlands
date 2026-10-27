@@ -33,12 +33,14 @@ const wave = [[40, 255, 120, 175, 200, 335, 280, 255], [280, 255, 330, 205, 370,
 
 // The shapes as clipped beziers (one batch per shape), all geometry in Nile:
 // a disc and a star flattened from cubics, and a thick round-capped stroke.
-export function paintShapes(nile: Api, W: number, H: number): number[][][] {
+// They are laid out for a 480 × 360 picture; `k` scales them with it.
+export function paintShapes(nile: Api, W: number, H: number, k = 1): number[][][] {
   const clip = (bs: number[][]) => nile.ClipBeziers({ min: [0, 0], max: [W, H] }).run(bs);
-  const flat = (cubics: number[][]) => clip(nile.FlattenCubics().run(cubics));
+  const at = (cubics: number[][]) => (k === 1 ? cubics : cubics.map((c) => c.map((v) => v * k)));
+  const flat = (cubics: number[][]) => clip(nile.FlattenCubics().run(at(cubics)));
   return [
     flat(disc(110, 115, 85)),
     flat(star(320, 120, 42, 100)),
-    clip(strokeOutline(nile, [1, 0, 0, 1, 0, 0], 34, -1, -1, [wave])),
+    clip(strokeOutline(nile, [1, 0, 0, 1, 0, 0], 34 * k, -1, -1, [at(wave)])),
   ];
 }

@@ -14,17 +14,26 @@ import { drawTiger, fitView } from './src/vector/tiger.js';
 import { quoteNile } from './src/quote.js';
 import { createPresenter, framePlan, type PathBatch, type Presenter } from '../umgeni/src/gpu/present.js';
 import { configureCanvas, gpuDevice, showOnly } from './src/gpu-page.js';
+import { Resolution } from './src/resolution.js';
 import { blankImage } from './src/vector/spans.js';
 import tigerSvg from './tiger.svg';
 // Source Serif 4: SIL OFL 1.1 (fonts/OFL.txt). Cairo's samples ask for Sans.
 import sourceSerif from './fonts/SourceSerif4.ttf';
 
-const SIZE = 256;
+// Cairo's samples are 256 × 256; at device resolution the cards are drawn
+// larger (see draw), the Sheet scaling the scenes to match.
+const DECLARED = 256;
+let SIZE = DECLARED;
 const font = parseTrueType(sourceSerif);
 // The picture the image samples use, where Cairo's use a photograph: the
-// tiger, drawn by the same Nile at 256 × 256.
-const tiger = blankImage(SIZE, SIZE);
-drawTiger(tiger, parseSvg(tigerSvg, nile), fitView(SIZE, SIZE), nile);
+// tiger, drawn by the same Nile at the cards' size.
+const tigerSvgParsed = parseSvg(tigerSvg, nile);
+let tiger = tigerAt(SIZE);
+function tigerAt(size: number) {
+  const img = blankImage(size, size);
+  drawTiger(img, tigerSvgParsed, fitView(size, size), nile);
+  return img;
+}
 
 const modeEl = document.getElementById('mode') as HTMLSelectElement;
 const perfEl = document.getElementById('perf')!;
@@ -50,8 +59,8 @@ const cards: Card[] = SCENES.map((scene) => {
   const cpu = document.createElement('canvas');
   const gpu = document.createElement('canvas');
   for (const c of [cpu, gpu]) {
-    c.width = SIZE;
-    c.height = SIZE;
+    c.width = DECLARED;
+    c.height = DECLARED;
   }
   const cairo = document.createElement('pre');
   cairo.className = 'c';
@@ -73,15 +82,19 @@ const cards: Card[] = SCENES.map((scene) => {
 // The GPU, on first use: one presenter over the two rasterizers, lowered
 // here in the browser from the IR the bundle ships, drawing to each card's
 // canvas in turn (all cards are the same size, so they share the plans).
-let gpu: { device: GPUDevice; presenter: Presenter; format: GPUTextureFormat } | 'unavailable' | null = null;
+let gpu: { device: GPUDevice; presenter: Presenter; format: GPUTextureFormat; size: number } | 'unavailable' | null = null;
 async function ensureGpu() {
+  if (gpu !== null && gpu !== 'unavailable' && gpu.size !== SIZE) {
+    gpu.presenter.dispose(); // the plans were for another size
+    gpu = null;
+  }
   if (gpu === null) {
     const device = await gpuDevice();
     if (!device) gpu = 'unavailable';
     else {
       const format = navigator.gpu.getPreferredCanvasFormat();
       const plans = { RasterizePixels: framePlan(RasterizePixelsIR, SIZE, SIZE), RasterizePixelsEvenOdd: framePlan(RasterizePixelsEvenOddIR, SIZE, SIZE) };
-      gpu = { device, presenter: createPresenter(device, plans, { format }), format };
+      gpu = { device, presenter: createPresenter(device, plans, { format }), format, size: SIZE };
     }
   }
   return gpu === 'unavailable' ? null : gpu;
@@ -92,12 +105,20 @@ function drawCpu(i: number): void {
   const ctx = cpu.getContext('2d')!;
   const img = ctx.createImageData(SIZE, SIZE);
   img.data.fill(255);
-  SCENES[i].draw(new Sheet(nile, new CpuTarget(nile, img)), font, tiger);
+  SCENES[i].draw(new Sheet(nile, new CpuTarget(nile, img), resolution.scale), font, tiger);
   ctx.putImageData(img, 0, 0);
   showOnly(cpu, cpu, gpuCanvas);
 }
 
 async function draw(): Promise<void> {
+  for (const card of cards) {
+    resolution.fit(card.cpu, DECLARED, DECLARED);
+    resolution.fit(card.gpu, DECLARED, DECLARED);
+  }
+  if (cards[0].cpu.width !== SIZE) {
+    SIZE = cards[0].cpu.width;
+    tiger = tigerAt(SIZE);
+  }
   const g = modeEl.value === 'gpu' ? await ensureGpu() : null;
   if (modeEl.value === 'gpu' && !g) modeEl.value = 'cpu'; // the fallback when WebGPU is unavailable
   let onGpu = 0;
@@ -113,7 +134,7 @@ async function draw(): Promise<void> {
     try {
       // The geometry runs first, all of it; a scene the presenter cannot
       // draw is found out before anything is submitted.
-      scene.draw(new Sheet(nile, new GpuTarget(nile, SIZE, SIZE, batches)), font, tiger);
+      scene.draw(new Sheet(nile, new GpuTarget(nile, SIZE, SIZE, batches), resolution.scale), font, tiger);
     } catch (e) {
       if (!(e instanceof CpuOnly)) throw e;
       drawCpu(i);
@@ -129,9 +150,10 @@ async function draw(): Promise<void> {
   if (g) await g.device.queue.onSubmittedWorkDone();
   const ms = performance.now() - t0;
   perfEl.textContent = g
-    ? `${SCENES.length} samples at ${SIZE} × ${SIZE} px, ${onGpu} rasterized on the GPU and ${SCENES.length - onGpu} on the CPU, ${ms.toFixed(0)} ms in all.`
-    : `${SCENES.length} samples at ${SIZE} × ${SIZE} px, ${ms.toFixed(0)} ms in all, on the CPU (JavaScript compiled from Nile).`;
+    ? `${SCENES.length} samples at ${resolution.label(SIZE, SIZE)}, ${onGpu} rasterized on the GPU and ${SCENES.length - onGpu} on the CPU, ${ms.toFixed(0)} ms in all.`
+    : `${SCENES.length} samples at ${resolution.label(SIZE, SIZE)}, ${ms.toFixed(0)} ms in all, on the CPU (JavaScript compiled from Nile).`;
 }
 
+const resolution = new Resolution(() => void draw());
 modeEl.addEventListener('change', () => void draw());
 void draw();

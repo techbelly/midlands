@@ -23,6 +23,7 @@ import twemoji from './fonts/Twemoji.Mozilla.ttf';
 import { createCoverageReadback, type CoverageReadback } from '../umgeni/src/gpu/readback.js';
 import { createPresenter, framePlan, type Presenter } from '../umgeni/src/gpu/present.js';
 import { configureCanvas, gpuDevice, showOnly } from './src/gpu-page.js';
+import { Resolution } from './src/resolution.js';
 import { compileMs, nile, nileWasm, sources, RasterizePixelsIR } from './nl/text.nl-lib';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
@@ -44,7 +45,10 @@ const perf = document.getElementById('perf')!;
 const ctx2d = canvas2d.getContext('2d')!;
 type Api = typeof nile;
 
-const SIZE = { width: canvas2d.width, height: canvas2d.height };
+// The picture's size as the page declares it, and as drawn this frame (the
+// same, or scaled to device pixels; see render).
+const DECLARED = { width: canvas2d.width, height: canvas2d.height };
+let SIZE = { ...DECLARED };
 
 // Fonts: Source Serif 4 with Twemoji colour emoji as fallback (bundled), the
 // hand-drawn stub, or any dropped .ttf (also with emoji fallback).
@@ -196,6 +200,14 @@ async function ensureGpu(): Promise<Gpu | null> {
   };
   return gpuState;
 }
+// The plans are built for a size: when the picture's size changes they go.
+function forgetGpu(): void {
+  if (gpuState && gpuState !== 'unavailable') {
+    gpuState.raster.dispose();
+    gpuState.presenter.dispose();
+    gpuState = null;
+  }
+}
 
 // The renderer the menu names, or null when it needs a GPU this browser lacks.
 async function renderer(mode: string): Promise<Renderer | null> {
@@ -209,7 +221,11 @@ async function renderer(mode: string): Promise<Renderer | null> {
 async function render(): Promise<void> {
   const size = Number(sizeEl.value);
   sizeVal.textContent = String(size);
-  const params = textSpansParams({ size, ...SIZE, margin: 8, lineHeight: currentFont().lineHeight });
+  resolution.fit(canvas2d, DECLARED.width, DECLARED.height);
+  resolution.fit(canvasGpu, DECLARED.width, DECLARED.height);
+  SIZE = { width: canvas2d.width, height: canvas2d.height };
+  const k = resolution.scale; // the type and margin in picture pixels
+  const params = textSpansParams({ size: size * k, ...SIZE, margin: 8 * k, lineHeight: currentFont().lineHeight });
   const r = await renderer(modeEl.value);
   if (!r) {
     perf.textContent = 'WebGPU unavailable in this browser/context — falling back to CPU.';
@@ -218,11 +234,15 @@ async function render(): Promise<void> {
   }
   showOnly(r.canvas, canvas2d, canvasGpu);
   const done = await r.frame(textEl.value, params);
-  stats.textContent = `${done.stats} · ${SIZE.width} × ${SIZE.height} px`;
+  stats.textContent = `${done.stats} · ${resolution.label(SIZE.width, SIZE.height)}`;
   perf.textContent = done.perf;
 }
 
 const rerender = frameScheduler(render);
+const resolution = new Resolution(() => {
+  forgetGpu();
+  rerender();
+});
 textEl.addEventListener('input', rerender);
 sizeEl.addEventListener('input', rerender);
 modeEl.addEventListener('change', rerender);

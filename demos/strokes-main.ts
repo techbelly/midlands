@@ -6,6 +6,7 @@ import { hexRGB, paintSpans } from './src/vector/spans.js';
 import { lineCubic } from './src/samples/path.js';
 import { nile, sources } from './nl/vector.nl-lib';
 import { quoteNile } from './src/quote.js';
+import { Resolution } from './src/resolution.js';
 
 (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
   sources,
@@ -17,8 +18,9 @@ const canvas = document.getElementById('view') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
 const statsEl = document.getElementById('stats')!;
 const perfEl = document.getElementById('perf')!;
-const W = canvas.width;
-const H = canvas.height;
+// The picture's size as the page declares it; the paths below are laid out
+// in it, and scaled with it when it is drawn at device resolution.
+const DECLARED = { width: canvas.width, height: canvas.height };
 const I = [1, 0, 0, 1, 0, 0];
 
 const poly = (pts: number[][]): number[][] => pts.slice(0, -1).map((p, i) => lineCubic(p, pts[i + 1]));
@@ -35,11 +37,16 @@ const paths: number[][][] = [
 const ui = { cap: -1, join: 'round', limit: 4, w: 22, outline: false };
 
 function draw(): void {
+  resolution.fit(canvas, DECLARED.width, DECLARED.height);
+  const k = resolution.scale;
+  const W = canvas.width;
+  const H = canvas.height;
   const img = ctx.createImageData(W, H);
   img.data.fill(255);
   const t0 = performance.now();
   const join = ui.join === 'round' ? -1 : ui.join === 'bevel' ? 1 : ui.limit;
-  const outlines = paths.map((p) => strokeOutline(nile, I, ui.w, join, ui.cap, [p]));
+  const at = (p: number[][]) => (k === 1 ? p : p.map((c) => c.map((v) => v * k)));
+  const outlines = paths.map((p) => strokeOutline(nile, I, ui.w * k, join, ui.cap, [at(p)]));
   let spans = 0;
   for (const outline of outlines) {
     const s = nile.FillBeziers({ min: [0, 0], max: [W, H] }).run(outline);
@@ -50,6 +57,8 @@ function draw(): void {
   ctx.putImageData(img, 0, 0);
 
   // Faint centrelines so the cap/join geometry is legible.
+  ctx.save();
+  ctx.scale(k, k);
   ctx.strokeStyle = 'rgba(255,255,255,0.6)';
   ctx.lineWidth = 1;
   for (const path of paths) {
@@ -58,6 +67,7 @@ function draw(): void {
     for (const c of path) ctx.bezierCurveTo(c[2], c[3], c[4], c[5], c[6], c[7]);
     ctx.stroke();
   }
+  ctx.restore();
   // The outline itself: every quadratic gezira emitted, endpoints dotted.
   if (ui.outline) {
     ctx.strokeStyle = '#c53030';
@@ -67,13 +77,15 @@ function draw(): void {
       ctx.moveTo(ax, ay);
       ctx.quadraticCurveTo(bx, by, cx, cy);
       ctx.stroke();
-      ctx.fillRect(ax - 1.5, ay - 1.5, 3, 3);
+      ctx.fillRect(ax - 1.5 * k, ay - 1.5 * k, 3 * k, 3 * k);
     }
   }
   const pieces = outlines.reduce((n, o) => n + o.length, 0);
-  statsEl.textContent = `${pieces} outline beziers · ${spans.toLocaleString()} spans · ${W} × ${H} px`;
+  statsEl.textContent = `${pieces} outline beziers · ${spans.toLocaleString()} spans · ${resolution.label(W, H)}`;
   perfEl.textContent = `CPU (JavaScript) · ${ms.toFixed(1)} ms`;
 }
+
+const resolution = new Resolution(draw);
 
 function group(id: string, set: (v: string) => void): void {
   const el = document.getElementById(id)!;
