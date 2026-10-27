@@ -277,9 +277,9 @@ function barrier(f: (ts: Token[]) => Token[]): Op {
 export const sortBy = (keys: number[]): Op => barrier((ts) => sortTokens(ts, keys));
 
 // GroupBy: buffer, order by keys (major first), emit on end(). The language
-// contract is key order only; this implementation happens to be stable,
-// which is a valid instance.
-export const groupBy = (keyIndexes: number[]): Op => barrier((ts) => sortTokens(ts, keyIndexes));
+// contract is key order only; a stable sort is a valid instance, so it is
+// the sort.
+export const groupBy = sortBy;
 
 // ReduceBy: merge adjacent same-key runs (the upstream GroupBy guarantees
 // grouping) with per-field combining functions; other fields keep the first

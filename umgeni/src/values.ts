@@ -82,10 +82,8 @@ export type Value<S = ScalarExpr> =
   | { k: 'scalar'; expr: S }
   | { k: 'agg'; shape: RecordShape; parts: Value<S>[] };
 
-const scalar = <S = ScalarExpr>(expr: S): Value<S> => ({ k: 'scalar', expr });
-
 export function fromExprs<S>(shape: Shape, exprs: S[], base = 0): Value<S> {
-  if (shape.k === 'real') return scalar(exprs[base]);
+  if (shape.k === 'real') return { k: 'scalar', expr: exprs[base] };
   const parts: Value<S>[] = [];
   let at = base;
   for (const f of shape.fields) {
@@ -119,7 +117,5 @@ export function paramEnv<S>(params: ParamGroup[], part: (shape: Shape, at: numbe
 
 // A value reading a contiguous run of slots (param/state/input).
 export function fromSlots(shape: Shape, kind: 'param' | 'state' | 'input', base: number): Value {
-  const exprs: ScalarExpr[] = [];
-  for (let i = 0; i < shapeWidth(shape); i++) exprs.push({ k: kind, index: base + i });
-  return fromExprs(shape, exprs);
+  return fromExprs(shape, Array.from({ length: shapeWidth(shape) }, (_, i): ScalarExpr => ({ k: kind, index: base + i })));
 }

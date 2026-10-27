@@ -24,11 +24,14 @@ interface OpEntry {
   body: A.Expr;
 }
 
+// A process that did not elaborate, and why.
+export type Unsupported = { name: string; reason: string };
+
 interface ElabResult {
   ir: ModuleIR;
   // Processes that could not be elaborated (constructs beyond the current
   // subset), with the reason. Elaboration is honest about its coverage.
-  unsupported: { name: string; reason: string }[];
+  unsupported: Unsupported[];
   // Processes with process-typed parameters (a Texture, a Compositor…).
   // Not compiled on their own: each use site instantiates one inline.
   templates: string[];
@@ -55,7 +58,7 @@ type Classified =
 // and what it leaves to each use site.
 interface Compiled {
   processes: ProcessIR[];
-  unsupported: { name: string; reason: string }[];
+  unsupported: Unsupported[];
   templates: string[];
 }
 
@@ -142,7 +145,7 @@ class Elaborator {
   // a kernel it cannot handle is listed as unsupported, with the reason.
   private compileKernels(decls: A.TopLevel[]): Compiled {
     const processes: ProcessIR[] = [];
-    const unsupported: { name: string; reason: string }[] = [];
+    const unsupported: Unsupported[] = [];
     const templates: string[] = [];
     for (const d of decls) {
       if (d.kind !== 'process') continue;
@@ -304,7 +307,7 @@ class Elaborator {
     for (let changed = true; changed;) {
       changed = false;
       for (const name of this.generators) {
-        if (forwardTargets(this.processes.get(name)!.prologue).some((t) => !this.generators.has(t))) {
+        if (forwardTargets(kernelStmts(this.processes.get(name)!)).some((t) => !this.generators.has(t))) {
           this.generators.delete(name);
           changed = true;
         }
@@ -389,7 +392,7 @@ const paramSigs = (groups: ParamGroup[]): ParamSig[] =>
 // A pipeline is only as good as its stages: anything that names a process
 // that did not compile is unsupported too (transitively), rather than
 // compiling to a reference that fails at run time. Removes from `compiled`.
-function dropBrokenPipelines(processes: ProcessIR[], compiled: Set<string>, unsupported: { name: string; reason: string }[]): void {
+function dropBrokenPipelines(processes: ProcessIR[], compiled: Set<string>, unsupported: Unsupported[]): void {
   for (let changed = true; changed;) {
     changed = false;
     for (const p of processes) {

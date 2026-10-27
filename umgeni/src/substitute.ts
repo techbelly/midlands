@@ -25,7 +25,7 @@ import { mapExpr, type KernelIR, type PipelineIR, type ScalarExpr, type Stmt } f
 
 // The transient statement elaboration produces for `⇒` (null stage: `(→)`).
 // Only this module consumes it.
-export interface ForwardStmt {
+interface ForwardStmt {
   k: 'forward';
   stages: ({ name: string; args: ScalarExpr[] } | null)[];
 }
@@ -42,11 +42,15 @@ export interface StagedKernel extends Omit<KernelIR, 'prologue' | 'body' | 'flus
   body: StagedStmt[];
   flush: StagedStmt[];
 }
-export function plainKernel(k: StagedKernel): KernelIR {
-  const plain = (ss: StagedStmt[]): Stmt[] => ss.map((s) => {
-    if (s.k === 'forward') throw new Error(`'${k.name}': a mid-stream ⇒ in a kernel not compiled as a family`);
-    return s.k === 'if' ? { ...s, then: plain(s.then), else: plain(s.else) } : s;
+// The IR's statements, each ⇒ (at any depth of if) replaced by what f says.
+function unforward(ss: StagedStmt[], f: (s: ForwardStmt) => Stmt[]): Stmt[] {
+  return ss.flatMap((s): Stmt[] => {
+    if (s.k === 'forward') return f(s);
+    return [s.k === 'if' ? { ...s, then: unforward(s.then, f), else: unforward(s.else, f) } : s];
   });
+}
+export function plainKernel(k: StagedKernel): KernelIR {
+  const plain = (ss: StagedStmt[]) => unforward(ss, () => { throw new Error(`'${k.name}': a mid-stream ⇒ in a kernel not compiled as a family`); });
   return { ...k, prologue: plain(k.prologue), body: plain(k.body), flush: plain(k.flush) };
 }
 
@@ -205,11 +209,8 @@ export function assembleFamily(f: Family): (KernelIR | PipelineIR)[] {
 
   // --- gen: the frame interpreter. A generator's `⇒` feeds its stages back
   // first-to-last, so the LIFO worklist runs them last-to-first. ---
-  const toFeeds = (stmts: StagedStmt[], where: string): Stmt[] => stmts.flatMap((s): Stmt[] => {
-    if (s.k === 'if') return [{ ...s, then: toFeeds(s.then, where), else: toFeeds(s.else, where) }];
-    if (s.k !== 'forward') return [s];
-    return s.stages.flatMap((g): Stmt[] => (g ? [{ k: 'feed', values: genFrame(g, where) }] : []));
-  });
+  const toFeeds = (stmts: StagedStmt[], where: string): Stmt[] =>
+    unforward(stmts, (s) => s.stages.flatMap((g): Stmt[] => (g ? [{ k: 'feed', values: genFrame(g, where) }] : [])));
   const tag: ScalarExpr = { k: 'input', index: 0 };
   const payload = Array.from({ length: f.outputWidth }, (_, i): ScalarExpr => ({ k: 'input', index: 1 + i }));
   const gen: KernelIR = {

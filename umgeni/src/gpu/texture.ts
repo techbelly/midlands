@@ -50,7 +50,7 @@ export function lowerTexture(mod: ModuleIR, name: string): LoweredTexture {
 
   function process(p: ProcessIR, params: string[], inputs: string[]): string[] {
     if (p.k === 'kernel') return kernel(p, params, inputs);
-    const env = paramEnv(params);
+    const env = argsEnv(params);
     if (p.k === 'pipeline') return stages(p.stages, env, inputs);
     return p.runs.reduce((xs, run) => kernelRun(run, env, xs), inputs);
   }
@@ -101,5 +101,5 @@ export function lowerTexture(mod: ModuleIR, name: string): LoweredTexture {
   }
 }
 
-const paramEnv = (params: string[]): WgslExprEnv => paramsOnly((i) => params[i], (what) => { throw new NotMap(`pipeline ${what}`); });
+const argsEnv = (params: string[]): WgslExprEnv => paramsOnly((i) => params[i], (what) => { throw new NotMap(`pipeline ${what}`); });
 

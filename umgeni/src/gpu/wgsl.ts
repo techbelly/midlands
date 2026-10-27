@@ -29,8 +29,8 @@ export const mangle = (name: string): string => 'v' + sanitize(name);
 // How slot references and emit/feed render inside a shader — the WGSL
 // mirror of the JS codegen's GenEnv. Scaffolds (texture paint functions,
 // the lowering's stage functions) plug kernel bodies into their own plumbing
-// through this.
-// What an expression needs: the spelling of each kind of leaf.
+// through these two. What an expression needs: the spelling of each kind
+// of leaf.
 export interface WgslExprEnv {
   param(i: number): string;
   state(i: number): string;

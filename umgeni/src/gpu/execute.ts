@@ -5,8 +5,8 @@
 import { bandSegments, META_BYTES, type Band, type Binding, type Plan, type Sink } from './lower.js';
 import { WORKGROUP_SIZE } from './wgsl.js';
 
-// The host's buffers for a dispatch. `size` bounds a dynamic binding (every offset
-// binds this many bytes).
+// The host's buffers for a dispatch. `inputSize` bounds the input's dynamic
+// binding (every offset binds this many bytes).
 export interface Resources {
   meta: GPUBuffer;
   input?: GPUBuffer;

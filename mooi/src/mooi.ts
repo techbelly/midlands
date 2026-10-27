@@ -28,6 +28,8 @@ type Expr =
   | { e: 'record'; kind: string | null; fields: [string, Expr][] }
   | { e: 'lit'; value: unknown }
   | { e: 'var'; name: string };
+// A definition: a name and one of its clauses.
+type Def = { name: string; clause: Clause };
 interface Clause {
   pats: Pat[];
   guard: Expr | null;
@@ -207,13 +209,13 @@ function ev(x: Expr, env: Env): unknown {
 
 // Parsing is the expensive part; a source is parsed once and its
 // definitions reused for every instantiation.
-const parsed = new Map<string, { name: string; clause: Clause }[]>();
+const parsed = new Map<string, Def[]>();
 function parse(src: string) {
   let defs = parsed.get(src);
   if (!defs) {
     const m = grammar.match(layout(src));
     if (m.failed()) throw new Error(`Mooi: ${m.message}`);
-    defs = semantics(m).ast() as { name: string; clause: Clause }[];
+    defs = semantics(m).ast() as Def[];
     parsed.set(src, defs);
   }
   return defs;

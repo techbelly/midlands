@@ -82,7 +82,7 @@ export interface LowerOptions {
 // Every pass reads the same uniform: the token count, the grid's extents, and
 // the band it works on (segments segBase…segEnd, minor keys minBase…minEnd),
 // so a host can bound a pass to a path's bounding box.
-export const META_WGSL = 'struct Meta { n : u32, major : u32, minor : u32, segBase : u32, segEnd : u32, minBase : u32, minEnd : u32, pad : u32 }';
+const META_WGSL = 'struct Meta { n : u32, major : u32, minor : u32, segBase : u32, segEnd : u32, minBase : u32, minEnd : u32, pad : u32 }';
 export const META_BYTES = 32;
 const META: Binding = { name: 'META', role: 'meta', access: 'uniform', type: 'Meta' };
 
@@ -234,8 +234,8 @@ const loopFn = (j: number, params: string, before: string[], top: string[], afte
 
 // Stage j's body as fn st{j}(a0, …): emit calls st{j+1} (or the sink), feed
 // pushes onto the stage's worklist, state is the stage's private array.
-// `key`: the input slot carrying the grid's major key (segments passes),
-// checked by admit and followed through the stages.
+// `majorKey`: the input slot carrying the grid's major key (segments
+// passes), checked by admit and followed through the stages.
 function genStages(stages: FusedStage[], width: number, o: PassOptions, majorKey: number | null): Stages {
   const P = paramsOnly((i) => `P[${i}u]`, fail);
   const out: Stages = { decls: [], fns: [], init: [], flush: [], overflows: false };
@@ -349,33 +349,38 @@ function shader(title: string, bindings: Binding[], s: Stages, main: string[]): 
   ].filter((l) => l !== '').join('\n') + '\n';
 }
 
+// A pass from its stages: the bindings in the order the host fills them
+// (execute.ts), the input before the parameters and the grids after, then
+// the overflow word if a stage has a worklist, then the sink's; and the
+// shader, titled by the stages.
+function pass(over: Pass['over'], how: string, stages: FusedStage[], o: PassOptions, s: Stages, own: { input?: Binding; grids?: Binding[] }, main: string[]): Pass {
+  const bindings = [META, ...(own.input ? [own.input] : []), ...(o.paramWidth > 0 ? [PARAMS] : []), ...(own.grids ?? []), ...(s.overflows ? [OVERFLOW] : []), ...o.sink.bindings];
+  const names = stages.map((st) => st.name).join(' → ') || '(→)';
+  return { name: names, over, bindings, wgsl: shader(`${names}, ${how} (generated from Nile IR)`, bindings, s, main) };
+}
+
 // One thread per input token.
 function tokensPass(width: number, stages: FusedStage[], o: PassOptions): Pass {
   const s = genStages(stages, width, o, null);
   const INBUF: Binding = { name: 'INBUF', role: 'input', access: 'read', type: 'array<f32>' };
-  const bindings = [META, INBUF, ...(o.paramWidth > 0 ? [PARAMS] : []), ...(s.overflows ? [OVERFLOW] : []), ...o.sink.bindings];
-  const names = stages.map((st) => st.name).join(' → ') || '(→)';
-  const main = [
+  return pass('tokens', 'one thread per token', stages, o, s, { input: INBUF }, [
     `  let i = gid.x;`,
     `  if (i >= META.n) { return; }`,
     ...s.init,
     `  st0(${Array.from({ length: width }, (_, k) => `INBUF[i * ${width}u + ${k}u]`).join(', ')});`,
-  ];
-  return { name: names, over: 'tokens', bindings, wgsl: shader(`${names}, one thread per token (generated from Nile IR)`, bindings, s, main) };
+  ]);
 }
 
 // One thread per major-key bucket, walking the minor key.
 function segmentsPass(g: Grid, stages: FusedStage[], o: PassOptions): Pass {
   const s = genStages(stages, g.width, o, g.keys[0]);
   const reads = g.fields.map((f): Binding => ({ name: f.grid, role: 'grid', access: 'read', type: 'array<i32>' }));
-  const bindings = [META, ...(o.paramWidth > 0 ? [PARAMS] : []), ...reads, ...(s.overflows ? [OVERFLOW] : []), ...o.sink.bindings];
-  const names = stages.map((st) => st.name).join(' → ') || '(→)';
   const slot = (i: number): string => {
     const f = g.fields.find((x) => x.index === i);
     if (f) return `f32(${f.grid}[gi]) / ${FIXED_SCALE}.0`;
     return g.keys[0] === i ? 'f32(seg) + 0.5' : 'f32(m) + 0.5';
   };
-  const main = [
+  return pass('segments', 'one thread per segment of the grid', stages, o, s, { grids: reads }, [
     `  let seg = gid.x + META.segBase;`,
     `  if (seg >= META.segEnd) { return; }`,
     ...s.init,
@@ -384,12 +389,12 @@ function segmentsPass(g: Grid, stages: FusedStage[], o: PassOptions): Pass {
     `    st0(${Array.from({ length: g.width }, (_, i) => slot(i)).join(', ')});`,
     `  }`,
     ...s.flush,
-  ];
-  return { name: names, over: 'segments', bindings, wgsl: shader(`${names}, one thread per segment of the grid (generated from Nile IR)`, bindings, s, main) };
+  ]);
 }
 
 // The sink between a kernels pass and its grid: keys address a cell, reduced
-// fields are added in fixed point. Writes outside the band are dropped.
+// fields are added in fixed point. Writes outside the band's rows, or the
+// grid's columns, are dropped.
 function gridSink(g: Grid): Sink {
   const two = g.keys.length === 2;
   return {
