@@ -115,9 +115,12 @@ export interface FusedIR {
   paramWidth: number;
   runs: FusedRun[];
 }
+// A stage that is not a kernel: the barriers (sortBy, groupBy, reduceBy,
+// reverse), identity, dupCat and dupZip; the runtime supplies each.
+export type WholeStreamStage = Exclude<StageIR, { k: 'stage' }>;
 export type FusedRun =
   | { k: 'kernels'; stages: FusedStage[] }
-  | Exclude<StageIR, { k: 'stage' }>; // whole-stream stages: the barriers (sortBy, groupBy, reduceBy, reverse), identity, dupCat, dupZip
+  | WholeStreamStage;
 export interface FusedStage {
   name: string;
   kernel: KernelIR;
@@ -251,6 +254,21 @@ export function mapStmt(s: Stmt, f: (e: ScalarExpr) => ScalarExpr): Stmt {
     case 'emit': case 'feed': return { ...s, values: s.values.map(f) };
     default: return { ...s, expr: f(s.expr) };
   }
+}
+
+// How many times each local is read in these statements: what a pass
+// needs to know whether a let is dead, or shared, or read just once.
+export function localReads(stmts: Stmt[]): Map<string, number> {
+  const reads = new Map<string, number>();
+  for (const s of allStmts(stmts)) for (const e of stmtExprs(s)) for (const x of allNodes(e)) if (x.k === 'local') reads.set(x.name, (reads.get(x.name) ?? 0) + 1);
+  return reads;
+}
+
+// A kernel's three regions of statements, each rewritten by f. They are
+// separate scopes: a prologue runs once, a body per token, a flush at the
+// end.
+export function mapRegions(k: KernelIR, f: (stmts: Stmt[]) => Stmt[]): KernelIR {
+  return { ...k, prologue: f(k.prologue), body: f(k.body), flush: f(k.flush) };
 }
 
 // A kernel's static size in operation nodes: statements and state

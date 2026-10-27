@@ -367,7 +367,7 @@ class Elaborator {
   // time.
   private get pipelineProgram(): PipelineProgram {
     return {
-      field: (shape, name) => fieldInfo(shape, name),
+      field: fieldInfo,
       realField,
       expr: (e, env) => stageExpr(this.program, e, env),
       type: (t) => this.resolveType(t),

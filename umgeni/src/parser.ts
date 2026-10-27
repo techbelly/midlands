@@ -1,11 +1,15 @@
+// Nile source to AST, in two passes: the operator definitions' headers are
+// scanned first, so that the grammar can be extended with the prefix and
+// outfix operators a program declares, and then the program is parsed
+// with the extended grammar.
+
 import * as ohm from 'ohm-js';
 import { nileGrammarSource } from './grammar/source.js';
 import * as ast from './ast.js';
 import { emptyOpTable, opExtensionSource, opKey, type OpTable } from './ops.js';
 import { preprocessMapped } from './preprocess.js';
 
-const coreSource = nileGrammarSource;
-const coreGrammar = ohm.grammar(coreSource);
+const coreGrammar = ohm.grammar(nileGrammarSource);
 
 export class ParseError extends Error {
   constructor(message: string, public line: number, public col: number) {

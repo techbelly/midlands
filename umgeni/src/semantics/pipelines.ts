@@ -5,7 +5,7 @@
 
 import type * as A from '../ast.js';
 import type { StageIR } from '../ir.js';
-import { ElabError, REAL, type Shape, type Stream, type Value } from '../values.js';
+import { elabFail, REAL, type Shape, type Stream, type Value } from '../values.js';
 import { load } from '../../../mooi/src/mooi.js';
 import { prelude } from '../../../mooi/src/prelude.js';
 import { pipelinesSource, valuesSource } from './source.js';
@@ -38,15 +38,11 @@ export interface Closure {
   procs: Map<string, Closure>;
 }
 
-const fail = (msg: string): never => {
-  throw new ElabError(msg);
-};
-
 export function elabPipelineStages(
   P: PipelineProgram, who: string, elems: A.PipelineElem[], env: Map<string, Value>, procs: Map<string, Closure>, input: Shape,
 ): { stages: StageIR[]; output: Shape } {
   const m = load(SOURCE, {
-    ...prelude(fail),
+    ...prelude(elabFail),
     P,
     R: REAL,
     empty: new Map(),

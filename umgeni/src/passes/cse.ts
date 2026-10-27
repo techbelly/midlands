@@ -23,18 +23,11 @@
 // always the first occurrence, in the statement the let was placed before,
 // so nothing moves across an assignment.
 
-import { allNodes, allStmts, mapKernels, mapStmt, opCount, operands, stmtExprs, withOperands, type KernelIR, type ModuleIR, type ScalarExpr, type Stmt } from '../ir.js';
+import { allStmts, localReads, mapKernels, mapRegions, mapStmt, opCount, operands, stmtExprs, withOperands, type KernelIR, type ModuleIR, type ScalarExpr, type Stmt } from '../ir.js';
 
 export const cseModule = (mod: ModuleIR): ModuleIR => mapKernels(mod, cseKernel);
 
-function cseKernel(p: KernelIR): KernelIR {
-  return {
-    ...p,
-    prologue: cseRegion(p.prologue),
-    body: cseRegion(p.body),
-    flush: cseRegion(p.flush),
-  };
-}
+const cseKernel = (p: KernelIR): KernelIR => mapRegions(p, cseRegion);
 
 // Materialize a shared subtree of at least this many ops. One: a single
 // floor or subtraction repeated three times is three operations, and on the
@@ -79,8 +72,7 @@ function cseRegion(stmts: Stmt[]): Stmt[] {
 const isShared = (name: string): boolean => name.startsWith('#cse');
 
 function inlineSingleReads(stmts: Stmt[]): Stmt[] {
-  const reads = new Map<string, number>();
-  for (const s of allStmts(stmts)) for (const e of stmtExprs(s)) for (const x of allNodes(e)) if (x.k === 'local') reads.set(x.name, (reads.get(x.name) ?? 0) + 1);
+  const reads = localReads(stmts);
   const inlined = new Map<string, ScalarExpr>();
   const subst = (e: ScalarExpr): ScalarExpr => (e.k === 'local' ? (inlined.get(e.name) ?? e) : withOperands(e, operands(e).map(subst)));
   const rewrite = (ss: Stmt[]): Stmt[] =>

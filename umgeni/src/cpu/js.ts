@@ -5,7 +5,7 @@
 // and returns a runtime Op. The generated source is a first-class artifact:
 // compileLibrary exposes it for inspection alongside the executable form.
 
-import { anyStmt, inputWidthOf, opCount, type FusedIR, type FusedRun, type FusedStage, type KernelIR, type ModuleIR, type PipelineIR, type ScalarExpr, type Stmt } from '../ir.js';
+import { anyStmt, inputWidthOf, opCount, stmtExprs, type FusedIR, type FusedRun, type FusedStage, type KernelIR, type ModuleIR, type PipelineIR, type ScalarExpr, type StageIR, type Stmt, type WholeStreamStage } from '../ir.js';
 import { compilePipeline, inWasm } from './wasm.js';
 import { stageShape } from '../passes/tail.js';
 import { renderCond, renderExpr, type Dialect, sanitize } from '../scalar.js';
@@ -19,14 +19,12 @@ export interface CodegenOptions {
   // rt.opsCounter(R). Counts bin/un/select nodes per executed statement (ternary
   // short-circuiting is not modelled: both arms count).
   countOps?: boolean;
-  // Compile fused kernel runs to WebAssembly instead of JS (wasm.ts).
-  // Output is bit-identical; barriers and unfused pipelines stay JS.
+  // Compile to WebAssembly where wasm.ts can (its header says what it
+  // takes); the rest stays JS. Output is bit-identical.
   target?: 'js' | 'wasm';
 }
 
-// Local names come from Nile identifiers (letters/digits, an optional prime)
-// plus '#n' leaf suffixes from elaboration. Nile identifiers contain no
-// underscore, so the mangled forms cannot collide.
+// A local as JS spells it: sanitize's form (scalar.ts) behind '_'.
 const mangle = (name: string): string => '_' + sanitize(name);
 
 // How slot references and emit/feed render: the standalone-kernel default is
@@ -74,29 +72,24 @@ function genStmts(stmts: Stmt[], indent: string, o: CodegenOptions, env: GenEnv)
     if (o.countOps && n > 0) lines.push(`${indent}OPS += ${n};`);
   };
   for (const s of stmts) {
+    count(stmtExprs(s).reduce((n, e) => n + opCount(e), 0));
     switch (s.k) {
       case 'let':
-        count(opCount(s.expr));
         lines.push(`${indent}let ${mangle(s.name)} = ${genExpr(s.expr, o, env)};`);
         break;
       case 'assign':
-        count(opCount(s.expr));
         lines.push(`${indent}${mangle(s.name)} = ${genExpr(s.expr, o, env)};`);
         break;
       case 'setState':
-        count(opCount(s.expr));
         lines.push(`${indent}${env.state(s.index)} = ${genExpr(s.expr, o, env)};`);
         break;
       case 'emit':
-        count(s.values.reduce((n, v) => n + opCount(v), 0));
         lines.push(`${indent}${env.emit(s.values.map((v) => genExpr(v, o, env)))}`);
         break;
       case 'feed':
-        count(s.values.reduce((n, v) => n + opCount(v), 0));
         lines.push(`${indent}${(s.tail && env.tailFeed ? env.tailFeed : env.feed)(s.values.map((v) => genExpr(v, o, env)))}`);
         break;
       case 'if': {
-        count(opCount(s.cond));
         lines.push(`${indent}if (${genCond(s.cond, o, env)}) {`);
         lines.push(genStmts(s.then, indent + '  ', o, env));
         if (s.else.length > 0) {
@@ -119,7 +112,7 @@ function genKernel(k: KernelIR, o: CodegenOptions): string {
 
 // The runtime expression for a non-kernel stage (shared by the fused and
 // unfused pipeline forms), or null for kernel stages.
-function genBuiltinStage(s: Exclude<PipelineIR['stages'][number], { k: 'stage' }>, o: CodegenOptions): string {
+function genBuiltinStage(s: WholeStreamStage, o: CodegenOptions): string {
   switch (s.k) {
     case 'sortBy':
       return `rt.sortBy([${s.keyIndexes.join(', ')}])`;
@@ -141,7 +134,7 @@ function genBuiltinStage(s: Exclude<PipelineIR['stages'][number], { k: 'stage' }
   }
 }
 
-function genStages(stages: PipelineIR['stages'], o: CodegenOptions): string {
+function genStages(stages: StageIR[], o: CodegenOptions): string {
   const ops = stages.map((s) => {
     if (s.k !== 'stage') return genBuiltinStage(s, o);
     const args = s.args.flat().map((a) => genExpr(a, o, KERNEL_ENV)).join(', ');

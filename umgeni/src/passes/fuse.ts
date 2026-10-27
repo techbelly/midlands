@@ -12,7 +12,7 @@
 // correct): a stage that isn't a compiled kernel or pipeline, or pipelines
 // nested more than eight deep.
 
-import { mapExpr, type FusedIR, type FusedRun, type FusedStage, type ModuleIR, type PipelineIR, type ProcessIR, type ScalarExpr, type StageIR } from '../ir.js';
+import { mapExpr, type FusedIR, type FusedRun, type FusedStage, type ModuleIR, type PipelineIR, type ProcessIR, type ScalarExpr, type StageIR, type WholeStreamStage } from '../ir.js';
 
 export function fuseModule(mod: ModuleIR): ModuleIR {
   const byName = new Map(mod.processes.map((p) => [p.name, p]));
@@ -24,7 +24,7 @@ export function fuseModule(mod: ModuleIR): ModuleIR {
 
 type Resolved =
   | { k: 'kernel'; stage: FusedStage }
-  | Exclude<StageIR, { k: 'stage' }>;
+  | WholeStreamStage;
 
 function fusePipeline(p: PipelineIR, byName: Map<string, ProcessIR>): ProcessIR {
   const flat = flatten(p.stages, byName, 0);

@@ -15,17 +15,15 @@
 //           only reader of another.
 
 import { BIN, UN } from '../scalar.js';
-import { allNodes, allStmts, mapKernels, mapStmts, operands, stmtExprs, withOperands, type KernelIR, type ModuleIR, type ScalarExpr, type Stmt } from '../ir.js';
+import { allStmts, localReads, mapKernels, mapRegions, mapStmts, operands, withOperands, type KernelIR, type ModuleIR, type ScalarExpr, type Stmt } from '../ir.js';
 
 export const foldModule = (mod: ModuleIR): ModuleIR => mapKernels(mod, foldKernel);
 export const pruneModule = (mod: ModuleIR): ModuleIR => mapKernels(mod, pruneKernel);
 
-const regions = ['prologue', 'body', 'flush'] as const;
-
 // --- fold ---
 
 function foldKernel(k: KernelIR): KernelIR {
-  return { ...k, stateInit: k.stateInit.map(fold), prologue: mapStmts(k.prologue, fold), body: mapStmts(k.body, fold), flush: mapStmts(k.flush, fold) };
+  return mapRegions({ ...k, stateInit: k.stateInit.map(fold) }, (stmts) => mapStmts(stmts, fold));
 }
 
 const isConst = (e: ScalarExpr): e is { k: 'const'; value: number } => e.k === 'const';
@@ -46,22 +44,15 @@ export function fold(e: ScalarExpr): ScalarExpr {
 
 // --- prune ---
 
-function pruneKernel(k: KernelIR): KernelIR {
-  const out = { ...k };
-  for (const r of regions) out[r] = pruneRegion(k[r]);
-  return out;
-}
+const pruneKernel = (k: KernelIR): KernelIR => mapRegions(k, pruneRegion);
 
 // Locals are per region (a prologue, a body and a flush are separate
 // scopes), and a name is bound once in a region, so reads and assigns are
 // counted over the whole region.
 function pruneRegion(stmts: Stmt[]): Stmt[] {
   for (;;) {
-    const live = new Set<string>();
-    for (const s of allStmts(stmts)) {
-      if (s.k === 'assign') live.add(s.name);
-      for (const e of stmtExprs(s)) for (const x of allNodes(e)) if (x.k === 'local') live.add(x.name);
-    }
+    const live = localReads(stmts);
+    for (const s of allStmts(stmts)) if (s.k === 'assign') live.set(s.name, 1);
     let dropped = false;
     const prune = (ss: Stmt[]): Stmt[] =>
       ss.flatMap((s): Stmt[] => {

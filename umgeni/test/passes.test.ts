@@ -7,7 +7,7 @@ import { foldModule, pruneModule } from '../src/passes/simplify.js';
 import { generate } from '../src/cpu/js.js';
 import { run } from '../src/cpu/runtime.js';
 import { needsWorklist } from '../src/passes/tail.js';
-import { allNodes, allStmts, stmtExprs, type KernelIR } from '../src/ir.js';
+import { allStmts, localReads, type KernelIR } from '../src/ir.js';
 
 function staticOps(library: ReturnType<typeof compileLibrary>, name: string): number {
   const k = library.ir.processes.find((p) => p.name === name);
@@ -101,8 +101,7 @@ describe('simplify passes', () => {
     for (const p of lib.ir.processes) {
       if (p.k !== 'kernel') continue;
       for (const region of [p.prologue, p.body, p.flush]) {
-        const reads = new Map<string, number>();
-        for (const s of allStmts(region)) for (const e of stmtExprs(s)) for (const x of allNodes(e)) if (x.k === 'local') reads.set(x.name, (reads.get(x.name) ?? 0) + 1);
+        const reads = localReads(region);
         for (const s of allStmts(region)) if (s.k === 'let' && s.name.startsWith('#cse')) expect(reads.get(s.name), `${p.name}: ${s.name}`).toBeGreaterThan(1);
       }
     }

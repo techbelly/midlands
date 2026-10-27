@@ -20,10 +20,10 @@ function fmt(v: number): string {
   return v < 0 ? `(${s})` : s;
 }
 
-// Local names come from Nile identifiers plus '#'-suffixed leaves and '#cse'
-// temporaries; the corpus is ASCII. (Unicode identifiers are legal in modern
-// WGSL but not relied on yet.) The prefix is 'v', not '_': WGSL reserves
-// identifiers starting with '__', which '#cse0' would otherwise become.
+// A local as WGSL spells it: sanitize's form (scalar.ts) behind 'v', not
+// '_', since WGSL reserves identifiers starting with '__', which '#cse0'
+// would otherwise become. (The corpus is ASCII; Unicode identifiers are
+// legal in modern WGSL but not relied on yet.)
 export const mangle = (name: string): string => 'v' + sanitize(name);
 
 // How slot references and emit/feed render inside a shader — the WGSL

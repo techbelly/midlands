@@ -306,7 +306,7 @@ function partition(runs: FusedRun[], inputWidth: number): Section[] {
   let section = open();
   for (const s of runs) {
     if (!inWasm(s)) throw new Error(`wasm: ${s.k === 'kernels' ? 'a prologue' : s.k} is not compiled to wasm yet`);
-    if (s.k === 'identity' || s.k === 'dupCat' || s.k === 'dupZip') continue; // dup: refused above
+    if (s.k === 'identity' || s.k === 'dupCat' || s.k === 'dupZip') continue; // the dups were refused above; naming them narrows s
     if (s.k === 'kernels') {
       if (section.barriers.length > 0) section = open(); // a new section reads what the barriers leave
       section.stages.push(...s.stages);

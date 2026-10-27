@@ -48,12 +48,11 @@ export function shapeWidth(s: Shape): number {
 }
 
 // Leaf offset and shape of a named field (for SortBy keys and field access).
-export function fieldInfo(shape: Shape, name: string): { index: number; offset: number; shape: Shape } {
+export function fieldInfo(shape: Shape, name: string): { offset: number; shape: Shape } {
   if (shape.k === 'real') throw new ElabError(`a Real has no field '.${name}'`);
   let offset = 0;
-  for (let i = 0; i < shape.fields.length; i++) {
-    const f = shape.fields[i];
-    if (f.name === name) return { index: i, offset, shape: f.shape };
+  for (const f of shape.fields) {
+    if (f.name === name) return { offset, shape: f.shape };
     offset += shapeWidth(f.shape);
   }
   throw new ElabError(`type '${shape.name ?? '(tuple)'}' has no field '.${name}'`);
@@ -68,6 +67,10 @@ export function realField(shape: Shape, name: string, what: string): number {
 }
 
 export class ElabError extends Error {}
+// The equations' `fail`: an elaboration error, as the hosts bind it.
+export const elabFail = (msg: string): never => {
+  throw new ElabError(msg);
+};
 
 // --- values ------------------------------------------------------------------
 // A value under elaboration mirrors its shape: a scalar expression, or an

@@ -5,7 +5,7 @@
 import type * as A from '../ast.js';
 import type { BinOpName, UnOpName } from '../ir.js';
 import { BIN, UN } from '../scalar.js';
-import { ElabError, REAL, type Stream, type Value } from '../values.js';
+import { elabFail, REAL, type Stream, type Value } from '../values.js';
 import { load } from '../../../mooi/src/mooi.js';
 import { prelude } from '../../../mooi/src/prelude.js';
 import type { Domain, Program } from './domain.js';
@@ -14,27 +14,24 @@ import { nileSource, valuesSource } from './source.js';
 const SOURCE = `${valuesSource}\n${nileSource}`;
 const BIN_OF = new Map(Object.entries(BIN).map(([n, o]) => [o.nile, n as BinOpName]));
 const UN_OF = new Map(Object.entries(UN).map(([n, o]) => [o.nile, n as UnOpName]));
-const fail = (msg: string): never => {
-  throw new ElabError(msg);
-};
 
 // Environments are persistent: binding makes a child (prototype chain), so
 // threading them through statements costs O(1) per binding. What a name is
 // bound to (a value, or the cells standing for x') is the equations' business.
-type Env<S> = Record<string, unknown>;
-const child = <S>(env: Env<S>): Env<S> => Object.create(env);
-const fromMap = <S>(m: Map<string, Value<S>>): Env<S> => Object.assign(Object.create(null), Object.fromEntries(m));
+type Env = Record<string, unknown>;
+const child = (env: Env): Env => Object.create(env);
+const fromMap = <S>(m: Map<string, Value<S>>): Env => Object.assign(Object.create(null), Object.fromEntries(m));
 
 // What Mooi cannot say itself: the domain, the program, the builtin
 // operators, and environments.
 function host<S>(D: Domain<S>, P: Program): Record<string, unknown> {
   return {
-    ...prelude(fail),
+    ...prelude(elabFail),
     D, P, R: REAL, empty: Object.create(null),
-    bind: (env: Env<S>, n: string, v: unknown) => Object.assign(child(env), { [n]: v }),
-    bindAll: (env: Env<S>, ns: string[], vs: unknown[]) => Object.assign(child(env), Object.fromEntries(ns.map((n, i) => [n, vs[i]]))),
-    bound: (env: Env<S>, n: string) => n in env,
-    get: (env: Env<S>, n: string) => (n in env ? env[n] : null),
+    bind: (env: Env, n: string, v: unknown) => Object.assign(child(env), { [n]: v }),
+    bindAll: (env: Env, ns: string[], vs: unknown[]) => Object.assign(child(env), Object.fromEntries(ns.map((n, i) => [n, vs[i]]))),
+    bound: (env: Env, n: string) => n in env,
+    get: (env: Env, n: string) => (n in env ? env[n] : null),
     primed: (n: string) => n.endsWith("'"),
     builtin: (op: string) => BIN_OF.has(op) || UN_OF.has(op),
     prim: (op: string, xs: S[]) => (xs.length === 2 ? D.bin(BIN_OF.get(op)!, xs[0], xs[1]) : D.un(UN_OF.get(op)!, xs[0])),
