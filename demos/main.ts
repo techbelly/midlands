@@ -218,7 +218,7 @@ async function render(): Promise<void> {
   }
   showOnly(r.canvas, canvas2d, canvasGpu);
   const done = await r.frame(textEl.value, params);
-  stats.textContent = done.stats;
+  stats.textContent = `${done.stats} · ${SIZE.width} × ${SIZE.height} px`;
   perf.textContent = done.perf;
 }
 

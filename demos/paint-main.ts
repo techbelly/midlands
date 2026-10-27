@@ -112,7 +112,7 @@ function paintOnGpu({ renderer, context }: GpuPaint, shapes: number[][][], geomM
     shapes.map((bs) => ({ tokens: new Float32Array(bs.flat()), n: bs.length, color: [0, 0, 0] as const })),
     context.getCurrentTexture().createView(),
   );
-  statsEl.textContent = compileStats;
+  statsEl.textContent = `${compileStats} · ${W} × ${H} px`;
   statusEl.textContent = `${compileNote}  Geometry ${geomMs.toFixed(0)} ms (CPU Nile); ` +
     `raster + paint on the GPU, submitted in ${(performance.now() - t1).toFixed(1)} ms, zero fences.`;
 }
@@ -127,7 +127,7 @@ function paintOnCpu(p: CompiledLibrary, shapes: number[][][], t0: number, note: 
     writePixels(img, p.api, out);
   }
   ctx.putImageData(img, 0, 0);
-  statsEl.textContent = `${compileStats} · ${px.toLocaleString()} pixels`;
+  statsEl.textContent = `${compileStats} · ${px.toLocaleString()} pixels · ${W} × ${H} px`;
   statusEl.textContent = `${compileNote}  Painted on the CPU in ${(performance.now() - t0).toFixed(0)} ms.${note}`;
 }
 

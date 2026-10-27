@@ -71,7 +71,7 @@ function draw(): void {
     }
   }
   const pieces = outlines.reduce((n, o) => n + o.length, 0);
-  statsEl.textContent = `${pieces} outline beziers · ${spans.toLocaleString()} spans`;
+  statsEl.textContent = `${pieces} outline beziers · ${spans.toLocaleString()} spans · ${W} × ${H} px`;
   perfEl.textContent = `CPU (JavaScript) · ${ms.toFixed(1)} ms`;
 }
 

@@ -115,7 +115,7 @@ async function draw(): Promise<void> {
   const paths = tigerPaths(tiger, viewMatrix(), mode.front, canvas.width, canvas.height);
   const frontMs = performance.now() - t0;
   const backMs = await backEnd(paths);
-  statsEl.textContent = `${tiger.paths.length} paths · ${segs.toLocaleString()} cubics · ${z.toFixed(1)}×`;
+  statsEl.textContent = `${tiger.paths.length} paths · ${segs.toLocaleString()} cubics · ${z.toFixed(1)}× · ${canvas.width} × ${canvas.height} px`;
   perfEl.textContent =
     `front (CPU Nile, ${mode.frontLabel}) ${frontMs.toFixed(0)} ms + raster & composite (${mode.backLabel}) ${backMs.toFixed(0)} ms ` +
     `= ${(frontMs + backMs).toFixed(0)} ms a frame`;

@@ -129,8 +129,8 @@ async function draw(): Promise<void> {
   if (g) await g.device.queue.onSubmittedWorkDone();
   const ms = performance.now() - t0;
   perfEl.textContent = g
-    ? `${SCENES.length} samples, ${onGpu} rasterized on the GPU and ${SCENES.length - onGpu} on the CPU, ${ms.toFixed(0)} ms in all.`
-    : `${SCENES.length} samples, ${ms.toFixed(0)} ms in all, on the CPU (JavaScript compiled from Nile).`;
+    ? `${SCENES.length} samples at ${SIZE} × ${SIZE} px, ${onGpu} rasterized on the GPU and ${SCENES.length - onGpu} on the CPU, ${ms.toFixed(0)} ms in all.`
+    : `${SCENES.length} samples at ${SIZE} × ${SIZE} px, ${ms.toFixed(0)} ms in all, on the CPU (JavaScript compiled from Nile).`;
 }
 
 modeEl.addEventListener('change', () => void draw());
