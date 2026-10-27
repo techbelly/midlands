@@ -23,7 +23,7 @@
 // always the first occurrence, in the statement the let was placed before,
 // so nothing moves across an assignment.
 
-import { mapKernels, opCount, operands, withOperands, type KernelIR, type ModuleIR, type ScalarExpr, type Stmt } from '../ir.js';
+import { allStmts, mapKernels, opCount, operands, withOperands, type KernelIR, type ModuleIR, type ScalarExpr, type Stmt } from '../ir.js';
 
 export const cseModule = (mod: ModuleIR): ModuleIR => mapKernels(mod, cseKernel);
 
@@ -59,7 +59,14 @@ interface Region {
 }
 
 function cseRegion(stmts: Stmt[]): Stmt[] {
-  const region: Region = { counts: new Map(), fresh: 0 };
+  // Names start past any the region already has, so the pass can run again
+  // over its own output (a let of the same name would merge the reads).
+  let fresh = 0;
+  for (const s of allStmts(stmts)) {
+    const m = s.k === 'let' && /^#cse(\d+)$/.exec(s.name);
+    if (m) fresh = Math.max(fresh, Number(m[1]) + 1);
+  }
+  const region: Region = { counts: new Map(), fresh };
   countStmts(stmts, region, newEpochs());
   return inlineSingleReads(rewriteStmts(stmts, region, newEpochs(), [new Map()]));
 }

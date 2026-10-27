@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { gezira } from './sources.js';
 import { compileLibrary, makeStreamer } from '../src/compile.js';
 import { kernelOpCount } from '../src/ir.js';
+import { cseModule } from '../src/passes/cse.js';
+import { foldModule, pruneModule } from '../src/passes/simplify.js';
+import { generate } from '../src/cpu/js.js';
 import { run } from '../src/cpu/runtime.js';
 import { needsWorklist } from '../src/passes/tail.js';
 import { allStmts, operands, type KernelIR, type ScalarExpr } from '../src/ir.js';
@@ -85,6 +88,12 @@ describe('simplify passes', () => {
     const lib = single(['        (a, b) = (p.x + 1, p.y + 1)', '        >> a']);
     expect(localsOf(lib, 'K')).toEqual(['#pat#0']);
     expect(run(lib.api.K(), [[3, 7]])).toEqual([[4]]);
+  });
+
+  it('is idempotent: a second run of the scalar passes changes nothing', () => {
+    const lib = compileLibrary([gezira('types.nl'), gezira('rasterize.nl'), gezira('stroke.nl')]);
+    const again = pruneModule(cseModule(foldModule(lib.ir)));
+    expect(generate(again, { boolCond: true })).toBe(lib.source);
   });
 
   it('leaves no shared let with a single reader', () => {
