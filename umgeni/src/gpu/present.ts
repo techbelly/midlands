@@ -73,6 +73,100 @@ export const framePlan = (fused: FusedIR, width: number, height: number): Plan =
 
 const isPlan = (p: Plan | Record<string, Plan>): p is Plan => Array.isArray((p as Plan).passes);
 
+// A lane: one of the presenter's plans and the executor that runs it. A
+// path names its lane (or takes the only one).
+interface Lane {
+  name: string;
+  plan: Plan;
+  executor: Executor;
+}
+
+// A path in a frame: its lane, the band of the frame it touches, and the
+// bytes its tokens take at the storage alignment.
+interface Item {
+  p: PathBatch;
+  lane: Lane;
+  band: Band;
+  bytes: number;
+}
+
+// The band of the frame a path touches: its bounding box padded a pixel,
+// rows as segments and columns as the minor key. A token is (x, y) pairs
+// throughout (a Bezier is three points), so every even slot is an x and
+// every odd one a y.
+function bandOf(p: PathBatch, inputWidth: number, height: number, width: number): Band {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let j = 0; j < p.n * inputWidth; j += 2) {
+    const px = p.tokens[j], py = p.tokens[j + 1];
+    if (px < x0) x0 = px;
+    if (px > x1) x1 = px;
+    if (py < y0) y0 = py;
+    if (py > y1) y1 = py;
+  }
+  const segBase = Math.max(0, Math.floor(y0) - 1);
+  const minBase = Math.max(0, Math.floor(x0) - 1);
+  return { segBase, segEnd: Math.max(segBase, Math.min(height, Math.ceil(y1) + 2)), minBase, minEnd: Math.max(minBase, Math.min(width, Math.ceil(x1) + 2)) };
+}
+
+// The per-frame buffers, sized for the largest frame so far and regrown
+// together: per-path meta and colours at uniform stride, the paths' tokens
+// at aligned offsets, and the bind groups over them.
+interface FrameBuffers {
+  pathCap: number;
+  inCap: number;
+  maxPathBytes: number; // the dynamic INBUF binding needs one fixed bound size
+  meta: GPUBuffer;
+  color: GPUBuffer;
+  input: GPUBuffer;
+  groups: Record<string, GPUBindGroup[]>;
+  composite: GPUBindGroup;
+}
+
+// What the frame buffers are made over: the device, the lanes they bind
+// for, the frame's coverage buffer, the compositor, and the uniform stride.
+interface FrameSetup {
+  device: GPUDevice;
+  lanes: Record<string, Lane>;
+  cov: GPUBuffer;
+  compositor: Compositor;
+  uStride: number;
+}
+
+function allocateFrameBuffers(f: FrameSetup, pathCap: number, inCap: number, maxPathBytes: number): FrameBuffers {
+  const { device, uStride } = f;
+  const meta = device.createBuffer({ size: pathCap * uStride, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const color = device.createBuffer({ size: pathCap * uStride, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const input = device.createBuffer({ size: inCap, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  const groups: Record<string, GPUBindGroup[]> = {};
+  for (const n of Object.keys(f.lanes)) groups[n] = f.lanes[n].executor.bind({ meta, input, inputSize: maxPathBytes, sink: { COV: f.cov } });
+  return { pathCap, inCap, maxPathBytes, meta, color, input, groups, composite: f.compositor.bind(color) };
+}
+
+function releaseFrameBuffers(b: FrameBuffers): void {
+  for (const buf of [b.meta, b.color, b.input]) buf.destroy();
+}
+
+// Buffers that hold these paths: the current ones if they fit, else larger
+// (the old ones released).
+function ensureFrameBuffers(f: FrameSetup, current: FrameBuffers | null, items: Item[]): FrameBuffers {
+  let needIn = 0;
+  let maxBytes = 4096;
+  for (const it of items) {
+    needIn += it.bytes;
+    maxBytes = Math.max(maxBytes, it.bytes);
+  }
+  // Every path binds maxPathBytes at its own offset, so the buffer must
+  // extend that far past the last offset — not just hold the paths. (Short
+  // of this, a large frame fails validation and the whole submission is
+  // dropped: the tiger went black at 4× zoom.)
+  maxBytes = Math.max(maxBytes, current?.maxPathBytes ?? 0);
+  needIn += maxBytes;
+  if (current && items.length <= current.pathCap && needIn <= current.inCap && maxBytes <= current.maxPathBytes) return current;
+  const next = allocateFrameBuffers(f, Math.max(items.length, current?.pathCap ?? 0, 64), Math.max(needIn, (current?.inCap ?? 0) * 2, 1 << 20), maxBytes);
+  if (current) releaseFrameBuffers(current);
+  return next;
+}
+
 export function createPresenter(
   device: GPUDevice,
   plan: Plan | Record<string, Plan>,
@@ -89,9 +183,6 @@ export function createPresenter(
   const uStride = Math.max(256, device.limits.minUniformBufferOffsetAlignment);
   const sAlign = Math.max(256, device.limits.minStorageBufferOffsetAlignment);
 
-  // A lane: one of the presenter's plans and the executor that runs it. A
-  // path names its lane (or takes the only one).
-  interface Lane { name: string; plan: Plan; executor: Executor }
   const lanes: Record<string, Lane> = {};
   for (const n of names) lanes[n] = { name: n, plan: plans[n], executor: createExecutor(device, plans[n], { dynamic: true }) };
   const laneOf = (p: PathBatch): Lane => {
@@ -99,87 +190,24 @@ export function createPresenter(
     if (!lane) throw new Error(`no plan '${p.plan}' in this presenter`);
     return lane;
   };
-  // A path in a frame: its lane, the band of the frame it touches, and the
-  // bytes its tokens take at the storage alignment.
-  interface Item { p: PathBatch; lane: Lane; band: Band; bytes: number }
   const item = (p: PathBatch): Item => {
     const lane = laneOf(p);
-    return { p, lane, band: bandOf(p, lane.plan.inputWidth), bytes: Math.ceil((p.n * lane.plan.inputWidth * 4) / sAlign) * sAlign };
+    const band = opts.disableBands ? wholeGrid(first.extent) : bandOf(p, lane.plan.inputWidth, height, width);
+    return { p, lane, band, bytes: Math.ceil((p.n * lane.plan.inputWidth * 4) / sAlign) * sAlign };
   };
 
   const frameBuf = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   device.queue.writeBuffer(frameBuf, 0, new Uint32Array([width, height, 0, 0]));
   const cov = device.createBuffer({ size: first.cells * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
   const compositor = createCompositor(device, opts.format, opts.paint, frameBuf, cov);
-
-  // The per-frame buffers, sized for the largest frame so far and regrown
-  // together: per-path meta and colours at uniform stride, the paths' tokens
-  // at aligned offsets, and the bind groups over them.
-  interface FrameBuffers {
-    pathCap: number;
-    inCap: number;
-    maxPathBytes: number; // the dynamic INBUF binding needs one fixed bound size
-    meta: GPUBuffer;
-    color: GPUBuffer;
-    input: GPUBuffer;
-    groups: Record<string, GPUBindGroup[]>;
-    composite: GPUBindGroup;
-  }
+  const setup: FrameSetup = { device, lanes, cov, compositor, uStride };
   let buffers: FrameBuffers | null = null;
-  const allocate = (pathCap: number, inCap: number, maxPathBytes: number): FrameBuffers => {
-    const meta = device.createBuffer({ size: pathCap * uStride, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    const color = device.createBuffer({ size: pathCap * uStride, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    const input = device.createBuffer({ size: inCap, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
-    const groups: Record<string, GPUBindGroup[]> = {};
-    for (const n of names) groups[n] = lanes[n].executor.bind({ meta, input, inputSize: maxPathBytes, sink: { COV: cov } });
-    return { pathCap, inCap, maxPathBytes, meta, color, input, groups, composite: compositor.bind(color) };
-  };
-  const release = (b: FrameBuffers) => { for (const buf of [b.meta, b.color, b.input]) buf.destroy(); };
-
-  // Buffers that hold these paths: the current ones if they fit, else larger.
-  function ensure(items: Item[]): FrameBuffers {
-    let needIn = 0;
-    let maxBytes = 4096;
-    for (const it of items) {
-      needIn += it.bytes;
-      maxBytes = Math.max(maxBytes, it.bytes);
-    }
-    // Every path binds maxPathBytes at its own offset, so the buffer must
-    // extend that far past the last offset — not just hold the paths. (Short
-    // of this, a large frame fails validation and the whole submission is
-    // dropped: the tiger went black at 4× zoom.)
-    maxBytes = Math.max(maxBytes, buffers?.maxPathBytes ?? 0);
-    needIn += maxBytes;
-    if (buffers && items.length <= buffers.pathCap && needIn <= buffers.inCap && maxBytes <= buffers.maxPathBytes) return buffers;
-    const old = buffers;
-    buffers = allocate(Math.max(items.length, old?.pathCap ?? 0, 64), Math.max(needIn, (old?.inCap ?? 0) * 2, 1 << 20), maxBytes);
-    if (old) release(old);
-    return buffers;
-  }
-
-  // The band of the frame a path touches: its bounding box padded a pixel,
-  // rows as segments and columns as the minor key; or the whole frame. A
-  // token is (x, y) pairs throughout (a Bezier is three points), so every
-  // even slot is an x and every odd one a y.
-  function bandOf(p: PathBatch, w: number): Band {
-    if (opts.disableBands) return wholeGrid(first.extent);
-    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (let j = 0; j < p.n * w; j += 2) {
-      const px = p.tokens[j], py = p.tokens[j + 1];
-      if (px < x0) x0 = px;
-      if (px > x1) x1 = px;
-      if (py < y0) y0 = py;
-      if (py > y1) y1 = py;
-    }
-    const segBase = Math.max(0, Math.floor(y0) - 1);
-    const minBase = Math.max(0, Math.floor(x0) - 1);
-    return { segBase, segEnd: Math.max(segBase, Math.min(height, Math.ceil(y1) + 2)), minBase, minEnd: Math.max(minBase, Math.min(width, Math.ceil(x1) + 2)) };
-  }
 
   return {
     frame(paths, target) {
       const items = paths.filter((p) => p.n > 0).map(item);
-      const b = ensure(items);
+      const b = ensureFrameBuffers(setup, buffers, items);
+      buffers = b;
       // Upload per-path meta, colours and tokens at aligned offsets.
       const inOffsets: number[] = [];
       let at = 0;
@@ -213,11 +241,13 @@ export function createPresenter(
     dispose() {
       frameBuf.destroy();
       cov.destroy();
-      if (buffers) release(buffers);
+      if (buffers) releaseFrameBuffers(buffers);
       for (const n of names) lanes[n].executor.dispose();
     },
   };
 }
+
+type Compositor = ReturnType<typeof createCompositor>;
 
 // The composite pass: a fullscreen draw of the coverage in a path's colour
 // (or paint), blended onto the target and scissored to the path's band.
