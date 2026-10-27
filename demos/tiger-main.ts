@@ -6,7 +6,7 @@ import type { Api } from './src/vector/draw.js';
 import { paintPaths, tigerPaths, toBatches, type TigerPath } from './src/vector/tiger.js';
 import type { FusedIR } from '../umgeni/src/ir.js';
 import { createPresenter, framePlan } from '../umgeni/src/gpu/present.js';
-import { configureCanvas, gpuDevice, showOnly, type GpuCanvas, whitePage } from './src/page.js';
+import { configureCanvas, gpuBuilt, showOnly, type GpuCanvas, whitePage } from './src/page.js';
 import { nile, nileWasm, sources, RasterizePixelsIR } from './nl/vector.nl-lib';
 import svgSrc from './tiger.svg';
 import { quoteNile } from './src/quote.js';
@@ -48,7 +48,7 @@ function cpuBackEnd(nile: Api, ctx: CanvasRenderingContext2D): BackEnd {
 
 // The GPU's plan is built for the canvas's size, so a back end remembers
 // the size it was built for, and is rebuilt when that changes.
-interface GpuBackEnd { run: BackEnd; width: number; height: number; dispose: () => void }
+interface GpuBackEnd { run: BackEnd; dispose: () => void }
 function gpuBackEnd(ir: FusedIR, { device, context, format }: GpuCanvas): GpuBackEnd {
   const { width, height } = context.canvas;
   const presenter = createPresenter(device, framePlan(ir, width, height), { format }); // WGSL from IR, in-browser
@@ -60,7 +60,7 @@ function gpuBackEnd(ir: FusedIR, { device, context, format }: GpuCanvas): GpuBac
     await device.queue.onSubmittedWorkDone();
     return performance.now() - t0;
   };
-  return { run, width, height, dispose: () => presenter.dispose() };
+  return { run, dispose: () => presenter.dispose() };
 }
 
 const ctx = canvas.getContext('2d')!;
@@ -69,20 +69,12 @@ const wasm = cpuBackEnd(nileWasm, ctx);
 
 // The GPU back end is built on first use, if WebGPU is there, and again
 // when the canvas changes size.
-let gpu: GpuBackEnd | 'unavailable' | null = null;
-let gpuTarget: GpuCanvas | null = null;
-async function ensureGpu(): Promise<BackEnd | null> {
-  if (gpu !== null && gpu !== 'unavailable' && (gpu.width !== canvasGpu.width || gpu.height !== canvasGpu.height)) {
-    gpu.dispose();
-    gpu = null;
-  }
-  if (gpu === null) {
-    const device = await gpuDevice();
-    gpuTarget ??= device && configureCanvas(device, canvasGpu);
-    gpu = gpuTarget ? gpuBackEnd(RasterizePixelsIR, gpuTarget) : 'unavailable';
-  }
-  return gpu === 'unavailable' ? null : gpu.run;
-}
+const gpuFor = gpuBuilt((device, _size: { width: number; height: number }) => {
+  const target = configureCanvas(device, canvasGpu);
+  if (!target) throw new Error('the GPU canvas has no WebGPU context');
+  return gpuBackEnd(RasterizePixelsIR, target);
+});
+const ensureGpu = async (): Promise<BackEnd | null> => (await gpuFor({ width: canvasGpu.width, height: canvasGpu.height }))?.run ?? null;
 
 // What the renderer menu's entries mean: which Nile runs the front half,
 // which back end finishes the frame (null when this browser has no GPU),

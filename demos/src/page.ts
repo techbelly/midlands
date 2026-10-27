@@ -1,6 +1,7 @@
 // What the pages share: one GPU device per page, asked for on first use and
 // remembered (null where there is no WebGPU); a canvas configured to show
-// it; showing one canvas of several; and a white page to draw on.
+// it, once; something built on the GPU for a key and rebuilt when the key
+// changes; showing one canvas of several; and a white page to draw on.
 
 import { requestDevice } from '../../umgeni/src/gpu/device.js';
 
@@ -12,12 +13,38 @@ export interface GpuCanvas {
   context: GPUCanvasContext;
   format: GPUTextureFormat;
 }
+const configured = new WeakMap<HTMLCanvasElement, GpuCanvas>();
 export function configureCanvas(device: GPUDevice, canvas: HTMLCanvasElement): GpuCanvas | null {
+  const had = configured.get(canvas);
+  if (had?.device === device) return had;
   const context = canvas.getContext('webgpu');
   if (!context) return null;
   const format = navigator.gpu.getPreferredCanvasFormat();
   context.configure({ device, format, alphaMode: 'opaque' });
-  return { device, context, format };
+  const gc = { device, context, format };
+  configured.set(canvas, gc);
+  return gc;
+}
+
+// Something built on the GPU for a key, such as a presenter for a size:
+// built on first use, kept while the key is the same, disposed and built
+// again when it changes, and null where there is no WebGPU. The key is
+// compared by its JSON.
+export function gpuBuilt<K, T extends { dispose(): void }>(build: (device: GPUDevice, key: K) => T): (key: K) => Promise<T | null> {
+  let have: { key: string; value: T } | null = null;
+  return async (key) => {
+    const k = JSON.stringify(key);
+    if (have && have.key !== k) {
+      have.value.dispose();
+      have = null;
+    }
+    if (!have) {
+      const device = await gpuDevice();
+      if (!device) return null;
+      have = { key: k, value: build(device, key) };
+    }
+    return have.value;
+  };
 }
 
 export function showOnly(shown: HTMLElement, ...all: HTMLElement[]): void {

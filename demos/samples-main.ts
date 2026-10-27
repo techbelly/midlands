@@ -13,7 +13,7 @@ import { parseSvg } from './src/vector/svg.js';
 import { drawTiger, fitView } from './src/vector/tiger.js';
 import { quoteNile } from './src/quote.js';
 import { createPresenter, framePlan, type PathBatch, type Presenter } from '../umgeni/src/gpu/present.js';
-import { configureCanvas, gpuDevice, showOnly, whitePage } from './src/page.js';
+import { configureCanvas, gpuBuilt, showOnly, whitePage } from './src/page.js';
 import { Resolution } from './src/resolution.js';
 import { blankImage } from './src/vector/spans.js';
 import tigerSvg from './tiger.svg';
@@ -82,23 +82,11 @@ const cards: Card[] = SCENES.map((scene) => {
 // The GPU, on first use: one presenter over the two rasterizers, lowered
 // here in the browser from the IR the bundle ships, drawing to each card's
 // canvas in turn (all cards are the same size, so they share the plans).
-let gpu: { device: GPUDevice; presenter: Presenter; format: GPUTextureFormat; size: number } | 'unavailable' | null = null;
-async function ensureGpu() {
-  if (gpu !== null && gpu !== 'unavailable' && gpu.size !== SIZE) {
-    gpu.presenter.dispose(); // the plans were for another size
-    gpu = null;
-  }
-  if (gpu === null) {
-    const device = await gpuDevice();
-    if (!device) gpu = 'unavailable';
-    else {
-      const format = navigator.gpu.getPreferredCanvasFormat();
-      const plans = { RasterizePixels: framePlan(RasterizePixelsIR, SIZE, SIZE), RasterizePixelsEvenOdd: framePlan(RasterizePixelsEvenOddIR, SIZE, SIZE) };
-      gpu = { device, presenter: createPresenter(device, plans, { format }), format, size: SIZE };
-    }
-  }
-  return gpu === 'unavailable' ? null : gpu;
-}
+const gpuFor = gpuBuilt((device, size: number) => {
+  const plans = { RasterizePixels: framePlan(RasterizePixelsIR, size, size), RasterizePixelsEvenOdd: framePlan(RasterizePixelsEvenOddIR, size, size) };
+  const presenter = createPresenter(device, plans, { format: navigator.gpu.getPreferredCanvasFormat() });
+  return { device, presenter, dispose: () => presenter.dispose() };
+});
 
 function drawCpu(i: number): void {
   const { cpu, gpu: gpuCanvas } = cards[i];
@@ -118,7 +106,7 @@ async function draw(): Promise<void> {
     SIZE = cards[0].cpu.width;
     tiger = tigerAt(SIZE);
   }
-  const g = modeEl.value === 'gpu' ? await ensureGpu() : null;
+  const g = modeEl.value === 'gpu' ? await gpuFor(SIZE) : null;
   if (modeEl.value === 'gpu' && !g) modeEl.value = 'cpu'; // the fallback when WebGPU is unavailable
   let onGpu = 0;
   const t0 = performance.now();

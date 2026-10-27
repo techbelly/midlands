@@ -6,9 +6,9 @@
 import { compileLibrary, type CompiledLibrary } from '../umgeni/src/compile.js';
 import { createPresenter, framePlan, type Presenter, pathBatch } from '../umgeni/src/gpu/present.js';
 import { lowerTexture, type LoweredTexture } from '../umgeni/src/gpu/texture.js';
-import { configureCanvas, gpuDevice, showOnly, type GpuCanvas, whitePage } from './src/page.js';
+import { configureCanvas, gpuBuilt, showOnly, whitePage } from './src/page.js';
 import { Resolution } from './src/resolution.js';
-import { fusedPipeline } from '../umgeni/src/ir.js';
+import { fusedPipeline, type ModuleIR } from '../umgeni/src/ir.js';
 import { PAINT_GLUE, paintShapes } from './src/vector/paint.js';
 import { writePixels } from './src/vector/spans.js';
 import { PRESETS } from './paint-presets.js';
@@ -61,23 +61,19 @@ function compile(): boolean {
 
 // --- GPU: RasterizeParallel lowered from source; paint() lowered from your Nile ---
 
-let target: GpuCanvas | null | undefined; // undefined: not asked yet
-// The presenter for a paint(): rebuilt when the paint changes.
-interface GpuPaint { paint: string; width: number; height: number; presenter: Presenter; context: GPUCanvasContext }
-let gpu: GpuPaint | null = null;
-
-async function gpuPaint(p: CompiledLibrary, paint: string, W: number, H: number): Promise<GpuPaint | null> {
-  if (target === undefined) {
-    const device = await gpuDevice();
-    target = device && configureCanvas(device, canvasGpu);
-  }
-  if (!target) return null;
-  if (gpu?.paint !== paint || gpu.width !== W || gpu.height !== H) {
-    gpu?.presenter.dispose();
-    const plan = framePlan(fusedPipeline(p.ir, 'RasterizePixels'), W, H);
-    gpu = { paint, width: W, height: H, presenter: createPresenter(target.device, plan, { format: target.format, paint }), context: target.context };
-  }
-  return gpu;
+// The presenter for a paint() at a size: rebuilt when either changes. The
+// rasterizer it lowers is the library's, the same whatever the paint.
+interface GpuPaint { width: number; height: number; presenter: Presenter; context: GPUCanvasContext; dispose(): void }
+let paintIr: ModuleIR; // the library's IR, set before gpuFor asks
+const gpuFor = gpuBuilt((device, { paint, width, height }: { paint: string; width: number; height: number }): GpuPaint => {
+  const target = configureCanvas(device, canvasGpu);
+  if (!target) throw new Error('the GPU canvas has no WebGPU context');
+  const presenter = createPresenter(device, framePlan(fusedPipeline(paintIr, 'RasterizePixels'), width, height), { format: target.format, paint });
+  return { width, height, presenter, context: target.context, dispose: () => presenter.dispose() };
+});
+function gpuPaint(p: CompiledLibrary, paint: string, width: number, height: number): Promise<GpuPaint | null> {
+  paintIr = p.ir;
+  return gpuFor({ paint, width, height });
 }
 
 // Where this frame paints: on the GPU with this presenter, or on the CPU,

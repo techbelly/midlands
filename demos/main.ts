@@ -23,7 +23,7 @@ import sourceSerif from './fonts/SourceSerif4.ttf';
 import twemoji from './fonts/Twemoji.Mozilla.ttf';
 import { createCoverageReadback, type CoverageReadback } from '../umgeni/src/gpu/readback.js';
 import { createPresenter, framePlan, type Presenter, pathBatch } from '../umgeni/src/gpu/present.js';
-import { configureCanvas, gpuDevice, showOnly, whitePage } from './src/page.js';
+import { configureCanvas, gpuBuilt, showOnly, whitePage } from './src/page.js';
 import { Resolution } from './src/resolution.js';
 import { compileMs, nile, nileWasm, sources, RasterizePixelsIR } from './nl/text.nl-lib';
 import { quoteNile } from './src/quote.js';
@@ -178,41 +178,23 @@ interface Gpu {
   raster: CoverageReadback;
   presenter: Presenter;
   context: GPUCanvasContext;
+  dispose(): void;
 }
-let gpuState: Gpu | 'unavailable' | null = null;
-
-async function ensureGpu(): Promise<Gpu | null> {
-  if (gpuState === 'unavailable') return null;
-  if (gpuState) return gpuState;
-  const device = await gpuDevice();
-  const target = device && configureCanvas(device, canvasGpu);
-  if (!device || !target) {
-    gpuState = 'unavailable';
-    return null;
-  }
-  const plan = framePlan(RasterizePixelsIR, SIZE.width, SIZE.height); // WGSL from IR, in-browser
-  gpuState = {
-    device,
-    context: target.context,
-    raster: createCoverageReadback(device, plan),
-    presenter: createPresenter(device, plan, { format: target.format }), // one black path
-  };
-  return gpuState;
-}
-// The plans are built for a size: when the picture's size changes they go.
-function forgetGpu(): void {
-  if (gpuState && gpuState !== 'unavailable') {
-    gpuState.raster.dispose();
-    gpuState.presenter.dispose();
-    gpuState = null;
-  }
-}
+// The plans are built for the picture's size, and again when it changes.
+const gpuFor = gpuBuilt((device, size: { width: number; height: number }): Gpu => {
+  const target = configureCanvas(device, canvasGpu);
+  if (!target) throw new Error('the GPU canvas has no WebGPU context');
+  const plan = framePlan(RasterizePixelsIR, size.width, size.height); // WGSL from IR, in-browser
+  const raster = createCoverageReadback(device, plan);
+  const presenter = createPresenter(device, plan, { format: target.format }); // one black path
+  return { device, context: target.context, raster, presenter, dispose: () => { raster.dispose(); presenter.dispose(); } };
+});
 
 // The renderer the menu names, or null when it needs a GPU this browser lacks.
 async function renderer(mode: string): Promise<Renderer | null> {
   if (mode === 'cpu') return cpuRenderer(nile, 'JavaScript');
   if (mode === 'wasm') return cpuRenderer(nileWasm, 'WebAssembly');
-  const gpu = await ensureGpu();
+  const gpu = await gpuFor(SIZE);
   if (!gpu) return null;
   return mode === 'gpu0' ? presentedRenderer(gpu) : readbackRenderer(gpu);
 }
@@ -238,10 +220,7 @@ async function render(): Promise<void> {
 }
 
 const rerender = frameScheduler(render);
-const resolution = new Resolution(() => {
-  forgetGpu();
-  rerender();
-});
+const resolution = new Resolution(rerender);
 textEl.addEventListener('input', rerender);
 sizeEl.addEventListener('input', rerender);
 modeEl.addEventListener('change', rerender);
