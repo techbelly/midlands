@@ -23,7 +23,8 @@ for (const f of readdirSync(at('demos/nl/')).filter((f) => f.endsWith('.nl-lib')
   libraries.push([f, () => compileLibraryFile(`demos/nl/${f}`).source]);
   libraries.push([`${f} (wasm)`, () => compileLibraryFile(`demos/nl/${f}`, { target: 'wasm' }).source]);
 }
-const gezira = readdirSync(at('gezira/')).filter((f) => f.endsWith('.nl')).sort();
+// types.nl defines the operators the other files use, so it comes first.
+const gezira = ['types.nl', ...readdirSync(at('gezira/')).filter((f) => f.endsWith('.nl') && f !== 'types.nl').sort()];
 libraries.push(['gezira', () => compileLibrary(gezira.map((f) => read(`gezira/${f}`))).source]);
 
 let all = createHash('sha256');
