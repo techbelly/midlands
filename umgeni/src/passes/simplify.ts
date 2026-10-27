@@ -15,23 +15,10 @@
 //           only reader of another.
 
 import { BIN, UN } from '../scalar.js';
-import { mapKernels, operands, withOperands, type KernelIR, type ModuleIR, type ScalarExpr, type Stmt } from '../ir.js';
+import { allNodes, allStmts, mapKernels, mapStmts, operands, stmtExprs, withOperands, type KernelIR, type ModuleIR, type ScalarExpr, type Stmt } from '../ir.js';
 
 export const foldModule = (mod: ModuleIR): ModuleIR => mapKernels(mod, foldKernel);
 export const pruneModule = (mod: ModuleIR): ModuleIR => mapKernels(mod, pruneKernel);
-
-// --- walking ---
-
-// The same statements with every expression rewritten.
-function mapStmts(stmts: Stmt[], f: (e: ScalarExpr) => ScalarExpr): Stmt[] {
-  return stmts.map((s): Stmt => {
-    switch (s.k) {
-      case 'let': case 'assign': case 'setState': return { ...s, expr: f(s.expr) };
-      case 'emit': case 'feed': return { ...s, values: s.values.map(f) };
-      case 'if': return { ...s, cond: f(s.cond), then: mapStmts(s.then, f), else: mapStmts(s.else, f) };
-    }
-  });
-}
 
 const regions = ['prologue', 'body', 'flush'] as const;
 
@@ -71,19 +58,10 @@ function pruneKernel(k: KernelIR): KernelIR {
 function pruneRegion(stmts: Stmt[]): Stmt[] {
   for (;;) {
     const live = new Set<string>();
-    const note = (e: ScalarExpr): ScalarExpr => {
-      if (e.k === 'local') live.add(e.name);
-      else operands(e).forEach(note);
-      return e;
-    };
-    const scan = (ss: Stmt[]): void => {
-      for (const s of ss) {
-        if (s.k === 'assign') live.add(s.name);
-        mapStmts([s], note);
-      }
-      for (const s of ss) if (s.k === 'if') { scan(s.then); scan(s.else); }
-    };
-    scan(stmts);
+    for (const s of allStmts(stmts)) {
+      if (s.k === 'assign') live.add(s.name);
+      for (const e of stmtExprs(s)) for (const x of allNodes(e)) if (x.k === 'local') live.add(x.name);
+    }
     let dropped = false;
     const prune = (ss: Stmt[]): Stmt[] =>
       ss.flatMap((s): Stmt[] => {

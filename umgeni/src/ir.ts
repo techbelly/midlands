@@ -216,6 +216,12 @@ export function mapExpr(e: ScalarExpr, leaf: (e: ScalarExpr) => ScalarExpr): Sca
   return xs.length === 0 ? leaf(e) : withOperands(e, xs.map((x) => mapExpr(x, leaf)));
 }
 
+// Every node of an expression, each before its operands.
+export function* allNodes(e: ScalarExpr): Generator<ScalarExpr> {
+  yield e;
+  for (const x of operands(e)) yield* allNodes(x);
+}
+
 // Operation nodes (bin/un/select) in a tree: what the passes and the
 // instrumentation count as work.
 export function opCount(e: ScalarExpr): number {
@@ -223,17 +229,36 @@ export function opCount(e: ScalarExpr): number {
   return xs.length === 0 ? 0 : 1 + xs.reduce((n, x) => n + opCount(x), 0);
 }
 
+// The expressions a statement holds itself: an if's condition (its
+// branches are statements of their own), an emit's or feed's values, the
+// one expression of a let, an assign or a setState.
+export function stmtExprs(s: Stmt): ScalarExpr[] {
+  switch (s.k) {
+    case 'if': return [s.cond];
+    case 'emit': case 'feed': return s.values;
+    default: return [s.expr];
+  }
+}
+
+// The same statements with every expression rewritten by f, in the
+// branches of an if too.
+export function mapStmts(stmts: Stmt[], f: (e: ScalarExpr) => ScalarExpr): Stmt[] {
+  return stmts.map((s) => mapStmt(s, f));
+}
+export function mapStmt(s: Stmt, f: (e: ScalarExpr) => ScalarExpr): Stmt {
+  switch (s.k) {
+    case 'if': return { ...s, cond: f(s.cond), then: mapStmts(s.then, f), else: mapStmts(s.else, f) };
+    case 'emit': case 'feed': return { ...s, values: s.values.map(f) };
+    default: return { ...s, expr: f(s.expr) };
+  }
+}
+
 // A kernel's static size in operation nodes: statements and state
 // initializers together.
 export function kernelOpCount(k: KernelIR): number {
-  const stmts = (ss: Stmt[]): number => ss.reduce((n, s) => {
-    switch (s.k) {
-      case 'let': case 'assign': case 'setState': return n + opCount(s.expr);
-      case 'emit': case 'feed': return n + s.values.reduce((m, v) => m + opCount(v), 0);
-      case 'if': return n + opCount(s.cond) + stmts(s.then) + stmts(s.else);
-    }
-  }, 0);
-  return stmts(k.prologue) + stmts(k.body) + stmts(k.flush) + k.stateInit.reduce((n, e) => n + opCount(e), 0);
+  let n = k.stateInit.reduce((m, e) => m + opCount(e), 0);
+  for (const s of allStmts([...k.prologue, ...k.body, ...k.flush])) for (const e of stmtExprs(s)) n += opCount(e);
+  return n;
 }
 
 // Every statement, including those nested in if branches.

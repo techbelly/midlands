@@ -23,7 +23,7 @@
 // always the first occurrence, in the statement the let was placed before,
 // so nothing moves across an assignment.
 
-import { allStmts, mapKernels, opCount, operands, withOperands, type KernelIR, type ModuleIR, type ScalarExpr, type Stmt } from '../ir.js';
+import { allNodes, allStmts, mapKernels, mapStmt, opCount, operands, stmtExprs, withOperands, type KernelIR, type ModuleIR, type ScalarExpr, type Stmt } from '../ir.js';
 
 export const cseModule = (mod: ModuleIR): ModuleIR => mapKernels(mod, cseKernel);
 
@@ -80,34 +80,17 @@ const isShared = (name: string): boolean => name.startsWith('#cse');
 
 function inlineSingleReads(stmts: Stmt[]): Stmt[] {
   const reads = new Map<string, number>();
-  const count = (e: ScalarExpr): void => {
-    if (e.k === 'local') reads.set(e.name, (reads.get(e.name) ?? 0) + 1);
-    else operands(e).forEach(count);
-  };
-  const countStmts = (ss: Stmt[]): void => {
-    for (const s of ss) {
-      switch (s.k) {
-        case 'let': case 'assign': case 'setState': count(s.expr); break;
-        case 'emit': case 'feed': s.values.forEach(count); break;
-        case 'if': count(s.cond); countStmts(s.then); countStmts(s.else); break;
-      }
-    }
-  };
-  countStmts(stmts);
+  for (const s of allStmts(stmts)) for (const e of stmtExprs(s)) for (const x of allNodes(e)) if (x.k === 'local') reads.set(x.name, (reads.get(x.name) ?? 0) + 1);
   const inlined = new Map<string, ScalarExpr>();
   const subst = (e: ScalarExpr): ScalarExpr => (e.k === 'local' ? (inlined.get(e.name) ?? e) : withOperands(e, operands(e).map(subst)));
   const rewrite = (ss: Stmt[]): Stmt[] =>
     ss.flatMap((s): Stmt[] => {
-      switch (s.k) {
-        case 'let': {
-          const expr = subst(s.expr);
-          if (isShared(s.name) && reads.get(s.name) === 1) { inlined.set(s.name, expr); return []; }
-          return [{ ...s, expr }];
-        }
-        case 'assign': case 'setState': return [{ ...s, expr: subst(s.expr) }];
-        case 'emit': case 'feed': return [{ ...s, values: s.values.map(subst) }];
-        case 'if': return [{ ...s, cond: subst(s.cond), then: rewrite(s.then), else: rewrite(s.else) }];
+      if (s.k === 'let' && isShared(s.name) && reads.get(s.name) === 1) {
+        inlined.set(s.name, subst(s.expr));
+        return [];
       }
+      if (s.k === 'if') return [{ ...s, cond: subst(s.cond), then: rewrite(s.then), else: rewrite(s.else) }];
+      return [mapStmt(s, subst)];
     });
   return rewrite(stmts);
 }
@@ -145,23 +128,13 @@ function countExpr(e: ScalarExpr, r: Region, ep: Epochs): void {
   r.counts.set(k, (r.counts.get(k) ?? 0) + 1);
 }
 
+// In statement order, since the epochs advance with it.
 function countStmts(stmts: Stmt[], r: Region, ep: Epochs): void {
   for (const s of stmts) {
-    switch (s.k) {
-      case 'let':
-      case 'assign':
-      case 'setState':
-        countExpr(s.expr, r, ep);
-        break;
-      case 'emit':
-      case 'feed':
-        for (const v of s.values) countExpr(v, r, ep);
-        break;
-      case 'if':
-        countExpr(s.cond, r, ep);
-        countStmts(s.then, r, ep);
-        countStmts(s.else, r, ep);
-        break;
+    for (const e of stmtExprs(s)) countExpr(e, r, ep);
+    if (s.k === 'if') {
+      countStmts(s.then, r, ep);
+      countStmts(s.else, r, ep);
     }
     afterStmt(s, ep);
   }
