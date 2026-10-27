@@ -8,6 +8,7 @@
 // arguments inlined as closures) and families (mid-stream ⇒, substitute.ts).
 
 import type * as A from './ast.js';
+import { forwardTargets, hasForward, pipelineBody, processStmts } from './ast.js';
 import type { HostProcess, KernelIR, ModuleIR, ParamSig, PipelineIR, ProcessIR, StageIR, TokenLayout } from './ir.js';
 import { assembleFamily, plainKernel, SubstError, type Generator, type StagedKernel } from './substitute.js';
 import { desugar, SugarError } from './semantics/sugar.js';
@@ -155,10 +156,9 @@ class Elaborator {
         continue;
       }
       try {
-        processes.push(...(
-          c.kind === 'family' ? this.elabFamily(d)
-          : c.kind === 'pipeline' ? [this.elabPipeline(d, c.body, this.plainStream(d))]
-          : [plainKernel(this.elabKernel(d, this.plainStream(d)))]));
+        if (c.kind === 'family') processes.push(...this.elabFamily(d));
+        else if (c.kind === 'pipeline') processes.push(this.elabPipeline(d, c.body, this.plainStream(d)));
+        else processes.push(plainKernel(this.elabKernel(d, this.plainStream(d))));
       } catch (e) {
         if (!isElabError(e)) throw e;
         unsupported.push({ name: d.name, reason: e.message });
@@ -239,12 +239,12 @@ class Elaborator {
   // a kernel is the rest. The interpreter handles kernels, and families and
   // generators only when asked; the compiler handles all but templates.
   private kindOf(d: A.Process): Classified {
+    if (this.isTemplate(d)) return { kind: 'template' };
     const body = pipelineBody(d);
-    return this.isTemplate(d) ? { kind: 'template' }
-      : body ? { kind: 'pipeline', body }
-      : hasForward(kernelStmts(d)) ? { kind: 'family' }
-      : this.generators.has(d.name) ? { kind: 'generator' }
-      : { kind: 'kernel' };
+    if (body) return { kind: 'pipeline', body };
+    if (hasForward(processStmts(d))) return { kind: 'family' };
+    if (this.generators.has(d.name)) return { kind: 'generator' };
+    return { kind: 'kernel' };
   }
 
   private paramShape(t: A.Type, processName: string): Shape {
@@ -307,7 +307,7 @@ class Elaborator {
     for (let changed = true; changed;) {
       changed = false;
       for (const name of this.generators) {
-        if (forwardTargets(kernelStmts(this.processes.get(name)!)).some((t) => !this.generators.has(t))) {
+        if (forwardTargets(processStmts(this.processes.get(name)!)).some((t) => !this.generators.has(t))) {
           this.generators.delete(name);
           changed = true;
         }
@@ -341,7 +341,7 @@ class Elaborator {
       } else {
         members.push(this.elabKernel(k, kstream));
       }
-      for (const t of forwardTargets(kernelStmts(k))) visit(t);
+      for (const t of forwardTargets(processStmts(k))) visit(t);
     };
     visit(d.name);
     return assembleFamily({
@@ -410,27 +410,3 @@ function stageNames(stages: StageIR[]): string[] {
   return stages.flatMap((s) =>
     s.k === 'stage' ? [s.name] : s.k === 'dupCat' || s.k === 'dupZip' ? s.branches.flatMap(stageNames) : []);
 }
-
-// A body that is just `⇒ pipeline` is a pipeline definition: that pipeline.
-function pipelineBody(d: A.Process): A.PipelineElem[] | null {
-  const p = d.prologue[0];
-  return d.forAlls.length === 0 && d.flush.length === 0 && d.prologue.length === 1 && p.kind === 'forward' ? p.pipeline : null;
-}
-// Every statement of a process, in order: prologue, each ∀ body, flush body.
-const kernelStmts = (d: A.Process): A.Stmt[] => [...d.prologue, ...d.forAlls.flatMap((f) => f.body), ...d.flush];
-// Every statement, including those nested in if branches.
-function* allStmts(list: A.Stmt[]): IterableIterator<A.Stmt> {
-  for (const s of list) {
-    yield s;
-    if (s.kind === 'if') {
-      yield* allStmts(s.then);
-      yield* allStmts(s.else ?? []);
-    }
-  }
-}
-const hasForward = (stmts: A.Stmt[]) => [...allStmts(stmts)].some((s) => s.kind === 'forward');
-// The process names a statement list substitutes into.
-const forwardTargets = (stmts: A.Stmt[]): string[] =>
-  [...allStmts(stmts)].flatMap((s) => (s.kind === 'forward' ? s.pipeline : []))
-    .flatMap((e) => (e.kind === 'stageApp' || e.kind === 'stageRef' ? [e.name] : []));
-

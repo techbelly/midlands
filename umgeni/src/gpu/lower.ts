@@ -33,8 +33,8 @@
 // grid's floor then agree.
 
 import { allStmts, anyStmt, inputWidthOf, type FusedIR, type FusedStage, type KernelIR } from '../ir.js';
-import { stageShape } from '../passes/tail.js';
-import { paramsOnly, wgslBody, wgslExpr, WORKGROUP_SIZE, type WgslEnv } from './wgsl.js';
+import { stageShape, type StageShape } from '../passes/tail.js';
+import { paramsOnly, wgslBody, wgslExpr, WORKGROUP_SIZE, type WgslEnv, type WgslExprEnv } from './wgsl.js';
 
 export class LowerError extends Error {}
 
@@ -232,14 +232,16 @@ const loopFn = (j: number, params: string, before: string[], top: string[], afte
   `}`,
 ].join('\n');
 
-// Stage j's body as fn st{j}(a0, …): emit calls st{j+1} (or the sink), feed
-// pushes onto the stage's worklist, state is the stage's private array.
-// `majorKey`: the input slot carrying the grid's major key (segments
-// passes), checked by admit and followed through the stages.
+// The stages of a pass as WGSL: each stage j a function st{j}(a0, …) whose
+// emit calls st{j+1} (the last one, the sink), with its state S{j} and, if
+// it needs one, its worklist F{j}. `majorKey`: the input slot carrying the
+// grid's major key (segments passes), checked by admit and followed
+// through the stages. Callees come before callers in WGSL, so the stage
+// functions are listed last first; flush bodies call st{j+1}, so they come
+// after every stage.
 function genStages(stages: FusedStage[], width: number, o: PassOptions, majorKey: number | null): Stages {
   const P = paramsOnly((i) => `P[${i}u]`, fail);
   const out: Stages = { decls: [], fns: [], init: [], flush: [], overflows: false };
-  const call = (j: number, vals: string[]) => `st${j}(${vals.join(', ')});`;
   if (stages.length === 0) {
     const args = Array.from({ length: width }, (_, i) => `a${i}`);
     out.fns.push(`fn st0(${args.map((a) => `${a} : f32`).join(', ')}) {\n${o.sink.emit(args, '  ')}\n}`);
@@ -248,53 +250,90 @@ function genStages(stages: FusedStage[], width: number, o: PassOptions, majorKey
   const fns: string[] = [];
   let key = majorKey;
   stages.forEach((stage, j) => {
-    const k = stage.kernel;
-    key = admit(k, key, o.name);
+    key = admit(stage.kernel, key, o.name);
+    const s = genStage(stage, j, j + 1 < stages.length, P, o);
+    out.decls.push(...s.decls);
+    out.init.push(...s.init);
+    fns.push(s.fn);
+    if (s.flush !== null) {
+      out.fns.push(s.flush);
+      out.flush.push(`  fl${j}();`);
+    }
+    out.overflows ||= s.overflows;
+  });
+  out.fns.unshift(...fns.reverse());
+  return out;
+}
 
-    const args = stage.args.flat().map((a) => wgslExpr(a, P));
-    const shape = stageShape(k.body); // passes/tail.ts
-    const inT = shape !== 'straight'; // the token lives in T, round after round
-    out.overflows ||= shape === 'worklist';
-    const w = k.inputWidth;
-    const env: WgslEnv = {
-      param: (i) => args[i],
-      state: (i) => `S${j}[${i}]`,
-      input: (i) => (inT ? `T${j}[${i}u]` : `a${i}`),
-      emit: (vals, ind) => (j + 1 < stages.length ? `${ind}${call(j + 1, vals)}` : o.sink.emit(vals, ind)),
-      feed: (vals, ind, tail) => (tail ? again(j, vals, ind) : push(j, w, o.cap, vals, ind)),
-    };
-    out.decls.push(`var<private> S${j} : array<f32, ${Math.max(1, k.stateInit.length)}>;`);
-    k.stateInit.forEach((e, i) => out.init.push(`  S${j}[${i}] = ${wgslExpr(e, env)};`));
-    const params = Array.from({ length: w }, (_, i) => `a${i} : f32`).join(', ');
-    const T = `  var T${j} : array<f32, ${w}>;`;
-    if (shape === 'loop') {
+// Stage j: its module-scope declarations, its thread-start initialisation,
+// its function, and its flush function if it has a flush body.
+interface Stage {
+  decls: string[];
+  init: string[];
+  fn: string;
+  flush: string | null;
+  overflows: boolean;
+}
+function genStage(stage: FusedStage, j: number, hasNext: boolean, P: WgslExprEnv, o: PassOptions): Stage {
+  const k = stage.kernel;
+  const shape = stageShape(k.body); // passes/tail.ts
+  const w = k.inputWidth;
+  const env = stageEnv(stage, j, shape, hasNext, P, o);
+  const decls = [`var<private> S${j} : array<f32, ${Math.max(1, k.stateInit.length)}>;`];
+  const init = k.stateInit.map((e, i) => `  S${j}[${i}] = ${wgslExpr(e, env)};`);
+  if (shape === 'worklist') {
+    decls.push(`var<private> F${j} : array<f32, ${o.cap * w}>;`, `var<private> sp${j} : u32;`);
+    init.push(`  sp${j} = 0u;`);
+  }
+  const fn = stageFn(k, j, shape, o.cap, env); // the body before the flush, as the refusals read
+  const flush = k.flush.length > 0
+    ? `fn fl${j}() {\n${wgslBody(k.flush, '  ', { ...env, input: () => fail('input in a flush body') })}\n}`
+    : null;
+  return { decls, init, fn, flush, overflows: shape === 'worklist' };
+}
+
+// How stage j's slots and effects are spelled: its arguments are WGSL over
+// the pass's P; a feeding stage reads its token from T{j}, round after
+// round, a straight one from its arguments; emit calls the next stage or
+// the sink; a feed pushes onto F{j}, a tail feed goes round again.
+function stageEnv(stage: FusedStage, j: number, shape: StageShape, hasNext: boolean, P: WgslExprEnv, o: PassOptions): WgslEnv {
+  const args = stage.args.flat().map((a) => wgslExpr(a, P));
+  const w = stage.kernel.inputWidth;
+  const inT = shape !== 'straight';
+  return {
+    param: (i) => args[i],
+    state: (i) => `S${j}[${i}]`,
+    input: (i) => (inT ? `T${j}[${i}u]` : `a${i}`),
+    emit: (vals, ind) => (hasNext ? `${ind}st${j + 1}(${vals.join(', ')});` : o.sink.emit(vals, ind)),
+    feed: (vals, ind, tail) => (tail ? again(j, vals, ind) : push(j, w, o.cap, vals, ind)),
+  };
+}
+
+// The stage's function, in its shape.
+function stageFn(k: KernelIR, j: number, shape: StageShape, cap: number, env: WgslEnv): string {
+  const w = k.inputWidth;
+  const params = Array.from({ length: w }, (_, i) => `a${i} : f32`).join(', ');
+  const args = Array.from({ length: w }, (_, i) => `a${i}`);
+  const T = `  var T${j} : array<f32, ${w}>;`;
+  const body = (indent: string) => wgslBody(k.body, indent, env);
+  switch (shape) {
+    case 'straight':
+      return `fn st${j}(${params}) {\n${body('  ')}\n}`;
+    case 'loop':
       // The token into T, then the body, round again on a tail feed, else done.
-      fns.push(loopFn(j, params, [T, ...Array.from({ length: w }, (_, i) => `  T${j}[${i}] = a${i};`)], [], [`    break;`], wgslBody(k.body, '    ', env)));
-    } else if (shape === 'worklist') {
+      return loopFn(j, params, [T, ...args.map((a, i) => `  T${j}[${i}] = ${a};`)], [], [`    break;`], body('    '));
+    case 'worklist':
       // The token onto the worklist; each turn pops the next into T, unless
       // the last turn ended in a tail feed, which left the next in T already.
-      out.decls.push(`var<private> F${j} : array<f32, ${o.cap * w}>;`, `var<private> sp${j} : u32;`);
-      out.init.push(`  sp${j} = 0u;`);
-      fns.push(loopFn(j, params, [push(j, w, o.cap, Array.from({ length: w }, (_, i) => `a${i}`), '  '), T], [
+      return loopFn(j, params, [push(j, w, cap, args, '  '), T], [
         `    if (!again) {`,
         `      if (sp${j} == 0u) { break; }`,
         `      sp${j} -= 1u;`,
         `      for (var k = 0u; k < ${w}u; k += 1u) { T${j}[k] = F${j}[sp${j} * ${w}u + k]; }`,
         `    }`,
         `    again = false;`,
-      ], [], wgslBody(k.body, '    ', env)));
-    } else {
-      fns.push(`fn st${j}(${params}) {\n${wgslBody(k.body, '  ', env)}\n}`);
-    }
-    if (k.flush.length > 0) {
-      out.fns.push(`fn fl${j}() {\n${wgslBody(k.flush, '  ', { ...env, input: () => fail('input in a flush body') })}\n}`);
-      out.flush.push(`  fl${j}();`);
-    }
-  });
-  // Callees before callers: st{m-1} first. Flush bodies call st{j+1}, so
-  // they come after every stage.
-  out.fns.unshift(...fns.reverse());
-  return out;
+      ], [], body('    '));
+  }
 }
 
 const fail = (what: string): never => {

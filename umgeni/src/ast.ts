@@ -1,6 +1,7 @@
 // The AST is plain serializable data: every node is a JSON-able object with a
 // `kind` tag. No classes, no methods — downstream passes (IR construction,
-// pretty-printing, inspection) consume it as data.
+// pretty-printing, inspection) consume it as data. The functions at the end
+// are the questions the elaborator asks of a process.
 
 export type TopLevel = TypeDef | ProcessTypeDef | OpDef | Process;
 
@@ -228,3 +229,28 @@ export interface OffsetRef {
   kind: 'offset';
   field: string;
 }
+
+// --- questions about a process, asked by the elaborator ---
+
+// A body that is just `⇒ pipeline` is a pipeline definition: that pipeline.
+export function pipelineBody(d: Process): PipelineElem[] | null {
+  const p = d.prologue[0];
+  return d.forAlls.length === 0 && d.flush.length === 0 && d.prologue.length === 1 && p.kind === 'forward' ? p.pipeline : null;
+}
+// Every statement of a process, in order: prologue, each ∀ body, flush body.
+export const processStmts = (d: Process): Stmt[] => [...d.prologue, ...d.forAlls.flatMap((f) => f.body), ...d.flush];
+// Every statement, including those nested in if branches.
+function* allStmts(list: Stmt[]): IterableIterator<Stmt> {
+  for (const s of list) {
+    yield s;
+    if (s.kind === 'if') {
+      yield* allStmts(s.then);
+      yield* allStmts(s.else ?? []);
+    }
+  }
+}
+export const hasForward = (stmts: Stmt[]) => [...allStmts(stmts)].some((s) => s.kind === 'forward');
+// The process names a statement list substitutes into.
+export const forwardTargets = (stmts: Stmt[]): string[] =>
+  [...allStmts(stmts)].flatMap((s) => (s.kind === 'forward' ? s.pipeline : []))
+    .flatMap((e) => (e.kind === 'stageApp' || e.kind === 'stageRef' ? [e.name] : []));
