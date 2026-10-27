@@ -122,6 +122,19 @@ describe('work kept between runs', () => {
     expect(lib.ops!() - t0).toBeGreaterThan(0);
   });
 
+  it('a run from kept work takes one batch, and says so', () => {
+    const lib = compile();
+    const tokens = glyphs(100);
+    lib.api.TextSpans(params).run(tokens);
+    const op = lib.api.TextSpans(params);
+    op.pushAll!(tokens); // replayed whole from the memo
+    expect(() => op.pushAll!(tokens)).toThrow('one batch');
+    const fresh = lib.api.TextSpans(params);
+    fresh.pushAll!(tokens.map((t) => t.slice()));
+    fresh.pushAll!(tokens.map((t) => t.slice())); // nothing kept: two batches are one stream
+    fresh.end();
+  });
+
   it('as WebAssembly, the same runs give the same spans', () => {
     const js = compile();
     const wasm = compileLibrary(sources(), { target: 'wasm' });
