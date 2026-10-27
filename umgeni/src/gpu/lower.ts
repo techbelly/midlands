@@ -32,7 +32,7 @@
 // centres), as DecomposeBeziers emits them. GroupBy's exact equality and the
 // grid's floor then agree.
 
-import { allStmts, anyStmt, inputWidthOf, type FusedIR, type FusedStage, type KernelIR } from '../ir.js';
+import { allStmts, anyStmt, inputWidthOf, type FusedIR, type FusedRun, type FusedStage, type KernelIR } from '../ir.js';
 import { stageShape, type StageShape } from '../passes/tail.js';
 import { paramsOnly, wgslBody, wgslExpr, WORKGROUP_SIZE, type WgslEnv, type WgslExprEnv } from './wgsl.js';
 
@@ -111,18 +111,21 @@ export function lowerPipeline(fused: FusedIR, opts: LowerOptions): Plan {
   const { name, paramWidth } = fused;
   const { extent } = opts;
   if (extent.length < 1 || extent.length > 2) throw new LowerError(`'${name}': grids have one or two keys, given ${extent.length} extents`);
-  const passes: Pass[] = [];
-  const grids: string[] = [];
   const inputWidth = inputWidthOf(fused);
   if (inputWidth === null) throw new LowerError(`'${name}': cannot tell its input width`);
+  const shared: PassOptions = { name, paramWidth, cap: opts.stackCap ?? 128, sink: opts.sink };
+
   // A pass is the run of kernels since the last barrier, over tokens (the
-  // input) or over the segments of the grid the last GroupBy → ReduceBy made.
+  // input) or over the segments of the grid the last GroupBy → ReduceBy
+  // made. The runs are walked once; each GroupBy → ReduceBy closes the pass
+  // before it into a grid, and the last pass closes into the host's sink.
+  const passes: Pass[] = [];
+  const grids: string[] = [];
   let grid: Grid | null = null;
   let width = inputWidth;
   let kernels: FusedStage[] = [];
   const closePass = (sink: Sink) => {
-    const o = { name, paramWidth, cap: opts.stackCap ?? 128, sink };
-    passes.push(grid ? segmentsPass(grid, kernels, o) : tokensPass(width, kernels, o));
+    passes.push(grid ? segmentsPass(grid, kernels, { ...shared, sink }) : tokensPass(width, kernels, { ...shared, sink }));
     if (kernels.length > 0) width = kernels[kernels.length - 1].kernel.outputWidth;
     kernels = [];
   };
@@ -136,20 +139,11 @@ export function lowerPipeline(fused: FusedIR, opts: LowerOptions): Plan {
       continue;
     }
     if (s.k === 'groupBy') {
-      const r = runs[i + 1];
-      if (r?.k !== 'reduceBy') throw new LowerError(`'${name}': GroupBy without a ReduceBy after it needs a sort, which has no parallel lowering`);
-      if (s.stable) throw new LowerError(`'${name}': GroupBy stable cannot lower to atomic grids (order would matter)`);
-      if (s.keyIndexes.length !== extent.length) throw new LowerError(`'${name}': GroupBy has ${s.keyIndexes.length} keys, but the host gave ${extent.length} extents`);
-      for (const f of r.fields) {
-        if (!(f.op.k === 'bin' && f.op.op === 'add')) throw new LowerError(`'${name}': ReduceBy combines a field with an operator that has no atomic (only '+' so far)`);
-      }
-      const covered = new Set([...s.keyIndexes, ...r.fields.map((f) => f.index)]);
-      if (covered.size !== r.width) throw new LowerError(`'${name}': a grid holds keys and reduced fields only; the token has other fields too`);
-      const made: Grid = { keys: s.keyIndexes, width: r.width, fields: r.fields.map((f, i) => ({ index: f.index, grid: `G${grids.length + i}` })) };
+      const made = gridOf(name, s, runs[i + 1], extent, grids.length);
       grids.push(...made.fields.map((f) => f.grid));
       closePass(gridSink(made));
       grid = made;
-      width = r.width;
+      width = made.width;
       i++; // the ReduceBy
       continue;
     }
@@ -159,6 +153,22 @@ export function lowerPipeline(fused: FusedIR, opts: LowerOptions): Plan {
   }
   closePass(opts.sink);
   return { name, passes, inputWidth, paramWidth, extent, cells: extent.reduce((a, b) => a * b, 1), grids };
+}
+
+// The grid a GroupBy → ReduceBy makes, when the declarations license one:
+// unstable groups, reduced by + alone, every token field a key or a reduced
+// field, as many keys as the host gave extents; a LowerError otherwise. Its
+// grid buffers are named G{n} from `first`.
+function gridOf(name: string, s: Extract<FusedRun, { k: 'groupBy' }>, next: FusedRun | undefined, extent: number[], first: number): Grid {
+  if (next?.k !== 'reduceBy') throw new LowerError(`'${name}': GroupBy without a ReduceBy after it needs a sort, which has no parallel lowering`);
+  if (s.stable) throw new LowerError(`'${name}': GroupBy stable cannot lower to atomic grids (order would matter)`);
+  if (s.keyIndexes.length !== extent.length) throw new LowerError(`'${name}': GroupBy has ${s.keyIndexes.length} keys, but the host gave ${extent.length} extents`);
+  for (const f of next.fields) {
+    if (!(f.op.k === 'bin' && f.op.op === 'add')) throw new LowerError(`'${name}': ReduceBy combines a field with an operator that has no atomic (only '+' so far)`);
+  }
+  const covered = new Set([...s.keyIndexes, ...next.fields.map((f) => f.index)]);
+  if (covered.size !== next.width) throw new LowerError(`'${name}': a grid holds keys and reduced fields only; the token has other fields too`);
+  return { keys: s.keyIndexes, width: next.width, fields: next.fields.map((f, i) => ({ index: f.index, grid: `G${first + i}` })) };
 }
 
 // --- the stages of one pass -------------------------------------------------

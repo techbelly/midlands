@@ -52,30 +52,33 @@ commutative op = member op ["+", "×", "◁", "▷", "∧", "∨"]
 ordered c what s | s.unordered = fail ("'" ++ what ++ "' in '" ++ c.who ++ "' consumes tokens in arrival order after a non-stable GroupBy; use 'GroupBy stable (…)' or reduce the groups first")
 ordered c what s = unit
 
--- The builtins that need the whole stream.
+-- A named stage: a builtin that needs the whole stream, a process-typed
+-- parameter, a template, or a plain process. Every one but SortBy reads
+-- tokens in arrival order, so each checks `ordered` before building its
+-- stage (`;` runs the check, which fails or passes, then the right side).
 named c "SortBy" [key] s | key.kind == "offset" = {stages: [{k: "sortBy", keyIndexes: [(P.field s.shape key.field).offset]}], stream: s}
 named c "SortBy" args s  = fail ("SortBy in '" ++ c.who ++ "' expects a single @field key")
 named c "Reverse" args s = ordered c "Reverse" s; {stages: [{k: "reverse"}], stream: s}
-named c "DupCat" args s  = ordered c "DupCat" s;
-                           (let [a, b] = branches c "DupCat" args s
-                            in if width a.output != width b.output then fail ("DupCat in '" ++ c.who ++ "' takes two pipelines with the same output type")
-                               else {stages: [{k: "dupCat", branches: [a.stages, b.stages]}], stream: {shape: a.output, unordered: false}})
-named c "DupZip" args s  = ordered c "DupZip" s;
-                           (let [a, b] = branches c "DupZip" args s
-                            in {stages: [{k: "dupZip", branches: [a.stages, b.stages]}],
-                                stream: {shape: {k: "record", name: null, fields: [{name: null, shape: a.output}, {name: null, shape: b.output}]}, unordered: false}})
--- A process-typed parameter: its argument's pipeline, in the scope it was written in.
-named c name args s | lookupProc c.procs name != null =
-  if length args > 0 then fail ("process parameter '" ++ name ++ "' takes no arguments")
-  else ordered c name s;
-       (let cl = lookupProc c.procs name in spliced (stages (context c.who cl.env cl.procs) cl.elems s))
--- A template: instantiated with these arguments, in place.
+named c "DupCat" args s  = ordered c "DupCat" s; dupCat c (branches c "DupCat" args s)
+named c "DupZip" args s  = ordered c "DupZip" s; dupZip (branches c "DupZip" args s)
+named c name args s | lookupProc c.procs name != null = parameter c name args s
 named c name args s | P.template name != null = ordered c name s; spliced (instantiate c (P.template name) args s)
--- A plain process, its arguments staged and flattened.
 named c name args s | not (P.known name) = fail ("pipeline '" ++ c.who ++ "' references unknown process '" ++ name ++ "'")
 named c name args s | P.stream name == null = fail ("pipeline stage '" ++ name ++ "' is not a plain stream")
-named c name args s = ordered c name s;
-                      {stages: [{k: "stage", name: name, args: map (argument c name) args}], stream: {shape: (P.stream name).output, unordered: false}}
+named c name args s = ordered c name s; {stages: [{k: "stage", name: name, args: map (argument c name) args}], stream: {shape: (P.stream name).output, unordered: false}}
+
+-- DupCat: both branches' output, the first's then the second's, so they
+-- must agree. DupZip: the two outputs paired.
+dupCat c [a, b] | width a.output != width b.output = fail ("DupCat in '" ++ c.who ++ "' takes two pipelines with the same output type")
+dupCat c [a, b] = {stages: [{k: "dupCat", branches: [a.stages, b.stages]}], stream: {shape: a.output, unordered: false}}
+dupZip [a, b]   = {stages: [{k: "dupZip", branches: [a.stages, b.stages]}], stream: {shape: pairOf a.output b.output, unordered: false}}
+pairOf x y      = {k: "record", name: null, fields: [{name: null, shape: x}, {name: null, shape: y}]}
+
+-- A process-typed parameter: its argument's pipeline, spliced in, in the
+-- scope the argument was written in.
+parameter c name args s | length args > 0 = fail ("process parameter '" ++ name ++ "' takes no arguments")
+parameter c name args s = ordered c name s;
+                          (let cl = lookupProc c.procs name in spliced (stages (context c.who cl.env cl.procs) cl.elems s))
 
 argument c name a | a.kind == "pipelineArg" || a.kind == "stageApp" = fail ("'" ++ c.who ++ "' passes a pipeline to '" ++ name ++ "'; higher-order arguments are not yet supported")
 argument c name a = leaves (P.expr a c.env)
