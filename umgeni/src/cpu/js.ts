@@ -7,8 +7,8 @@
 
 import { anyStmt, inputWidthOf, opCount, paramReads, stmtExprs, type FusedIR, type FusedRun, type FusedStage, type KernelIR, type ModuleIR, type PipelineIR, type ScalarExpr, type StageIR, type Stmt, type WholeStreamStage } from '../ir.js';
 import { compilePipeline, inWasm } from './wasm.js';
-import { stageShape } from '../passes/tail.js';
-import { renderCond, renderExpr, type Dialect, sanitize } from '../scalar.js';
+import { stageShape, type StageShape } from '../passes/tail.js';
+import { renderCond, renderExpr, type Dialect, type Leaf, sanitize } from '../scalar.js';
 
 export interface CodegenOptions {
   // Emit conditions as JS booleans (`a < b`) instead of round-tripping
@@ -50,11 +50,7 @@ const KERNEL_ENV: GenEnv = {
 // JS is the C-like rendering of scalar.ts with JS spellings.
 const jsDialect = (o: CodegenOptions, env: GenEnv): Dialect => ({
   num: (v) => (v < 0 ? `(${v})` : String(v)),
-  leaf: (e) =>
-    e.k === 'param' ? env.param(e.index)
-    : e.k === 'state' ? env.state(e.index)
-    : e.k === 'input' ? env.input(e.index)
-    : mangle(e.name),
+  leaf: (e) => leafJs(e, env),
   ofBool: (c) => `(${c} ? 1 : 0)`,
   truthy: (x) => `(${x} !== 0)`,
   select: (c, a, b) => `(${c} ? ${a} : ${b})`,
@@ -63,6 +59,15 @@ const jsDialect = (o: CodegenOptions, env: GenEnv): Dialect => ({
   ne: '!==',
   boolCond: !!o.boolCond,
 });
+// A leaf of an expression: a slot, as the env spells it, or a local.
+function leafJs(e: Leaf, env: GenEnv): string {
+  switch (e.k) {
+    case 'param': return env.param(e.index);
+    case 'state': return env.state(e.index);
+    case 'input': return env.input(e.index);
+    case 'local': return mangle(e.name);
+  }
+}
 const genExpr = (e: ScalarExpr, o: CodegenOptions, env: GenEnv) => renderExpr(e, jsDialect(o, env));
 const genCond = (e: ScalarExpr, o: CodegenOptions, env: GenEnv) => renderCond(e, jsDialect(o, env));
 
@@ -179,86 +184,139 @@ function genRun(stages: FusedStage[], o: CodegenOptions): string {
   const lines: string[] = [];
   lines.push(`(() => { // run: ${stages.map((s) => s.name).join(' → ')}`);
   lines.push(`  let EMIT = (t) => {};`);
-  const ends: string[] = [];
-
+  const atEnd: string[] = [];
   stages.forEach((stage, j) => {
-    const k = stage.kernel;
-    const argJs = stage.args.flat().map((a) => genExpr(a, o, KERNEL_ENV)); // over the op's P
-    // A prologue that feeds (a seed) needs the worklist whatever the body does.
-    const shape = stmtsFeed(k.prologue) ? 'worklist' : stageShape(k.body);
-    const feeds = shape !== 'straight';
-    const worklist = shape === 'worklist';
-    const inputs = Array.from({ length: k.inputWidth }, (_, i) => `i${j}_${i}`);
-    const env: GenEnv = {
-      param: (i) => argJs[i],
-      state: (i) => `S${j}[${i}]`,
-      input: (i) => (feeds ? inputs[i] : `a${i}`),
-      emit: (vals) => (j + 1 < stages.length ? `st${j + 1}(${vals.join(', ')});` : `EMIT([${vals.join(', ')}]);`),
-      feed: (vals) => `q${j}.push([${vals.join(', ')}]);`,
-      // The values first (they read the inputs), then the inputs.
-      tailFeed: (vals) => `{ ${vals.map((v, i) => `const n${i} = ${v};`).join(' ')} ${vals.map((_, i) => `${inputs[i]} = n${i};`).join(' ')} continue; }`,
-    };
-    lines.push(`  const S${j} = new Float64Array(${k.stateInit.length});`);
-    k.stateInit.forEach((e, i) => lines.push(`  S${j}[${i}] = ${genExpr(e, o, env)};`));
-    // A prologue runs once, before the first token or at the end if none came.
-    const seeded = k.prologue.length > 0;
-    const seed = `sd${j}();`;
-    if (seeded) {
-      lines.push(`  let seeded${j} = false;`);
-      lines.push(`  function sd${j}() {`);
-      lines.push(`    if (seeded${j}) return;`);
-      lines.push(`    seeded${j} = true;`);
-      lines.push(genStmts(k.prologue, '    ', o, env));
-      lines.push(`  }`);
-    }
-    const params = Array.from({ length: k.inputWidth }, (_, i) => `a${i}`).join(', ');
-    const declare = (init: (n: string, i: number) => string) => (inputs.length > 0 ? `let ${inputs.map(init).join(', ')};` : '');
-    if (worklist) {
-      const pop = `T${j} = q${j}.pop(); ${inputs.map((n, i) => `${n} = T${j}[${i}];`).join(' ')}`;
-      lines.push(`  const q${j} = [];`);
-      lines.push(`  function run${j}() {`);
-      lines.push(`    if (q${j}.length === 0) return;`);
-      lines.push(`    ${declare((n) => n)}`);
-      lines.push(`    let ${pop}`);
-      lines.push(`    for (;;) {`);
-      lines.push(genStmts(k.body, '      ', o, env));
-      lines.push(`      if (q${j}.length === 0) return;`);
-      lines.push(`      ${pop}`);
-      lines.push(`    }`);
-      lines.push(`  }`);
-      lines.push(`  function st${j}(${params}) { ${seeded ? `${seed} ` : ''}q${j}.push([${params}]); run${j}(); }`);
-    } else if (feeds) {
-      lines.push(`  function st${j}(${params}) {`);
-      if (seeded) lines.push(`    ${seed}`);
-      lines.push(`    ${declare((n, i) => `${n} = a${i}`)}`);
-      lines.push(`    for (;;) {`);
-      lines.push(genStmts(k.body, '      ', o, env));
-      lines.push(`      return;`);
-      lines.push(`    }`);
-      lines.push(`  }`);
-    } else {
-      lines.push(`  function st${j}(${params}) {`);
-      if (seeded) lines.push(`    ${seed}`);
-      lines.push(genStmts(k.body, '    ', o, env));
-      lines.push(`  }`);
-    }
-    if (k.flush.length > 0) {
-      lines.push(`  function fl${j}() {`);
-      lines.push(genStmts(k.flush, '    ', o, env));
-      lines.push(`  }`);
-    }
-    ends.push([seeded && seed, worklist && `run${j}();`, k.flush.length > 0 && `fl${j}();`].filter(Boolean).join(' '));
+    const s = genStage(stage, j, j + 1 < stages.length, o);
+    lines.push(...s.lines);
+    atEnd.push(...s.atEnd);
   });
 
   const w0 = stages[0].kernel.inputWidth;
   const pushArgs = Array.from({ length: w0 }, (_, i) => `t[${i}]`).join(', ');
   lines.push(`  return {`);
   lines.push(`    push(t) { st0(${pushArgs}); },`);
-  lines.push(`    end() { ${ends.filter((e) => e !== '').join(' ')} },`);
+  lines.push(`    end() { ${atEnd.join(' ')} },`);
   lines.push(`    setEmit(e) { EMIT = e; },`);
   lines.push(`  };`);
   lines.push(`})()`);
   return lines.filter((l) => l !== '').join('\n');
+}
+
+// How a stage's body runs: straight through, as a loop over one token (its
+// feeds are all tail feeds), or over a worklist. A prologue that feeds (a
+// seed) needs the worklist whatever the body does.
+const stageShapeOf = (k: KernelIR): StageShape => (stmtsFeed(k.prologue) ? 'worklist' : stageShape(k.body));
+
+// Stage j of a run: its state S{j}, its seed sd{j} if it has a prologue,
+// its body as st{j}(a0, …) and its flush fl{j}. `atEnd` is what the op's
+// end() must do for it, in order: seed, drain the worklist, flush.
+function genStage(stage: FusedStage, j: number, hasNext: boolean, o: CodegenOptions): { lines: string[]; atEnd: string[] } {
+  const k = stage.kernel;
+  const shape = stageShapeOf(k);
+  const feeds = shape !== 'straight';
+  // A feeding stage reads its token from locals it can overwrite (i{j}_0…);
+  // a straight one reads its arguments.
+  const inputs = Array.from({ length: k.inputWidth }, (_, i) => `i${j}_${i}`);
+  const env = stageEnv(stage, j, hasNext, feeds ? inputs : null, o);
+  const seeded = k.prologue.length > 0;
+
+  const lines: string[] = [];
+  lines.push(`  const S${j} = new Float64Array(${k.stateInit.length});`);
+  k.stateInit.forEach((e, i) => lines.push(`  S${j}[${i}] = ${genExpr(e, o, env)};`));
+  if (seeded) lines.push(...seedLines(k, j, o, env));
+  lines.push(...bodyLines(k, j, inputs, o, env));
+  if (k.flush.length > 0) {
+    lines.push(`  function fl${j}() {`);
+    lines.push(genStmts(k.flush, '    ', o, env));
+    lines.push(`  }`);
+  }
+
+  const atEnd: string[] = [];
+  if (seeded) atEnd.push(`sd${j}();`);
+  if (shape === 'worklist') atEnd.push(`run${j}();`);
+  if (k.flush.length > 0) atEnd.push(`fl${j}();`);
+  return { lines, atEnd };
+}
+
+// How stage j's slots and effects are spelled: its arguments are
+// expressions over the op's P; emit calls the next stage, or EMIT from the
+// last; a feed pushes onto the stage's worklist q{j}; a tail feed sets the
+// input locals and goes round again.
+function stageEnv(stage: FusedStage, j: number, hasNext: boolean, inputs: string[] | null, o: CodegenOptions): GenEnv {
+  const argJs = stage.args.flat().map((a) => genExpr(a, o, KERNEL_ENV));
+  return {
+    param: (i) => argJs[i],
+    state: (i) => `S${j}[${i}]`,
+    input: (i) => (inputs ? inputs[i] : `a${i}`),
+    emit: (vals) => (hasNext ? `st${j + 1}(${vals.join(', ')});` : `EMIT([${vals.join(', ')}]);`),
+    feed: (vals) => `q${j}.push([${vals.join(', ')}]);`,
+    // The values first (they read the inputs), then the inputs.
+    tailFeed: (vals) => `{ ${vals.map((v, i) => `const n${i} = ${v};`).join(' ')} ${vals.map((_, i) => `${inputs![i]} = n${i};`).join(' ')} continue; }`,
+  };
+}
+
+// A prologue runs once, before the first token or at the end if none came.
+function seedLines(k: KernelIR, j: number, o: CodegenOptions, env: GenEnv): string[] {
+  return [
+    `  let seeded${j} = false;`,
+    `  function sd${j}() {`,
+    `    if (seeded${j}) return;`,
+    `    seeded${j} = true;`,
+    genStmts(k.prologue, '    ', o, env),
+    `  }`,
+  ];
+}
+
+// The body as st{j}(a0, …), in the stage's shape. `declare` opens the input
+// locals; with no inputs it is empty, and the line it sits on is emitted as
+// its indent alone (kept as the generated code has always read).
+function bodyLines(k: KernelIR, j: number, inputs: string[], o: CodegenOptions, env: GenEnv): string[] {
+  const params = Array.from({ length: k.inputWidth }, (_, i) => `a${i}`).join(', ');
+  const seed = k.prologue.length > 0 ? [`    sd${j}();`] : [];
+  const declare = (init: (n: string, i: number) => string) => (inputs.length > 0 ? `let ${inputs.map(init).join(', ')};` : '');
+  const body = (indent: string) => genStmts(k.body, indent, o, env);
+  switch (stageShapeOf(k)) {
+    case 'straight':
+      return [
+        `  function st${j}(${params}) {`,
+        ...seed,
+        body('    '),
+        `  }`,
+      ];
+    case 'loop':
+      // The token into the input locals, then the body, round again on a
+      // tail feed, else done.
+      return [
+        `  function st${j}(${params}) {`,
+        ...seed,
+        `    ${declare((n, i) => `${n} = a${i}`)}`,
+        `    for (;;) {`,
+        body('      '),
+        `      return;`,
+        `    }`,
+        `  }`,
+      ];
+    case 'worklist': {
+      // The token onto the worklist; run{j} pops each into the input locals
+      // and runs the body until the list is empty (a tail feed goes round
+      // without popping).
+      const pop = `T${j} = q${j}.pop(); ${inputs.map((n, i) => `${n} = T${j}[${i}];`).join(' ')}`;
+      return [
+        `  const q${j} = [];`,
+        `  function run${j}() {`,
+        `    if (q${j}.length === 0) return;`,
+        `    ${declare((n) => n)}`,
+        `    let ${pop}`,
+        `    for (;;) {`,
+        body('      '),
+        `      if (q${j}.length === 0) return;`,
+        `      ${pop}`,
+        `    }`,
+        `  }`,
+        `  function st${j}(${params}) { ${k.prologue.length > 0 ? `sd${j}(); ` : ''}q${j}.push([${params}]); run${j}(); }`,
+      ];
+    }
+  }
 }
 
 // The wasm backend takes a whole pipeline when every segment is a kernel run

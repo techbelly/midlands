@@ -21,11 +21,10 @@ const tailKernel = (k: KernelIR): KernelIR => ({ ...k, body: markTail(k.body) })
 function markTail(stmts: Stmt[]): Stmt[] {
   const last = stmts[stmts.length - 1];
   if (!last) return stmts;
-  const marked: Stmt | null =
-    last.k === 'feed' ? { ...last, tail: true }
-    : last.k === 'if' ? { ...last, then: markTail(last.then), else: markTail(last.else) }
-    : null;
-  return marked ? [...stmts.slice(0, -1), marked] : stmts;
+  const before = stmts.slice(0, -1);
+  if (last.k === 'feed') return [...before, { ...last, tail: true }];
+  if (last.k === 'if') return [...before, { ...last, then: markTail(last.then), else: markTail(last.else) }];
+  return stmts;
 }
 
 // Whether a body still needs a worklist: some feed is not a tail feed.

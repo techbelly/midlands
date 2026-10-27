@@ -107,23 +107,39 @@ sumWidths vars = sum (map (\[n, v] -> width (shapeOf v)) vars)
 -- since on numbers D.state reads the live state.
 phase ρ0 layout = foldl (\ρ l -> bind ρ l.name (tree l.shape (map (\i -> (D.state (l.base + i)).get unit) (range (width l.shape))))) ρ0 layout
 
--- One token. Primed state: x' is a cell starting from the pattern's x' or
--- from x, written back to x after the body.
+-- One token. The arm's pattern binds the token's parts. Then every state
+-- variable x gets its update for this token (below), the body runs with x'
+-- bound where the body writes it, and the updates are written back to x's
+-- slots.
 step k io ρ layout input | length k.forAlls == 0 = if width io.input == width io.output then D.emit (leaves input) else unit
 step k io ρ layout input =
-  let fa     = head k.forAlls,
-      ρ1     = bindPairs ρ (destructure fa.pattern input),
-      ps     = primedNames fa.body,
-      backs  = filter (\b -> b != null) (map (writeBack ρ1 ps) layout),
-      ρ2     = foldl (\ρ b -> if b.fresh then bind ρ b.primed {cells: b.cells, shape: b.slot.shape} else ρ) ρ1 backs
-  in execs io fa.body ρ2; each (\b -> eachi (\c i -> (D.state (b.slot.base + i)).set (c.get unit)) b.cells) backs
+  let arm     = head k.forAlls,
+      ρ1      = bindPairs ρ (destructure arm.pattern input),
+      written = primedNames arm.body,
+      updates = filter (\u -> u != null) (map (stateUpdate ρ1 written) layout),
+      ρ2      = foldl bindUpdate ρ1 updates
+  in execs io arm.body ρ2; each writeBack updates
 
-writeBack ρ ps l = writeBackAs ρ ps l (l.name ++ "'")
-writeBackAs ρ ps l p | member p ps =
-  let start = leaves (lookup ρ (if bound ρ p then p else l.name))
-  in {slot: l, primed: p, fresh: true, cells: mapi (\x i -> D.cell (leafName p i (length start)) x) start}
-writeBackAs ρ ps l p | bound ρ p = {slot: l, fresh: false, cells: map constCell (leaves (lookup ρ p))}
-writeBackAs ρ ps l p = null
+-- How state variable `slot` is updated by this token, as cells standing
+-- for x'. When the body writes x', the cells are fresh, start from the
+-- pattern's x' if it bound one (∀ (x', …)) and from x otherwise, and are
+-- bound as x' for the body (bindAs). When only the pattern gave x' a
+-- value, that value is the update, as constant cells, and nothing is bound
+-- (bindAs: null). Otherwise there is none.
+stateUpdate ρ written slot =
+  let primed = slot.name ++ "'"
+  in if member primed written then freshUpdate ρ slot primed
+     else if bound ρ primed then {slot: slot, bindAs: null, cells: map constCell (leaves (lookup ρ primed))}
+     else null
+
+freshUpdate ρ slot primed =
+  let start = leaves (lookup ρ (if bound ρ primed then primed else slot.name))
+  in {slot: slot, bindAs: primed, cells: mapi (\x i -> D.cell (leafName primed i (length start)) x) start}
+
+bindUpdate ρ u | u.bindAs != null = bind ρ u.bindAs {cells: u.cells, shape: u.slot.shape}
+bindUpdate ρ u                    = ρ
+
+writeBack u = eachi (\c i -> (D.state (u.slot.base + i)).set (c.get unit)) u.cells
 
 primedNames stmts = concatMap primedIn stmts
 primedIn assign{name}       = [name ++ "'"]
