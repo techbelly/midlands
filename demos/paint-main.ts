@@ -4,9 +4,9 @@
 // on the CPU, or on the GPU with `Paint` lowered to a WGSL function.
 
 import { compileLibrary, type CompiledLibrary } from '../umgeni/src/compile.js';
-import { createPresenter, framePlan, type Presenter } from '../umgeni/src/gpu/present.js';
+import { createPresenter, framePlan, type Presenter, pathBatch } from '../umgeni/src/gpu/present.js';
 import { lowerTexture, type LoweredTexture } from '../umgeni/src/gpu/texture.js';
-import { configureCanvas, gpuDevice, showOnly, type GpuCanvas } from './src/gpu-page.js';
+import { configureCanvas, gpuDevice, showOnly, type GpuCanvas, whitePage } from './src/page.js';
 import { Resolution } from './src/resolution.js';
 import { fusedPipeline } from '../umgeni/src/ir.js';
 import { PAINT_GLUE, paintShapes } from './src/vector/paint.js';
@@ -29,9 +29,6 @@ const shaderEl = document.getElementById('shader')!;
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const canvasGpu = document.getElementById('viewgpu') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
-// The picture's size as the page declares it; drawn at that or at device
-// resolution (see render), with the shapes scaled to match.
-const DECLARED = { width: canvas.width, height: canvas.height };
 
 let library: CompiledLibrary | null = null;
 let compileNote = ''; // how long the compile took
@@ -66,7 +63,7 @@ function compile(): boolean {
 
 let target: GpuCanvas | null | undefined; // undefined: not asked yet
 // The presenter for a paint(): rebuilt when the paint changes.
-interface GpuPaint { paint: string; width: number; height: number; renderer: Presenter; context: GPUCanvasContext }
+interface GpuPaint { paint: string; width: number; height: number; presenter: Presenter; context: GPUCanvasContext }
 let gpu: GpuPaint | null = null;
 
 async function gpuPaint(p: CompiledLibrary, paint: string, W: number, H: number): Promise<GpuPaint | null> {
@@ -76,9 +73,9 @@ async function gpuPaint(p: CompiledLibrary, paint: string, W: number, H: number)
   }
   if (!target) return null;
   if (gpu?.paint !== paint || gpu.width !== W || gpu.height !== H) {
-    gpu?.renderer.dispose();
+    gpu?.presenter.dispose();
     const plan = framePlan(fusedPipeline(p.ir, 'RasterizePixels'), W, H);
-    gpu = { paint, width: W, height: H, renderer: createPresenter(target.device, plan, { format: target.format, paint }), context: target.context };
+    gpu = { paint, width: W, height: H, presenter: createPresenter(target.device, plan, { format: target.format, paint }), context: target.context };
   }
   return gpu;
 }
@@ -96,8 +93,8 @@ async function whereToPaint(p: CompiledLibrary, tex: LoweredTexture, W: number, 
 async function render(): Promise<void> {
   if (!library) return;
   const p = library;
-  resolution.fit(canvas, DECLARED.width, DECLARED.height);
-  resolution.fit(canvasGpu, DECLARED.width, DECLARED.height);
+  resolution.fit(canvas);
+  resolution.fit(canvasGpu);
   const W = canvas.width;
   const H = canvas.height;
   const t0 = performance.now();
@@ -112,20 +109,16 @@ async function render(): Promise<void> {
   else paintOnCpu(p, shapes, t0, where.why, W, H);
 }
 
-function paintOnGpu({ renderer, context, width, height }: GpuPaint, shapes: number[][][], geomMs: number): void {
+function paintOnGpu({ presenter, context, width, height }: GpuPaint, shapes: number[][][], geomMs: number): void {
   const t1 = performance.now();
-  renderer.frame(
-    shapes.map((bs) => ({ tokens: new Float32Array(bs.flat()), n: bs.length, color: [0, 0, 0] as const })),
-    context.getCurrentTexture().createView(),
-  );
+  presenter.frame(shapes.map((bs) => pathBatch(bs, [0, 0, 0])), context.getCurrentTexture().createView());
   statsEl.textContent = `${compileStats} · ${resolution.label(width, height)}`;
   statusEl.textContent = `${compileNote}  Geometry ${geomMs.toFixed(0)} ms (CPU Nile); ` +
     `raster + paint on the GPU, submitted in ${(performance.now() - t1).toFixed(1)} ms, zero fences.`;
 }
 
 function paintOnCpu(p: CompiledLibrary, shapes: number[][][], t0: number, note: string, W: number, H: number): void {
-  const img = ctx.createImageData(W, H);
-  img.data.fill(255);
+  const img = whitePage(ctx, W, H);
   let px = 0;
   for (const bs of shapes) {
     const out = p.api.PaintBeziers({ min: [0, 0], max: [W, H] }).run(bs);

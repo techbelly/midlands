@@ -7,7 +7,7 @@
 
 import { librarySourceTexts } from '../src/sources.js';
 import { compileLibrary } from '../../umgeni/src/compile.js';
-import { createPresenter } from '../../umgeni/src/gpu/present.js';
+import { createPresenter, pathBatch } from '../../umgeni/src/gpu/present.js';
 import { lowerTexture } from '../../umgeni/src/gpu/texture.js';
 import { PAINT_GLUE, paintShapes } from '../src/vector/paint.js';
 import { blankImage, writePixels } from '../src/vector/spans.js';
@@ -39,7 +39,7 @@ for (const preset of PRESETS) {
   const gpu = createPresenter(device, coveragePlan(library.ir, 'RasterizePixels', W, H), { format: 'rgba8unorm', paint: tex.wgsl });
   const target = offscreenTexture(device, W, H);
   device.pushErrorScope('validation');
-  gpu.frame(shapes.map((bs) => ({ tokens: new Float32Array(bs.flat()), n: bs.length, color: [0, 0, 0] as const })), target.createView());
+  gpu.frame(shapes.map((bs) => pathBatch(bs, [0, 0, 0])), target.createView());
   const err = await device.popErrorScope();
   if (err) throw new Error(`${preset.name}: GPU validation error: ${err.message}`);
 

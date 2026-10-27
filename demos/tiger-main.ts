@@ -6,7 +6,7 @@ import type { Api } from './src/vector/draw.js';
 import { paintPaths, tigerPaths, toBatches, type TigerPath } from './src/vector/tiger.js';
 import type { FusedIR } from '../umgeni/src/ir.js';
 import { createPresenter, framePlan } from '../umgeni/src/gpu/present.js';
-import { configureCanvas, gpuDevice, showOnly, type GpuCanvas } from './src/gpu-page.js';
+import { configureCanvas, gpuDevice, showOnly, type GpuCanvas, whitePage } from './src/page.js';
 import { nile, nileWasm, sources, RasterizePixelsIR } from './nl/vector.nl-lib';
 import svgSrc from './tiger.svg';
 import { quoteNile } from './src/quote.js';
@@ -25,9 +25,8 @@ const canvasGpu = document.getElementById('viewgpu') as HTMLCanvasElement;
 const modeEl = document.getElementById('mode') as HTMLSelectElement;
 const statsEl = document.getElementById('stats')!;
 const perfEl = document.getElementById('perf')!;
-// The picture's size as the page declares it; drawn at that or at device
-// resolution (see draw). The viewBox is 900 across: `base` fits it.
-const DECLARED = { width: canvas.width, height: canvas.height };
+// The viewBox is 900 across: `base` fits it to the canvas as drawn (its
+// declared size, or device resolution; see draw).
 const base = () => Math.min(canvas.width, canvas.height) / 900;
 
 // A back end rasterizes and composites the paths, and resolves to its time
@@ -40,8 +39,7 @@ function cpuBackEnd(nile: Api, ctx: CanvasRenderingContext2D): BackEnd {
   return async (paths) => {
     const t0 = performance.now();
     const { width, height } = ctx.canvas;
-    const img = ctx.createImageData(width, height);
-    img.data.fill(255);
+    const img = whitePage(ctx, width, height);
     paintPaths(img, nile, paths);
     ctx.putImageData(img, 0, 0);
     return performance.now() - t0;
@@ -65,8 +63,9 @@ function gpuBackEnd(ir: FusedIR, { device, context, format }: GpuCanvas): GpuBac
   return { run, width, height, dispose: () => presenter.dispose() };
 }
 
-const cpu = cpuBackEnd(nile, canvas.getContext('2d')!);
-const wasm = cpuBackEnd(nileWasm, canvas.getContext('2d')!);
+const ctx = canvas.getContext('2d')!;
+const cpu = cpuBackEnd(nile, ctx);
+const wasm = cpuBackEnd(nileWasm, ctx);
 
 // The GPU back end is built on first use, if WebGPU is there, and again
 // when the canvas changes size.
@@ -116,8 +115,8 @@ const segs = tiger.paths.reduce((a, p) => a + p.cubics.length, 0);
 // The front half (geometry, compiled Nile on the CPU) is the same in every
 // mode; only the back end — rasterize and composite — differs.
 async function draw(): Promise<void> {
-  resolution.fit(canvas, DECLARED.width, DECLARED.height);
-  resolution.fit(canvasGpu, DECLARED.width, DECLARED.height);
+  resolution.fit(canvas);
+  resolution.fit(canvasGpu);
   let mode = MODES[modeEl.value];
   let backEnd = await mode.back();
   if (!backEnd) { // the fallback when WebGPU is unavailable

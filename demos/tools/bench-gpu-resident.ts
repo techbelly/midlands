@@ -8,6 +8,7 @@
 //
 // Run: npm run bench:gpu:resident   (Deno; panics at exit — wgpu teardown bug)
 
+import { PARAGRAPH, median } from './bench-text.js';
 import { compileLibraryFile } from '../src/sources.js';
 import { createCoverageReadback } from '../../umgeni/src/gpu/readback.js';
 import { paintCoverage, textBeziers, textSpansParams } from '../src/text/host.js';
@@ -16,11 +17,7 @@ import { coverageDiff, coveragePlan, requireDevice } from './gpu-check.js';
 const library = compileLibraryFile('demos/nl/text.nl-lib');
 const nile = library.api;
 
-const PARA =
-  'THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG. PACK MY BOX WITH FIVE DOZEN JUGS. ' +
-  'UMGENI RENDERS THIS PARAGRAPH THROUGH A PIPELINE COMPILED FROM NILE SOURCE, WRAPPING LINES AS IT GOES. ';
-
-const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+const PARA = PARAGRAPH;
 
 // CPU back half: decompose → sort → sort → combine → paint.
 const cpuCoverage = (beziers: number[][], width: number, height: number): Float64Array =>

@@ -7,9 +7,13 @@ import type { Cubic } from './svg.js';
 
 export type { Api } from '../../../umgeni/src/cpu/runtime.js';
 
+/** An affine matrix as Cairo and gezira write it: (a, b, c, d, e, f). */
+export type Matrix = readonly [number, number, number, number, number, number];
+export const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
+
 // A stroke's outline: gezira's StrokeBezierPath, unmodified, run once per
 // subpath (its end of stream is where it caps or closes the path). The
 // result is flat beziers, filled together so overlaps aren't double-painted.
-export function strokeOutline(nile: Api, m: number[], w: number, join: number, cap: number, subpaths: Cubic[][]): number[][] {
+export function strokeOutline(nile: Api, m: readonly number[], w: number, join: number, cap: number, subpaths: Cubic[][]): number[][] {
   return subpaths.flatMap((sub) => nile.StrokeOutline({ M: m, w, l: join, c: cap }).run(sub));
 }

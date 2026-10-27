@@ -2,11 +2,16 @@
 import { describe, expect, it } from 'vitest';
 import { compileLibraryFile, librarySourceTexts, read } from '../src/sources.js';
 import { compileLibrary } from '../../umgeni/src/compile.js';
-import type { Api } from '../src/vector/draw.js';
+import { IDENTITY, type Api } from '../src/vector/draw.js';
 import { lowerPipeline } from '../../umgeni/src/gpu/lower.js';
 import { coverageSink } from '../../umgeni/src/gpu/execute.js';
 import type { FusedIR } from '../../umgeni/src/ir.js';
-import { sourceSerif, square } from './fixtures.js';
+import { segment, sourceSerif, square } from './fixtures.js';
+import { CpuTarget, Sheet } from '../src/samples/draw.js';
+import { SCENES } from '../src/samples/scenes.js';
+import { lineCubic, path } from '../src/samples/path.js';
+import { parseSvg } from '../src/vector/svg.js';
+import { drawTiger, fitView } from '../src/vector/tiger.js';
 import { blankImage, inkedPixels } from '../src/vector/spans.js';
 import { quoteNile } from '../src/quote.js';
 
@@ -48,10 +53,7 @@ describe('the even-odd rule (roda/evenodd.nl)', () => {
   });
 });
 
-// A straight segment as a flat bezier.
-const seg = (x0: number, y0: number, x1: number, y1: number): number[] => [x0, y0, (x0 + x1) / 2, (y0 + y1) / 2, x1, y1];
 const chord = (b: number[]) => Math.hypot(b[4] - b[0], b[5] - b[1]);
-const I = [1, 0, 0, 1, 0, 0];
 
 describe('dashes (roda/dash.nl)', () => {
   it('compiles: DashBeziers and the capped stroker', () => {
@@ -60,20 +62,20 @@ describe('dashes (roda/dash.nl)', () => {
   });
   it('cuts a line into dashes of the pattern, carrying the phase across beziers', () => {
     // 100 long, on 20 off 10: dashes at 0–20, 30–50, 60–80, 90–100.
-    const dashes = nile.DashBeziers({ on1: 20, off1: 10, on2: 20, off2: 10, phase: 0 }).run([seg(0, 0, 60, 0), seg(60, 0, 100, 0)]);
+    const dashes = nile.DashBeziers({ on1: 20, off1: 10, on2: 20, off2: 10, phase: 0 }).run([segment(0, 0, 60, 0), segment(60, 0, 100, 0)]);
     const starts = dashes.map((b) => b[0]);
     expect(starts).toEqual([0, 30, 60, 90]);
     expect(dashes.reduce((n, b) => n + chord(b), 0)).toBeCloseTo(70, 9);
     // A phase moves the pattern back along the path.
-    const shifted = nile.DashBeziers({ on1: 20, off1: 10, on2: 20, off2: 10, phase: 25 }).run([seg(0, 0, 100, 0)]);
+    const shifted = nile.DashBeziers({ on1: 20, off1: 10, on2: 20, off2: 10, phase: 25 }).run([segment(0, 0, 100, 0)]);
     expect(shifted.map((b) => b[0])).toEqual([5, 35, 65, 95]);
     // Cairo's dash sample: 50 on, 10 off, 10 on, 10 off, offset -50.
-    const four = nile.DashBeziers({ on1: 50, off1: 10, on2: 10, off2: 10, phase: -50 }).run([seg(0, 0, 160, 0)]);
+    const four = nile.DashBeziers({ on1: 50, off1: 10, on2: 10, off2: 10, phase: -50 }).run([segment(0, 0, 160, 0)]);
     expect(four.map((b) => [b[0], b[4]])).toEqual([[0, 20], [30, 40], [50, 100], [110, 120], [130, 160]]); // −50 into an 80-long pattern is 30 in: 20 of the first dash remain
   });
   it('strokes disconnected pieces with caps at every end, nothing between', () => {
     const w = 4;
-    const pieces = [seg(2, 10, 20, 10), seg(40, 10, 58, 10)];
+    const pieces = [segment(2, 10, 20, 10), segment(40, 10, 58, 10)];
     const spans = nile.FillBeziers({ min: [0, 0], max: [64, 20] }).run(nile.StrokePieces({ w, l: 4, c: 0 }).run(pieces));
     expect(coverageAt(spans, 10, 9)).toBeCloseTo(1, 9); // on the first piece
     expect(coverageAt(spans, 50, 9)).toBeCloseTo(1, 9); // on the second
@@ -85,13 +87,13 @@ describe('dashes (roda/dash.nl)', () => {
     expect(coverageAt(spans, 21, 9)).toBeCloseTo(0, 9);
   });
   it('is gezira\'s stroker on a connected path', () => {
-    const zigzag = [seg(5, 5, 25, 30), seg(25, 30, 45, 5), seg(45, 5, 60, 28)];
+    const zigzag = [segment(5, 5, 25, 30), segment(25, 30, 45, 5), segment(45, 5, 60, 28)];
     const a = nile.StrokePieces({ w: 6, l: 4, c: -1 }).run(zigzag);
     const b = nile.StrokeBezierPath({ w: 6, l: 4, c: -1 }).run(zigzag);
     expect(a).toEqual(b);
   });
   it('dashes a cubic path end to end', () => {
-    const outline = nile.DashedStroke({ M: I, w: 3, l: 4, c: 0, on1: 10, off1: 5, on2: 10, off2: 5, phase: 0 }).run([lineCubic([0, 10], [90, 10])]);
+    const outline = nile.DashedStroke({ M: IDENTITY, w: 3, l: 4, c: 0, on1: 10, off1: 5, on2: 10, off2: 5, phase: 0 }).run([lineCubic([0, 10], [90, 10])]);
     const spans = nile.FillBeziers({ min: [0, 0], max: [100, 20] }).run(outline);
     expect(coverageAt(spans, 5, 9)).toBeCloseTo(1, 9);
     expect(coverageAt(spans, 12, 9)).toBeCloseTo(0, 9);
@@ -155,16 +157,11 @@ describe('matrices (roda/vector.nl)', () => {
     expect(lib.unsupported).toEqual([]);
     const [M] = nile.Compose().run(maps);
     const [I] = lib.api.Undo().run([M]);
-    [1, 0, 0, 1, 0, 0].forEach((v, i) => expect(I[i]).toBeCloseTo(v, 9));
+    [1, 0, 0, 1, 0, 0].forEach((v, i) => expect(IDENTITY[i]).toBeCloseTo(v, 9));
   });
 });
 
 // --- the samples page, headless -----------------------------------------------
-import { CpuTarget, Sheet } from '../src/samples/draw.js';
-import { SCENES } from '../src/samples/scenes.js';
-import { lineCubic, path } from '../src/samples/path.js';
-import { parseSvg } from '../src/vector/svg.js';
-import { drawTiger, fitView } from '../src/vector/tiger.js';
 
 const samples = compileLibraryFile('demos/nl/samples.nl-lib');
 const font = sourceSerif();

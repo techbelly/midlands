@@ -3,7 +3,7 @@
 // written by spans.ts writePixels). A paint library is nl/paint.nl-lib + the
 // user's `Paint` + PAINT_GLUE.
 
-import { strokeOutline, type Api } from './draw.js';
+import { IDENTITY, strokeOutline, type Api } from './draw.js';
 import { lineCubic } from '../samples/path.js';
 
 export const PAINT_GLUE = `
@@ -41,6 +41,6 @@ export function paintShapes(nile: Api, W: number, H: number, k = 1): number[][][
   return [
     flat(disc(110, 115, 85)),
     flat(star(320, 120, 42, 100)),
-    clip(strokeOutline(nile, [1, 0, 0, 1, 0, 0], 34 * k, -1, -1, [at(wave)])),
+    clip(strokeOutline(nile, IDENTITY, 34 * k, -1, -1, [at(wave)])),
   ];
 }

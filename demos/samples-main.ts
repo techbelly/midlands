@@ -13,7 +13,7 @@ import { parseSvg } from './src/vector/svg.js';
 import { drawTiger, fitView } from './src/vector/tiger.js';
 import { quoteNile } from './src/quote.js';
 import { createPresenter, framePlan, type PathBatch, type Presenter } from '../umgeni/src/gpu/present.js';
-import { configureCanvas, gpuDevice, showOnly } from './src/gpu-page.js';
+import { configureCanvas, gpuDevice, showOnly, whitePage } from './src/page.js';
 import { Resolution } from './src/resolution.js';
 import { blankImage } from './src/vector/spans.js';
 import tigerSvg from './tiger.svg';
@@ -40,8 +40,8 @@ const perfEl = document.getElementById('perf')!;
 (document.getElementById('nile') as HTMLElement).textContent = quoteNile(sources, ['FillWinding', 'FillEvenOdd', 'StrokeOutline', 'ClipPaint', 'Intersect', 'RasterizeParallel', 'PaintSpans']);
 const grid = document.getElementById('samples')!;
 
-// A card: the two canvases (one per kind of context; only one is shown), the
-// C, the note saying where it was drawn, and the Nile.
+// A card, as the page needs it after building: the two canvases (one per
+// kind of context; only one is shown) and the note saying where it drew.
 interface Card {
   cpu: HTMLCanvasElement;
   gpu: HTMLCanvasElement;
@@ -103,8 +103,7 @@ async function ensureGpu() {
 function drawCpu(i: number): void {
   const { cpu, gpu: gpuCanvas } = cards[i];
   const ctx = cpu.getContext('2d')!;
-  const img = ctx.createImageData(SIZE, SIZE);
-  img.data.fill(255);
+  const img = whitePage(ctx, SIZE, SIZE);
   SCENES[i].draw(new Sheet(nile, new CpuTarget(nile, img), resolution.scale), font, tiger);
   ctx.putImageData(img, 0, 0);
   showOnly(cpu, cpu, gpuCanvas);
@@ -112,8 +111,8 @@ function drawCpu(i: number): void {
 
 async function draw(): Promise<void> {
   for (const card of cards) {
-    resolution.fit(card.cpu, DECLARED, DECLARED);
-    resolution.fit(card.gpu, DECLARED, DECLARED);
+    resolution.fit(card.cpu);
+    resolution.fit(card.gpu);
   }
   if (cards[0].cpu.width !== SIZE) {
     SIZE = cards[0].cpu.width;

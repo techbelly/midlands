@@ -26,6 +26,9 @@ export interface PathBatch {
   color: readonly [number, number, number] | readonly [number, number, number, number]; // 0..1, alpha 1 if absent
   plan?: string; // which of the presenter's plans; the only one, if absent
 }
+// A batch from flat beziers: the tokens as f32, their count, the colour.
+export const pathBatch = (beziers: number[][], color: PathBatch['color'], plan?: string): PathBatch =>
+  ({ tokens: new Float32Array(beziers.flat()), n: beziers.length, color, ...(plan ? { plan } : {}) });
 
 export interface Presenter {
   /** Encode and submit the whole frame. Zero fences. */

@@ -4,6 +4,7 @@
 // advance, line wrapping, transform, clip, rasterization) is compiled Nile —
 // see roda/text.nl.
 
+import type { CompiledLibrary } from '../../../umgeni/src/compile.js';
 import { run, type Api, type Op, type Token } from '../../../umgeni/src/cpu/runtime.js';
 import { glyphFor as stubGlyph, type Glyph, type Rgba } from './stubfont.js';
 
@@ -143,19 +144,23 @@ export function textSpansParams(opts: RenderOptions): TextSpansParams {
 
 export interface Driven {
   spans: number[][];
-  tokens: number;
   /** Milliseconds spent streaming tokens through the compiled pipeline. */
   rasterMs: number;
 }
 
-export function driveTextSpans(nile: Api, op: Op, text: string, glyphs?: GlyphSource): Driven {
+// Text through a compiled library's whole TextSpans pipeline: the spans,
+// and how long the pipeline took (the tokens are made first, untimed).
+export function renderText(library: CompiledLibrary, text: string, opts: RenderOptions): Driven {
+  const nile = library.api;
+  if (!nile.TextSpans) throw new Error('TextSpans did not compile');
+  const op = nile.TextSpans(textSpansParams(opts));
   const spans: number[][] = [];
   op.setEmit((t) => spans.push(t));
-  const tokens = textTokens(nile, text, glyphs);
+  const tokens = textTokens(nile, text, opts.glyphs);
   const t0 = performance.now();
   for (const t of tokens) op.push(t);
   op.end();
-  return { spans, tokens: tokens.length, rasterMs: performance.now() - t0 };
+  return { spans, rasterMs: performance.now() - t0 };
 }
 
 // Accumulate spans into a scalar coverage buffer (row-major, 0..1).

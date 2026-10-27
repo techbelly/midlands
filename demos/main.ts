@@ -1,11 +1,12 @@
 // The web demo shell: DOM in, pixels out. The pipeline itself is
 // nl/text.nl-lib — compiled by Umgeni at bundle time (tools/nile-plugin.ts)
-// into generated JS plus RasterizeParallel as fused IR (plain data).
+// into generated JS plus RasterizePixels as fused IR (plain data).
 //
-// Three rendering paths over the same Nile source:
+// Four rendering paths over the same Nile source:
 //   cpu  — the compiled JS pipeline: layout, then each colour run (colour
 //          emoji are stacks of coloured layers) transformed, clipped,
 //          rasterized and composited in order.
+//   wasm — the same, the kernels compiled to WebAssembly.
 //   gpu  — layout/transform/clip on CPU, then the GPU pipeline LOWERED IN
 //          THE BROWSER from the shipped IR; coverage read back (one fence)
 //          and painted via 2D canvas (one colour).
@@ -21,8 +22,8 @@ import sourceSerif from './fonts/SourceSerif4.ttf';
 // Twemoji Mozilla: CC-BY 4.0 art (fonts/TWEMOJI-LICENSE.md)
 import twemoji from './fonts/Twemoji.Mozilla.ttf';
 import { createCoverageReadback, type CoverageReadback } from '../umgeni/src/gpu/readback.js';
-import { createPresenter, framePlan, type Presenter } from '../umgeni/src/gpu/present.js';
-import { configureCanvas, gpuDevice, showOnly } from './src/gpu-page.js';
+import { createPresenter, framePlan, type Presenter, pathBatch } from '../umgeni/src/gpu/present.js';
+import { configureCanvas, gpuDevice, showOnly, whitePage } from './src/page.js';
 import { Resolution } from './src/resolution.js';
 import { compileMs, nile, nileWasm, sources, RasterizePixelsIR } from './nl/text.nl-lib';
 import { quoteNile } from './src/quote.js';
@@ -45,10 +46,9 @@ const perf = document.getElementById('perf')!;
 const ctx2d = canvas2d.getContext('2d')!;
 type Api = typeof nile;
 
-// The picture's size as the page declares it, and as drawn this frame (the
-// same, or scaled to device pixels; see render).
-const DECLARED = { width: canvas2d.width, height: canvas2d.height };
-let SIZE = { ...DECLARED };
+// The picture's size as drawn this frame: as declared, or scaled to device
+// pixels (see render).
+let SIZE = { width: canvas2d.width, height: canvas2d.height };
 
 // Fonts: Source Serif 4 with Twemoji colour emoji as fallback (bundled), the
 // hand-drawn stub, or any dropped .ttf (also with emoji fallback).
@@ -92,8 +92,7 @@ function cpuRenderer(api: Api, label: string): Renderer {
     canvas: canvas2d,
     async frame(text, params) {
       const t0 = performance.now();
-      const img = ctx2d.createImageData(SIZE.width, SIZE.height);
-      img.data.fill(255);
+      const img = whitePage(ctx2d, SIZE.width, SIZE.height);
       let spans = 0;
       const colourRuns = runs(api, text, params);
       for (const r of colourRuns) {
@@ -142,7 +141,7 @@ function presentedRenderer(gpu: Gpu): Renderer {
       let t0 = performance.now();
       const batches = runs(nile, text, params).map((r) => {
         const bs = placed(nile, r, params);
-        return { tokens: new Float32Array(bs.flat()), n: bs.length, color: colorOf(r) };
+        return pathBatch(bs, colorOf(r));
       });
       const frontMs = performance.now() - t0;
       t0 = performance.now();
@@ -221,8 +220,8 @@ async function renderer(mode: string): Promise<Renderer | null> {
 async function render(): Promise<void> {
   const size = Number(sizeEl.value);
   sizeVal.textContent = String(size);
-  resolution.fit(canvas2d, DECLARED.width, DECLARED.height);
-  resolution.fit(canvasGpu, DECLARED.width, DECLARED.height);
+  resolution.fit(canvas2d);
+  resolution.fit(canvasGpu);
   SIZE = { width: canvas2d.width, height: canvas2d.height };
   const k = resolution.scale; // the type and margin in picture pixels
   const params = textSpansParams({ size: size * k, ...SIZE, margin: 8 * k, lineHeight: currentFont().lineHeight });

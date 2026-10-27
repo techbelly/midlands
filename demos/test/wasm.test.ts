@@ -3,7 +3,7 @@
 // and the rasterizer, and the whole tiger.
 import { describe, expect, it } from 'vitest';
 import { compileLibraryFile, read } from '../src/sources.js';
-import { renderText } from '../src/text/render.js';
+import { renderText } from '../src/text/host.js';
 import { blankImage } from '../src/vector/spans.js';
 import { sourceSerif } from './fixtures.js';
 import { parseSvg } from '../src/vector/svg.js';

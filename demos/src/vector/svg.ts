@@ -5,7 +5,7 @@
 // commands are interpreted in Nile (nl/svg.nl), so parsing takes the
 // compiled vector library.
 
-import type { Api } from './draw.js';
+import { IDENTITY, type Api } from './draw.js';
 
 export type Cubic = number[]; // 8 floats: A B C D as x,y pairs
 
@@ -29,7 +29,7 @@ const attr = (s: string, name: string): string | null => {
 
 function parseMatrix(t: string | null): number[] {
   const m = t?.match(/matrix\(([^)]*)\)/);
-  return m ? m[1].split(/[\s,]+/).map(Number) : [1, 0, 0, 1, 0, 0];
+  return m ? m[1].split(/[\s,]+/).map(Number) : [...IDENTITY];
 }
 
 const norm = (c: string | null): string | null => (c && c.toLowerCase() !== 'none' ? c : null);

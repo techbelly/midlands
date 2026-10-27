@@ -5,7 +5,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { compileLibraryFile, read } from '../src/sources.js';
-import { strokeOutline } from '../src/vector/draw.js';
+import { strokeOutline, IDENTITY } from '../src/vector/draw.js';
 import { blankImage, inkedPixels, paintSpans } from '../src/vector/spans.js';
 import { parseSvg, pathCubics, pathSubpaths } from '../src/vector/svg.js';
 import { drawTiger, fitView } from '../src/vector/tiger.js';
@@ -36,9 +36,8 @@ describe('the tiger demo, headless', () => {
     const H = 128;
     const img = blankImage(W, H);
     const t0 = performance.now();
-    const paths = drawTiger(img, tiger, fitView(W, H), library.api);
+    drawTiger(img, tiger, fitView(W, H), library.api);
     const ms = performance.now() - t0;
-    expect(paths).toBe(240);
     const colored = inkedPixels(img);
     // The tiger fills most of the frame.
     expect(colored).toBeGreaterThan(W * H * 0.3);
@@ -83,12 +82,11 @@ describe('the tiger demo, headless', () => {
   });
 
   it('strokes a path with caps and joins (the strokes demo pipeline)', () => {
-    const I = [1, 0, 0, 1, 0, 0];
     const zig = [
       [20, 90, 40, 60, 60, 40, 80, 20],
       [80, 20, 100, 40, 120, 60, 140, 90],
     ];
-    const outline = (join: number, cap: number) => strokeOutline(library.api, I, 12, join, cap, [zig]);
+    const outline = (join: number, cap: number) => strokeOutline(library.api, IDENTITY, 12, join, cap, [zig]);
     // Round joins/caps subdivide into more pieces than miter + butt.
     expect(outline(-1, -1).length).toBeGreaterThan(outline(4, 0).length);
     const spans = library.api.FillBeziers({ min: [0, 0], max: [200, 120] }).run(outline(-1, -1));

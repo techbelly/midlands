@@ -1,12 +1,13 @@
 // Stroke demo: gezira's own stroke.nl — unmodified, higher-order (mid-stream
 // ⇒, recursive generators, DupCat, Reverse) — compiled by Umgeni.
 
-import { strokeOutline } from './src/vector/draw.js';
+import { IDENTITY, strokeOutline } from './src/vector/draw.js';
 import { hexRGB, paintSpans } from './src/vector/spans.js';
 import { lineCubic } from './src/samples/path.js';
 import { nile, sources } from './nl/vector.nl-lib';
 import { quoteNile } from './src/quote.js';
 import { Resolution } from './src/resolution.js';
+import { whitePage } from './src/page.js';
 
 (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
   sources,
@@ -18,10 +19,8 @@ const canvas = document.getElementById('view') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
 const statsEl = document.getElementById('stats')!;
 const perfEl = document.getElementById('perf')!;
-// The picture's size as the page declares it; the paths below are laid out
-// in it, and scaled with it when it is drawn at device resolution.
-const DECLARED = { width: canvas.width, height: canvas.height };
-const I = [1, 0, 0, 1, 0, 0];
+// The paths below are laid out for the canvas as declared, and scaled with
+// it when it is drawn at device resolution.
 
 const poly = (pts: number[][]): number[][] => pts.slice(0, -1).map((p, i) => lineCubic(p, pts[i + 1]));
 
@@ -37,16 +36,15 @@ const paths: number[][][] = [
 const ui = { cap: -1, join: 'round', limit: 4, w: 22, outline: false };
 
 function draw(): void {
-  resolution.fit(canvas, DECLARED.width, DECLARED.height);
+  resolution.fit(canvas);
   const k = resolution.scale;
   const W = canvas.width;
   const H = canvas.height;
-  const img = ctx.createImageData(W, H);
-  img.data.fill(255);
+  const img = whitePage(ctx, W, H);
   const t0 = performance.now();
   const join = ui.join === 'round' ? -1 : ui.join === 'bevel' ? 1 : ui.limit;
   const at = (p: number[][]) => (k === 1 ? p : p.map((c) => c.map((v) => v * k)));
-  const outlines = paths.map((p) => strokeOutline(nile, I, ui.w * k, join, ui.cap, [at(p)]));
+  const outlines = paths.map((p) => strokeOutline(nile, IDENTITY, ui.w * k, join, ui.cap, [at(p)]));
   let spans = 0;
   for (const outline of outlines) {
     const s = nile.FillBeziers({ min: [0, 0], max: [W, H] }).run(outline);

@@ -1,7 +1,7 @@
 // The TrueType reader against the bundled Source Serif 4 (OFL, fonts/).
 import { describe, expect, it } from 'vitest';
 import { compileLibraryFile } from '../src/sources.js';
-import { renderText } from '../src/text/render.js';
+import { renderText } from '../src/text/host.js';
 import { colorRuns, fallback, paintCoverage } from '../src/text/host.js';
 import { sourceSerif, twemoji } from './fixtures.js';
 

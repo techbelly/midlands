@@ -14,15 +14,13 @@
 // texture, an image, a mesh — GpuTarget refuses with CpuOnly, naming why,
 // and the page draws that scene on the CPU.
 
-import type { Api } from '../vector/draw.js';
+import { IDENTITY, type Api, type Matrix } from '../vector/draw.js';
 import { writePixels, type ImgLike } from '../vector/spans.js';
 import { path, type Path } from './path.js';
 import type { Op } from '../../../umgeni/src/cpu/runtime.js';
-import type { PathBatch } from '../../../umgeni/src/gpu/present.js';
+import { pathBatch, type PathBatch } from '../../../umgeni/src/gpu/present.js';
 
-/** An affine matrix as Cairo and gezira write it: (a, b, c, d, e, f). */
-export type Matrix = readonly [number, number, number, number, number, number];
-export const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
+export { IDENTITY, type Matrix } from '../vector/draw.js';
 export const translate = (x: number, y: number): Matrix => [1, 0, 0, 1, x, y];
 export const scale = (x: number, y: number): Matrix => [x, 0, 0, y, 0, 0];
 export const rotate = (t: number): Matrix => [Math.cos(t), Math.sin(t), -Math.sin(t), Math.cos(t), 0, 0];
@@ -228,7 +226,7 @@ export class GpuTarget implements Target {
 
   shade(beziers: number[][], color: Rgba, rule: Rule): void {
     const clipped = this.nile.ClipBeziers(this.box).run(beziers);
-    this.batches.push({ tokens: new Float32Array(clipped.flat()), n: clipped.length, color, plan: rule === 'evenodd' ? 'RasterizePixelsEvenOdd' : 'RasterizePixels' });
+    this.batches.push(pathBatch(clipped, color, rule === 'evenodd' ? 'RasterizePixelsEvenOdd' : 'RasterizePixels'));
   }
 
   clip(): void {

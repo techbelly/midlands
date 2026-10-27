@@ -11,7 +11,7 @@
 //   sources      the library's Nile source texts, in manifest order: what a
 //                page quotes, and what the paint page compiles with yours
 //   <Name>IR     each fused process's IR as plain data, for the browser's GPU
-//                lowering (e.g. RasterizeParallelIR)
+//                lowering (e.g. RasterizePixelsIR)
 // Every export is side-effect free, so a page pays only for what it imports.
 
 import type { Plugin } from 'esbuild';

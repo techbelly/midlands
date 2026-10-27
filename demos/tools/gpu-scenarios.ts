@@ -192,9 +192,8 @@ const coverage = (data: ArrayLike<number>): Result => ({ kind: 'coverage', data 
 const tokens = (rows: number[][]): Result => ({ kind: 'tokens', rows });
 const drew = { min: 100 };
 
-async function renderCoverage(device: GPUDevice, plan: Plan, params: number[] = [], what = ''): Promise<Result> {
+async function renderCoverage(device: GPUDevice, plan: Plan, flat: Float32Array<ArrayBuffer>, n: number, params: number[] = [], what = ''): Promise<Result> {
   const { createCoverageReadback } = await readback();
-  const { flat, n } = lowering();
   const gpu = createCoverageReadback(device, plan, params);
   try {
     const cov = await gpu.render(flat, n);
@@ -206,14 +205,14 @@ async function renderCoverage(device: GPUDevice, plan: Plan, params: number[] = 
 }
 
 const pixelsOnGpu = (device: GPUDevice) => {
-  const { library, W, H } = lowering();
-  return renderCoverage(device, coveragePlan(library.ir, 'RasterizePixels', W, H), [], 'RasterizePixels');
+  const { library, W, H, flat, n } = lowering();
+  return renderCoverage(device, coveragePlan(library.ir, 'RasterizePixels', W, H), flat, n, [], 'RasterizePixels');
 };
 
 export const loweringScenarios: Scenario[] = [
   {
     what: 'RasterizePixels vs the span loop, both on the GPU',
-    reference: (device) => renderCoverage(device, spanPlan('RasterizeParallel')),
+    reference: (device) => renderCoverage(device, spanPlan('RasterizeParallel'), lowering().flat, lowering().n),
     gpu: pixelsOnGpu,
     compare: compareCoverage(0, drew),
   },
@@ -238,7 +237,7 @@ export const loweringScenarios: Scenario[] = [
       // is a pipeline parameter the GPU reads from P.
       const plan = spanPlan('RasterizeMapped');
       if (!plan.passes[0].bindings.some((b) => b.role === 'params')) throw new Error('RasterizeMapped: no params binding');
-      return renderCoverage(device, plan, [0.5, 0, 0, 0.5, 40, 10]);
+      return renderCoverage(device, plan, lowering().flat, lowering().n, [0.5, 0, 0, 0.5, 40, 10]);
     },
     compare: compareCoverage(0.2, drew),
   },
@@ -303,18 +302,10 @@ export const sampleScenarios: Scenario[] = [
       const { nile, W, H } = samples();
       return coverage(paintCoverage(nile.RasterizeEvenOdd().run(twice()), W, H));
     },
-    gpu: async (device) => {
-      const { createCoverageReadback } = await readback();
+    gpu: (device) => {
       const { library, W, H } = samples();
       const shape = twice();
-      const gpu = createCoverageReadback(device, coveragePlan(library.ir, 'RasterizePixelsEvenOdd', W, H));
-      try {
-        const cov = await gpu.render(new Float32Array(shape.flat()), shape.length);
-        if (gpu.overflowed()) throw new Error('RasterizePixelsEvenOdd: worklist overflow');
-        return coverage(cov);
-      } finally {
-        gpu.dispose();
-      }
+      return renderCoverage(device, coveragePlan(library.ir, 'RasterizePixelsEvenOdd', W, H), new Float32Array(shape.flat()), shape.length, [], 'RasterizePixelsEvenOdd');
     },
     compare: compareCoverage(0.2, { min: 1000, max: 2000 }),
   },

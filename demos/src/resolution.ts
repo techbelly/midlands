@@ -34,9 +34,16 @@ export class Resolution {
     return this.box?.checked ? this.ratio : 1;
   }
 
-  /** The canvas at w × h CSS pixels, its store scaled. The store is set only
-   *  when it changes, since setting a canvas's size clears it. */
-  fit(canvas: HTMLCanvasElement, w: number, h: number): void {
+  // The size each canvas had when first fitted: the size the page declared.
+  private readonly declared = new WeakMap<HTMLCanvasElement, { w: number; h: number }>();
+
+  /** The canvas at its declared size in CSS pixels, its store scaled. The
+   *  store is set only when it changes, since setting a canvas's size
+   *  clears it. */
+  fit(canvas: HTMLCanvasElement): void {
+    let d = this.declared.get(canvas);
+    if (!d) this.declared.set(canvas, (d = { w: canvas.width, h: canvas.height }));
+    const { w, h } = d;
     canvas.style.width = `${w}px`;
     canvas.style.height = `${h}px`;
     const pw = Math.round(w * this.scale);

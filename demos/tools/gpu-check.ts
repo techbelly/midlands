@@ -1,17 +1,17 @@
-// What the headless GPU checks share: a device or a plain refusal, a fused
-// pipeline's coverage plan, an offscreen texture and its readback, and the
-// comparisons with the CPU. Deno with WebGPU only; tsc skips demos/tools,
-// so `deno check demos/tools/*.ts` is their typecheck.
+// What the headless GPU checks share: a device or a plain refusal, an
+// offscreen texture and its readback, and the image comparison; the
+// coverage plan and comparison live with the scenarios (gpu-scenarios.ts).
+// Deno with WebGPU only; tsc skips demos/tools, so `deno check
+// demos/tools/*.ts` is their typecheck.
 
 import { requestDevice } from '../../umgeni/src/gpu/device.js';
+export { coverageDiff, coveragePlan } from './gpu-scenarios.js';
 
 export async function requireDevice(): Promise<GPUDevice> {
   const device = await requestDevice();
   if (!device) throw new Error('no WebGPU device');
   return device;
 }
-
-export { coveragePlan } from './gpu-scenarios.js';
 
 // A W × H rgba texture the presenter can draw into and a check can read.
 export const offscreenTexture = (device: GPUDevice, W: number, H: number): GPUTexture =>
@@ -38,8 +38,6 @@ export async function readTexture(device: GPUDevice, tex: GPUTexture, W: number,
   buf.destroy();
   return px;
 }
-
-export { coverageDiff } from './gpu-scenarios.js';
 
 // Two rgba images, both packed as ImageData, compared on r, g and b: the
 // largest and mean channel difference, how many pixels differ at all, how

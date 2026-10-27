@@ -2,12 +2,12 @@
 // umgeni's flat tokens: a cubic is 8 numbers, a span is 4. All geometry
 // (transform, cubic flattening, stroke expansion, clipping, rasterization)
 // runs in compiled Nile — gezira's own stroke/bezier/rasterize source plus
-// nl/vector.nl and nl/svg.nl, which also compose the view with the SVG's
-// transform and scale stroke widths. The host lexes the SVG (svg.ts),
+// roda/vector.nl and the demos' svg.nl, which also compose the view with
+// the SVG's transform and scale stroke widths. The host lexes the SVG (svg.ts),
 // chooses the view, and composites spans (spans.ts). DOM-free: shared by the
 // browser demo and tests.
 
-import type { PathBatch } from '../../../umgeni/src/gpu/present.js';
+import { pathBatch, type PathBatch } from '../../../umgeni/src/gpu/present.js';
 import type { Api } from './draw.js';
 import { hexRGB, paintSpans, type ImgLike, type RGB } from './spans.js';
 import type { Cubic, Svg } from './svg.js';
@@ -71,12 +71,10 @@ export function paintPaths(img: ImgLike, nile: Api, paths: TigerPath[]): void {
 
 // The GPU back end's input: the same paths as f32 batches.
 export function toBatches(paths: TigerPath[]): PathBatch[] {
-  return paths.map(({ beziers, color }) => ({ tokens: new Float32Array(beziers.flat()), n: beziers.length, color }));
+  return paths.map(({ beziers, color }) => pathBatch(beziers, color));
 }
 
-// The whole tiger on the CPU, clipped to the canvas. Returns the number of
-// paths drawn.
-export function drawTiger(img: ImgLike, tiger: Svg, view: number[], nile: Api, minStroke = 0.75): number {
+// The whole tiger on the CPU, clipped to the canvas.
+export function drawTiger(img: ImgLike, tiger: Svg, view: number[], nile: Api, minStroke = 0.75): void {
   paintPaths(img, nile, tigerPaths(tiger, view, nile, img.width, img.height, minStroke));
-  return tiger.paths.length;
 }

@@ -9,13 +9,12 @@
 // Run: npm run bench
 
 import { compileLibraryFile } from '../src/sources.js';
-import { renderText } from '../src/text/render.js';
+import { renderText } from '../src/text/host.js';
 import type { CompileOptions } from '../../umgeni/src/compile.js';
 import { kernelOpCount } from '../../umgeni/src/ir.js';
+import { PARAGRAPH, median } from './bench-text.js';
 
-const TEXT =
-  'THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG. PACK MY BOX WITH FIVE DOZEN JUGS. ' +
-  'UMGENI RENDERS THIS PARAGRAPH THROUGH A PIPELINE COMPILED FROM NILE SOURCE, WRAPPING LINES AS IT GOES.';
+const TEXT = PARAGRAPH;
 const OPTS = { size: 18, width: 880, height: 360, margin: 8 };
 
 
@@ -35,10 +34,6 @@ const VARIANTS: Variant[] = [
   { name: 'all + wasm', opts: { cse: true, boolCond: true, fuse: true, target: 'wasm' } },
 ];
 
-function median(xs: number[]): number {
-  const s = [...xs].sort((a, b) => a - b);
-  return s[Math.floor(s.length / 2)];
-}
 
 let referenceSpans: string | null = null;
 
