@@ -13,6 +13,15 @@
 // Conservative choices (documented misses): branch-local occurrences are not
 // hoisted to the parent block; an expression duplicated across sibling
 // branches is materialized in each.
+//
+// The counts are over the original trees, so when a whole tree is repeated,
+// every subtree inside it counts as repeated too and is given a let of its
+// own, though sharing the outer tree leaves each inner one a single reader.
+// Half the lets came out that way, and a let costs: a comparison bound to a
+// name must materialize as 1 or 0 and be tested again. So after the rewrite,
+// a shared let read exactly once is put back where it is read. That read is
+// always the first occurrence, in the statement the let was placed before,
+// so nothing moves across an assignment.
 
 import { mapKernels, opCount, operands, withOperands, type KernelIR, type ModuleIR, type ScalarExpr, type Stmt } from '../ir.js';
 
@@ -52,7 +61,45 @@ interface Region {
 function cseRegion(stmts: Stmt[]): Stmt[] {
   const region: Region = { counts: new Map(), fresh: 0 };
   countStmts(stmts, region, newEpochs());
-  return rewriteStmts(stmts, region, newEpochs(), [new Map()]);
+  return inlineSingleReads(rewriteStmts(stmts, region, newEpochs(), [new Map()]));
+}
+
+// --- pass 3: a shared let read once goes back to its reader ---
+
+const isShared = (name: string): boolean => name.startsWith('#cse');
+
+function inlineSingleReads(stmts: Stmt[]): Stmt[] {
+  const reads = new Map<string, number>();
+  const count = (e: ScalarExpr): void => {
+    if (e.k === 'local') reads.set(e.name, (reads.get(e.name) ?? 0) + 1);
+    else operands(e).forEach(count);
+  };
+  const countStmts = (ss: Stmt[]): void => {
+    for (const s of ss) {
+      switch (s.k) {
+        case 'let': case 'assign': case 'setState': count(s.expr); break;
+        case 'emit': case 'feed': s.values.forEach(count); break;
+        case 'if': count(s.cond); countStmts(s.then); countStmts(s.else); break;
+      }
+    }
+  };
+  countStmts(stmts);
+  const inlined = new Map<string, ScalarExpr>();
+  const subst = (e: ScalarExpr): ScalarExpr => (e.k === 'local' ? (inlined.get(e.name) ?? e) : withOperands(e, operands(e).map(subst)));
+  const rewrite = (ss: Stmt[]): Stmt[] =>
+    ss.flatMap((s): Stmt[] => {
+      switch (s.k) {
+        case 'let': {
+          const expr = subst(s.expr);
+          if (isShared(s.name) && reads.get(s.name) === 1) { inlined.set(s.name, expr); return []; }
+          return [{ ...s, expr }];
+        }
+        case 'assign': case 'setState': return [{ ...s, expr: subst(s.expr) }];
+        case 'emit': case 'feed': return [{ ...s, values: s.values.map(subst) }];
+        case 'if': return [{ ...s, cond: subst(s.cond), then: rewrite(s.then), else: rewrite(s.else) }];
+      }
+    });
+  return rewrite(stmts);
 }
 
 // --- value keys (canonical, epoch-aware) ---

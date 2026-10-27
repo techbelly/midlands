@@ -392,7 +392,7 @@ Counted by `npm run sizes`, lines of source with comments:
 | mooi | 373 |
 | umgeni: Nile to syntax tree (grammar, offside rule, operators, parser) | 908 |
 | umgeni: Nile's meaning, in Mooi | 391 |
-| umgeni: the Mooi hosts, value algebra, substitution, the IR, the passes | 1,908 |
+| umgeni: the Mooi hosts, value algebra, substitution, the IR, the passes | 2,057 |
 | umgeni: IR to JavaScript, with the CPU runtime | 839 |
 | umgeni: IR to WebAssembly | 672 |
 | umgeni: IR to GPU (WGSL, lowering, execution, presentation) | 1,185 |
@@ -403,17 +403,22 @@ library in 930 lines of Nile, with a compiler to three targets in about
 are optional, and any one of them is a working compiler, so the smallest
 reading is about 4,000 lines plus the library. But the compiler is not yet
 a few pages of mathematics. The meaning of Nile is 391 lines of equations,
-and 1,908 lines of TypeScript stand around them.
+and 2,057 lines of TypeScript stand around them.
 
 Some of that is substrate: the IR itself, the two domains, the shapes and
 layouts of values. Some of it is meaning that has not moved. The 233 lines
 that turn mid-stream `⇒` into a state machine are, a research note (not in
 the repository) shows,
-a specialisation of about fifteen lines of semantics, done by hand. The 175
-lines of common subexpression elimination are sharing in the residue, which
-a different domain could do for free. Templates and fusion are the same
-story. A generic specialiser would absorb all three, and the estimate, not
-yet a measurement, is a compiler of about 1,100 lines with the back ends
+a specialisation of about fifteen lines of semantics, done by hand. The 222
+lines of common subexpression elimination, with 97 of constant folding and
+dead-let pruning beside them, are sharing in the residue. One experiment
+moved the sharing into the staged domain: every oracle passed, at about
+135 lines instead of 175, but the domain stages one process at a time and
+so cannot share across a `⇒` family once substitution has composed it, and
+lost 3% of the sharing there. Sharing is a property of the composed
+program, so it stays a pass after composition. Templates and fusion are
+nearer the `⇒` story. A generic specialiser would absorb those, and the
+estimate, not yet a measurement, is a compiler of about 1,100 lines with the back ends
 written as models of the eleven primitives in Mooi.
 
 Why did notation alone give two to three times rather than twenty? Gezira's

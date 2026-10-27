@@ -43,8 +43,8 @@ fn st0(a0 : f32, a1 : f32, a2 : f32, a3 : f32, a4 : f32, a5 : f32) {
       let vw = ((vP_0 + 1.0) - ((T0[4u] + T0[0u]) / 2.0));
       let vh = (T0[5u] - T0[1u]);
       {
-        let k0 = i32(floor((vP_1 + (1.0 / 2.0))));
-        let k1 = i32(floor((vP_0 + (1.0 / 2.0))));
+        let k0 = i32(floor((vP_1 + 0.5)));
+        let k1 = i32(floor((vP_0 + 0.5)));
         if (k0 >= i32(META.segBase) && k0 < i32(META.segEnd) && k1 >= 0 && k1 < i32(META.minor)) {
           let gi = u32(k0) * META.minor + u32(k1);
           atomicAdd(&G0[gi], i32(round((vw * vh) * 65536.0)));
@@ -130,9 +130,6 @@ fn st1(a0 : f32, a1 : f32, a2 : f32, a3 : f32) {
       let vp_2 = S1[2];
       let vp_3 = S1[3];
       let vq_0 = a0;
-      let vq_1 = a1;
-      let vq_2 = a2;
-      let vq_3 = a3;
       let v_cse0 = select(vp_2, (-vp_2), (vp_2 < 0.0));
       {
         let px = i32(floor(vp_0));
@@ -155,7 +152,6 @@ fn st1(a0 : f32, a1 : f32, a2 : f32, a3 : f32) {
       let vp_0_u1 = S1[0];
       let vp_1_u1 = S1[1];
       let vp_2_u1 = S1[2];
-      let vp_3_u1 = S1[3];
       let v_cse2 = select(vp_2_u1, (-vp_2_u1), (vp_2_u1 < 0.0));
       {
         let px = i32(floor(vp_0_u1));
@@ -196,7 +192,6 @@ fn fl1() {
     let vp_0_u2 = S1[0];
     let vp_1_u2 = S1[1];
     let vp_2_u2 = S1[2];
-    let vp_3_u2 = S1[3];
     let v_cse0 = select(vp_2_u2, (-vp_2_u2), (vp_2_u2 < 0.0));
     {
       let px = i32(floor(vp_0_u2));

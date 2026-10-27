@@ -4,7 +4,7 @@ import { compileLibrary, makeStreamer } from '../src/compile.js';
 import { kernelOpCount } from '../src/ir.js';
 import { run } from '../src/cpu/runtime.js';
 import { needsWorklist } from '../src/passes/tail.js';
-import { allStmts, type KernelIR } from '../src/ir.js';
+import { allStmts, operands, type KernelIR, type ScalarExpr } from '../src/ir.js';
 
 function staticOps(library: ReturnType<typeof compileLibrary>, name: string): number {
   const k = library.ir.processes.find((p) => p.name === name);
@@ -60,6 +60,46 @@ describe('CSE pass', () => {
     ]);
     expect(run(opt.api.Rasterize(), tokens))
       .toEqual(run(plain.api.Rasterize(), tokens));
+  });
+});
+
+describe('simplify passes', () => {
+  const single = (body: string[]) => compileLibrary([gezira('types.nl'), ['K : Point >> Real', '    ∀ p', ...body].join('\n')]);
+  const localsOf = (library: ReturnType<typeof compileLibrary>, name: string): string[] => {
+    const k = library.ir.processes.find((p) => p.name === name);
+    if (!k || k.k !== 'kernel') throw new Error(`no kernel ${name}`);
+    return [...allStmts(k.body)].flatMap((s) => (s.k === 'let' ? [s.name] : []));
+  };
+
+  it('folds an operation on constants, but not to infinity', () => {
+    const lib = single(['        >> p.x × (1 / 2) + p.y / (1 / 0)']);
+    expect(lib.source).toContain('* 0.5');
+    expect(lib.source).not.toContain('(1 / 2)');
+    expect(lib.source).toContain('(1 / 0)');
+    expect(run(lib.api.K(), [[3, 7]])).toEqual([[1.5]]);
+  });
+
+  it('prunes a let nobody reads', () => {
+    // A tuple pattern shares each component under a temp and binds the
+    // names to them: b's temp has no reader, so it goes.
+    const lib = single(['        (a, b) = (p.x + 1, p.y + 1)', '        >> a']);
+    expect(localsOf(lib, 'K')).toEqual(['#pat#0']);
+    expect(run(lib.api.K(), [[3, 7]])).toEqual([[4]]);
+  });
+
+  it('leaves no shared let with a single reader', () => {
+    const lib = compileLibrary([gezira('types.nl'), gezira('rasterize.nl')]);
+    for (const p of lib.ir.processes) {
+      if (p.k !== 'kernel') continue;
+      for (const region of [p.prologue, p.body, p.flush]) {
+        const reads = new Map<string, number>();
+        const count = (e: ScalarExpr): void => { if (e.k === 'local') reads.set(e.name, (reads.get(e.name) ?? 0) + 1); else operands(e).forEach(count); };
+        for (const s of allStmts(region)) {
+          if (s.k === 'if') count(s.cond); else if (s.k === 'emit' || s.k === 'feed') s.values.forEach(count); else count(s.expr);
+        }
+        for (const s of allStmts(region)) if (s.k === 'let' && s.name.startsWith('#cse')) expect(reads.get(s.name), `${p.name}: ${s.name}`).toBeGreaterThan(1);
+      }
+    }
   });
 });
 
