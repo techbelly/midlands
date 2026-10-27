@@ -54,6 +54,8 @@ clamp x      = if x < 0 then 0 else if x > 9 then 9 else x
 both a b     = a; b
 extend r     = {...r, z: 3, kind: "point3"}
 greet name   = "hello, " ++ name
+describe xs  = fmt "% of % (%)" [length xs, replicate 2 "x", compact xs]
+pairs xs ys  = zip (indices xs) ys
 field r      = r.f
 isNull null  = true
 isNull _     = false
@@ -119,6 +121,8 @@ describe('mooi', () => {
     expect([m.clamp(-1), m.clamp(4), m.clamp(12)]).toEqual([0, 4, 9]);
     expect(m.extend({ kind: 'point', x: 1 })).toEqual({ kind: 'point3', x: 1, z: 3 });
     expect(m.greet('mooi')).toBe('hello, mooi');
+    expect(m.describe([1, null, 3])).toBe('3 of x,x (1,3)');
+    expect(m.pairs(['a', 'b'], [7, 8])).toEqual([[0, 7], [1, 8]]);
     expect(m.field({ f: 4 })).toBe(4);
     expect(() => m.field(null)).toThrow("'.f' of null");
   });

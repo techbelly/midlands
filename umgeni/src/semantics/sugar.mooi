@@ -14,7 +14,7 @@ scanIn k arm fieldsOf  = scan k arm fieldsOf
 --             s#H' = H ⊕ e;  k#H' = key;  on#H' = 1
 scan k arm fieldsOf =
   let sc = arm.scan,
-      id = must (identityOf sc.op) ("'" ++ sc.op ++ "[…]' has no known identity; scan operators must (so far) be one of + ×"),
+      id = must (identityOf sc.op) (fmt "'%[…]' has no known identity; scan operators must (so far) be one of + ×" [sc.op]),
       s = "s#" ++ sc.name, last = "k#" ++ sc.name, on = "on#" ++ sc.name,
       pk = keyOf k arm.pattern sc.key fieldsOf,
       body = [decl sc.name cond{cases: [{value: v s, cond: bin "∧" (v on) (bin "=" pk.key (v last))}], otherwise: lit id}]
@@ -33,7 +33,7 @@ identityOf _   = null
 --                      else: p = prev#, …end…);  prev#' = in#;  on#' = 1
 --     flush:  if on#: p = prev#, …end…
 windows k
-  | any (\f -> f.cons == null) k.forAlls = fail ("'" ++ k.name ++ "' mixes plain and windowed ∀ arms")
+  | any (\f -> f.cons == null) k.forAlls = fail (fmt "'%' mixes plain and windowed ∀ arms" [k.name])
   | otherwise =
       windowsOf k (find (\f -> f.cons != null && f.cons != "end") k.forAlls) (find (\f -> f.cons == "end") k.forAlls)
 windowsOf k pair end
@@ -43,8 +43,8 @@ windowsOf k pair end
   | k.type.kind != "streamType"           = failIn k "windows need an explicit stream type"
   | otherwise =
       let input = v "in#", prev = v "prev#",
-          pairArm = bind pair.pattern prev ++ bind pair.cons input ++ pair.body,
-          onEnd = if end == null then [] else bind end.pattern prev ++ end.body,
+          pairArm = bindPat pair.pattern prev ++ bindPat pair.cons input ++ pair.body,
+          onEnd = if end == null then [] else bindPat end.pattern prev ++ end.body,
           step = if pair.consKey == null then pairArm
                  else [when (bin "=" (fieldOf input pair.consKey) (fieldOf prev pair.consKey)) pairArm onEnd]
       in {kernel: {...k, prologue: k.prologue ++ [typedDecl "prev#" (lit 0) k.type.input, decl "on#" (lit 0)],
@@ -58,13 +58,13 @@ windowsOf k pair end
 keyOf k p@varPat{name} key fieldsOf = {pattern: p, key: fieldOf (v name) key}
 keyOf k p key fieldsOf
   | k.type.kind != "streamType" = failIn k "a keyed scan needs an explicit stream type"
-  | p.kind != "tuplePat"        = failIn k ("cannot find '@" ++ key ++ "' under a wildcard pattern")
+  | p.kind != "tuplePat"        = failIn k (fmt "cannot find '@%' under a wildcard pattern" [key])
   | otherwise                   = keyAt k p key (indexOf key (fieldsOf k.type.input))
 keyAt k p key i
-  | i == null || i >= length p.elements = failIn k ("'@" ++ key ++ "' is not a top-level field of the input")
+  | i == null || i >= length p.elements = failIn k (fmt "'@%' is not a top-level field of the input" [key])
   | otherwise                           = keyIs k p key i (at p.elements i)
 keyIs k p key i varPat{name}  = {pattern: p, key: v name}
-keyIs k p key i tuplePat{}    = failIn k ("scan key '@" ++ key ++ "' must be a Real field")
+keyIs k p key i tuplePat{}    = failIn k (fmt "scan key '@%' must be a Real field" [key])
 keyIs k p key i _             = {pattern: {...p, elements: mapi (\e j -> if j == i then varPat{name: "key#" ++ key} else e) p.elements},
                                  key: v ("key#" ++ key)}
 
@@ -77,9 +77,9 @@ decl n e        = decl{name: n, type: null, value: e}
 typedDecl n e t = decl{name: n, type: t, value: e}
 update n e      = assign{name: n, value: e}
 when c t f      = if{cond: c, then: t, else: f}
-bind varPat{name} e  = [decl name e]
-bind p@tuplePat{} e  = [patAssign{pattern: p, value: e}]
-bind p e             = []
+bindPat varPat{name} e  = [decl name e]
+bindPat p@tuplePat{} e  = [patAssign{pattern: p, value: e}]
+bindPat p e             = []
 
 -- An error in kernel k, named.
-failIn k msg = fail ("'" ++ k.name ++ "': " ++ msg)
+failIn k msg = fail (fmt "'%': %" [k.name, msg])

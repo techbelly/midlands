@@ -47,10 +47,10 @@ lift shapes f args =
 -- shape; component i of the result applies f with each misfit replaced
 -- by its component i.
 liftOver shapes f args fs =
-  let misfits   = filter (\a -> a != null) (zipWith (\a x -> if x == null then a else null) args fs),
-      sh        = liftShape misfits,
-      argsAt    = \i -> zipWith (\a x -> if x == null then component a i else a) args fs
-  in agg sh (mapi (\_ i -> lift shapes f (argsAt i)) sh.fields)
+  let misfits = compact (zipWith (\a x -> if x == null then a else null) args fs),
+      sh      = liftShape misfits,
+      argsAt  = \i -> zipWith (\a x -> if x == null then component a i else a) args fs
+  in agg sh (map (\i -> lift shapes f (argsAt i)) (indices sh.fields))
 
 liftShape [scalar{}, ...rest] = fail "operator argument does not fit its parameter"
 liftShape [a, ...rest]
@@ -64,9 +64,9 @@ sameShape real{} real{}                       = true
 sameShape record{fields: a} record{fields: b} = length a == length b && all id (zipWith (\x y -> sameShape x.shape y.shape) a b)
 sameShape _ _                                 = false
 
-part scalar{} f = fail ("field '." ++ f ++ "' on a scalar")
+part scalar{} f = fail (fmt "field '.%' on a scalar" [f])
 part v f
-  | fieldIndex v f == null = fail ("no field '." ++ f ++ "'")
+  | fieldIndex v f == null = fail (fmt "no field '.%'" [f])
   | otherwise              = at v.parts (fieldIndex v f)
 fieldIndex v f = indexOf f (map (\x -> x.name) v.shape.fields)
 

@@ -10,6 +10,11 @@ export function prelude(fail: (msg: string) => never): Record<string, unknown> {
     fail,
     otherwise: true,
     must: (x: unknown, msg: string) => x ?? fail(msg),
+    // A message: each % in the text is the next value, as a string.
+    fmt: (text: string, xs: unknown[]) => {
+      let i = 0;
+      return text.replace(/%/g, () => String(xs[i++]));
+    },
     not: (x: unknown) => !x,
     id: (x: unknown) => x,
     str: (x: unknown) => String(x),
@@ -24,6 +29,10 @@ export function prelude(fail: (msg: string) => never): Record<string, unknown> {
     foldl: (f: F, z: unknown, xs: unknown[]) => xs.reduce((acc, x) => app(app(f, acc), x), z),
     foldr: (f: F, z: unknown, xs: unknown[]) => xs.reduceRight((acc, x) => app(app(f, x), acc), z),
     zipWith: (f: F, a: unknown[], b: unknown[]) => a.map((x, i) => app(app(f, x), b[i])),
+    zip: (a: unknown[], b: unknown[]) => a.map((x, i) => [x, b[i]]),
+    replicate: (n: number, x: unknown) => Array.from({ length: n }, () => x),
+    compact: (xs: unknown[]) => xs.filter((x) => x != null),
+    indices: (xs: unknown[]) => xs.map((_, i) => i),
     concat: (xss: unknown[][]) => xss.flat(1),
     concatMap: (f: F, xs: unknown[]) => xs.flatMap((x) => app(f, x) as unknown[]),
     length: (xs: unknown[]) => xs.length,

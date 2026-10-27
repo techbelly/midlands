@@ -35,6 +35,12 @@
     },
     {
       "include": "#field"
+    },
+    {
+      "include": "#host"
+    },
+    {
+      "include": "#prelude"
     }
   ],
   "repository": {
@@ -93,6 +99,12 @@
             },
             {
               "include": "#field"
+            },
+            {
+              "include": "#host"
+            },
+            {
+              "include": "#prelude"
             }
           ]
         },
@@ -118,6 +130,12 @@
           "include": "#operators"
         },
         {
+          "include": "#host"
+        },
+        {
+          "include": "#prelude"
+        },
+        {
           "match": "(?<![\\p{L}\\p{N}_'])[\\p{Ll}_][\\p{L}\\p{N}_']*",
           "name": "variable.parameter.mooi"
         }
@@ -133,7 +151,7 @@
       "name": "keyword.control.mooi"
     },
     "literal": {
-      "match": "\\b(null|unit|true|false|otherwise)\\b",
+      "match": "\\b(null|unit|true|false)\\b",
       "name": "constant.language.mooi"
     },
     "node": {
@@ -230,8 +248,42 @@
         },
         {
           "include": "#field"
+        },
+        {
+          "include": "#host"
+        },
+        {
+          "include": "#prelude"
         }
       ]
+    },
+    "host": {
+      "comment": "Words the host supplies to umgeni's semantics (see the header comment of each .mooi file and the host() of its .ts): the domain D, the program P, the Real shape R, environments. Kept by hand.",
+      "patterns": [
+        {
+          "match": "(?<![\\p{L}\\p{N}_'])(D|P)(\\.)([\\p{L}_][\\p{L}\\p{N}_']*)",
+          "captures": {
+            "1": {
+              "name": "support.class.host.mooi"
+            },
+            "2": {
+              "name": "punctuation.accessor.mooi"
+            },
+            "3": {
+              "name": "support.function.host.mooi"
+            }
+          }
+        },
+        {
+          "match": "(?<![\\p{L}\\p{N}_'])(D|P|R|empty|bind|bindAll|bound|get|primed|builtin|prim|noProcs|bindProc|lookupProc)(?![\\p{L}\\p{N}_']|\\s*:)",
+          "name": "support.class.host.mooi"
+        }
+      ]
+    },
+    "prelude": {
+      "comment": "The prelude's words (mooi/src/prelude.ts), except as a record's key. Kept by hand.",
+      "match": "(?<![\\p{L}\\p{N}_'])(all|any|at|compact|concat|concatMap|drop|each|eachi|fail|filter|find|fmt|foldl|foldr|head|id|indexOf|indices|length|map|mapi|member|must|not|otherwise|range|replicate|str|sum|take|zip|zipWith)(?![\\p{L}\\p{N}_']|\\s*:)",
+      "name": "support.function.prelude.mooi"
     }
   }
 }

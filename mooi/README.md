@@ -65,7 +65,8 @@ lists), the comparisons, `&&` and `||` (both short-circuit).
 - A zero-arity host function is called by applying it to `unit`: `c.get unit`.
 - A definition with no parameters is a value, computed once on first use.
 - A Mooi definition shadows a host name of the same name.
-- `prelude(fail)` supplies the list functions, `must x msg` (x or fail) and
+- `prelude(fail)` supplies the list functions, `must x msg` (x or fail),
+  `fmt "% of %" [a, b]` (a message: each % is the next value) and
   `otherwise` (true).
 
 The implementation is about 385 lines:
