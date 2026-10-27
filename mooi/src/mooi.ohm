@@ -2,10 +2,15 @@ Mooi {
   // A program is equations, one definition per paragraph: the preprocessor
   // puts the separator ¶ before every line that starts at column 0.
   Program = "¶"? ListOf<Def, "¶"> "¶"?
-  Def = ident Pat* Guard? "=" Expr
-  Guard = "|" Expr
+  // One clause, or several that share their patterns and differ in their
+  // guards, written `| guard = body` (one per line, by convention).
+  Def = ident Pat* Body
+  Body = Alt+       -- guarded
+       | "=" Expr   -- plain
+  Alt = "|" Expr "=" Expr
 
-  Pat = nodeOpen ListOf<FieldPat, ","> "}"                 -- node
+  Pat = ident "@" Pat                                      -- as
+      | nodeOpen ListOf<FieldPat, ","> "}"                 -- node
       | "[" NonemptyListOf<Pat, ","> "," "..." ident "]"   -- cons
       | "[" ListOf<Pat, ","> "]"                           -- list
       | "_"                                                -- wild

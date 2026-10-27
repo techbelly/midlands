@@ -12,6 +12,7 @@ const grammar = ohm.grammar(mooiGrammarSource);
 
 // --- syntax (plain data) ---
 type Pat =
+  | { p: 'as'; name: string; pat: Pat }
   | { p: 'node'; name: string; fields: [string, Pat][] }
   | { p: 'list'; items: Pat[]; rest: string | null }
   | { p: 'wild' }
@@ -28,8 +29,8 @@ type Expr =
   | { e: 'record'; kind: string | null; fields: [string, Expr][] }
   | { e: 'lit'; value: unknown }
   | { e: 'var'; name: string };
-// A definition: a name and one of its clauses.
-type Def = { name: string; clause: Clause };
+// A definition: a name and its clauses, one per guard.
+type Def = { name: string; clauses: Clause[] };
 interface Clause {
   pats: Pat[];
   guard: Expr | null;
@@ -40,11 +41,15 @@ const LITERALS: Record<string, unknown> = { null: null, unit: undefined, true: t
 
 const semantics = grammar.createSemantics().addOperation('ast', {
   Program: (_lead, defs, _sep) => defs.asIteration().children.map((d: ohm.Node) => d.ast()),
-  Def: (name, pats, guard, _eq, body) => ({
-    name: name.sourceString,
-    clause: { pats: pats.children.map((p: ohm.Node) => p.ast()), guard: guard.children[0]?.ast() ?? null, body: body.ast() },
-  }),
-  Guard: (_bar, e) => e.ast(),
+  Def: (name, pats, body) => {
+    const ps = pats.children.map((p: ohm.Node) => p.ast());
+    const alts = body.ast() as [Expr | null, Expr][];
+    return { name: name.sourceString, clauses: alts.map(([guard, b]) => ({ pats: ps, guard, body: b })) };
+  },
+  Body_guarded: (alts) => alts.children.map((a: ohm.Node) => a.ast()),
+  Body_plain: (_eq, e) => [[null, e.ast()]],
+  Alt: (_bar, guard, _eq, body) => [guard.ast(), body.ast()],
+  Pat_as: (name, _at, p) => ({ p: 'as', name: name.sourceString, pat: p.ast() }),
   Pat_node: (open, fields, _c) => ({ p: 'node', name: open.sourceString.slice(0, -1), fields: fields.asIteration().children.map((f: ohm.Node) => f.ast()) }),
   Pat_cons: (_o, items, _comma, _dots, rest, _c) => ({ p: 'list', items: items.asIteration().children.map((x: ohm.Node) => x.ast()), rest: rest.sourceString }),
   Pat_list: (_o, items, _c) => ({ p: 'list', items: items.asIteration().children.map((x: ohm.Node) => x.ast()), rest: null }),
@@ -128,6 +133,7 @@ function match(p: Pat, v: unknown, env: Env): boolean {
   switch (p.p) {
     case 'wild': return true;
     case 'var': env.set(p.name, v); return true;
+    case 'as': env.set(p.name, v); return match(p.pat, v, env);
     case 'lit': return same(v, p.value);
     case 'node': {
       if (v === null || typeof v !== 'object') return false;
@@ -224,7 +230,7 @@ function parse(src: string) {
 export function load(src: string, host: Record<string, unknown>): Record<string, unknown> {
   const defs = parse(src);
   const clauses = new Map<string, Clause[]>();
-  for (const d of defs) clauses.set(d.name, [...(clauses.get(d.name) ?? []), d.clause]);
+  for (const d of defs) clauses.set(d.name, [...(clauses.get(d.name) ?? []), ...d.clauses]);
   const globals: Record<string, unknown> = { ...host };
 
   for (const [name, cs] of clauses) {

@@ -10,6 +10,9 @@
       "include": "#definition"
     },
     {
+      "include": "#guardLine"
+    },
+    {
       "include": "#string"
     },
     {
@@ -40,7 +43,7 @@
       "match": "--.*$"
     },
     "definition": {
-      "comment": "A definition starts at column 0: its name, then patterns, an optional guard, and =",
+      "comment": "A definition starts at column 0: its name, then patterns, then = (or a guard and =, or nothing when its guards are stacked on the lines below)",
       "begin": "^([\\p{L}_][\\p{L}\\p{N}_']*)(?=\\s)",
       "beginCaptures": {
         "1": {
@@ -130,7 +133,7 @@
       "name": "keyword.control.mooi"
     },
     "literal": {
-      "match": "\\b(null|unit|true|false)\\b",
+      "match": "\\b(null|unit|true|false|otherwise)\\b",
       "name": "constant.language.mooi"
     },
     "node": {
@@ -172,7 +175,7 @@
       "name": "constant.numeric.mooi"
     },
     "operators": {
-      "match": "\\?\\?|\\|\\||&&|==|!=|<=|>=|\\+\\+|\\.\\.\\.|;|<|>|\\+|-|\\*|/",
+      "match": "\\?\\?|\\|\\||&&|==|!=|<=|>=|\\+\\+|\\.\\.\\.|;|<|>|\\+|-|\\*|/|@",
       "name": "keyword.operator.mooi"
     },
     "field": {
@@ -185,6 +188,50 @@
           "name": "variable.other.member.mooi"
         }
       }
+    },
+    "guardLine": {
+      "comment": "A guard stacked under its head: an indented line `| guard = body`",
+      "begin": "^\\s+(\\|)(?!\\|)",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.guard.mooi"
+        }
+      },
+      "end": "(?<![=!<>])(=)(?!=)|$",
+      "endCaptures": {
+        "1": {
+          "name": "keyword.operator.definition.mooi"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#string"
+        },
+        {
+          "include": "#keywords"
+        },
+        {
+          "include": "#literal"
+        },
+        {
+          "include": "#node"
+        },
+        {
+          "include": "#lambda"
+        },
+        {
+          "include": "#number"
+        },
+        {
+          "include": "#operators"
+        },
+        {
+          "include": "#field"
+        }
+      ]
     }
   }
 }

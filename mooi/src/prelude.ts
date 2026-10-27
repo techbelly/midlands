@@ -8,6 +8,7 @@ type F = (...a: unknown[]) => unknown;
 export function prelude(fail: (msg: string) => never): Record<string, unknown> {
   return {
     fail,
+    otherwise: true,
     must: (x: unknown, msg: string) => x ?? fail(msg),
     not: (x: unknown) => !x,
     id: (x: unknown) => x,

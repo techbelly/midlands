@@ -18,6 +18,22 @@ plus a b                         = add{left: a, right: b}
 sizes [x, ...rest] | x > 9 = ["big"] ++ sizes rest
 ```
 
+Equations that share their patterns and differ only in their guards are
+written once, the guards stacked under the head (`otherwise`, from the
+prelude, is true). A
+pattern can name the whole of what it matches as well as its parts,
+`v@num{value}`:
+
+```
+sign num{value}
+  | value < 0 = "negative"
+  | value > 0 = "positive"
+  | otherwise = "zero"
+
+keep e@num{value} | value != 0 = [e]
+keep _                         = []
+```
+
 The right-hand sides are a small expression language: anonymous functions
 (`\x -> …`), `let … in …` (several bindings separated by commas, each a
 pattern), `if … then … else …`, lists, records with `...spread`, field
@@ -30,7 +46,7 @@ lists), the comparisons, `&&` and `||` (both short-circuit).
 - A definition starts at column 0; its continuation lines are indented.
   `--` starts a comment.
 - A pattern is a name, `_`, a number, a string, `null` (or `unit`, `true`,
-  `false`), a node
+  `false`), a name for the whole and a pattern for its parts `v@p`, a node
   `name{f1, f2: p}` (a field alone binds a variable of that name; `f: p`
   matches `p` against it; there must be no space before the `{`), a list
   `[]`, `[p, q]` or `[p, ...rest]`, or a pattern in parentheses.
@@ -49,9 +65,10 @@ lists), the comparisons, `&&` and `||` (both short-circuit).
 - A zero-arity host function is called by applying it to `unit`: `c.get unit`.
 - A definition with no parameters is a value, computed once on first use.
 - A Mooi definition shadows a host name of the same name.
-- `prelude(fail)` supplies the list functions and `must x msg` (x or fail).
+- `prelude(fail)` supplies the list functions, `must x msg` (x or fail) and
+  `otherwise` (true).
 
-The implementation is about 365 lines:
+The implementation is about 385 lines:
 
 - [src/mooi.ohm](src/mooi.ohm), the grammar, which [Ohm](https://ohmjs.org) parses with.
 - [src/mooi.ts](src/mooi.ts), the evaluator: matching shapes, trying equations in order, applying functions.

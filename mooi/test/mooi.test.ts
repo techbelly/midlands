@@ -33,14 +33,25 @@ times a b                        = mul{left: a, right: b}
 sizes [] = []
 sizes [x, ...rest] | x > 9 = ["big"] ++ sizes rest
 sizes [x, ...rest]         = ["small"] ++ sizes rest
+sign x
+  | x < 0     = "neg"
+  | x == 0    = "zero"
+  | otherwise = "pos"
+keep e@num{value} | value != 0 = [e]
+keep _                         = []
+grade x
+  | x >= 70 = "first"
+  | x >= 60 = "upper second"
+grade x | x >= 50 = "lower second"
+grade _           = "other"
 pairSum xs = let [a, b] = take 2 xs, s = a + b in {sum: s, rest: drop 2 xs}
 twice f x = f (f x)
 answer = twice (\\x -> x * 2) 10 + 2
 
 -- The rest of the expression language.
 orElse x d   = x ?? d
+clamp x      = if x < 0 then 0 else if x > 9 then 9 else x
 both a b     = a; b
-sign x       = if x < 0 then "neg" else if x == 0 then "zero" else "pos"
 extend r     = {...r, z: 3, kind: "point3"}
 greet name   = "hello, " ++ name
 field r      = r.f
@@ -82,6 +93,14 @@ describe('mooi', () => {
     expect(m.pairSum([1, 2, 3])).toEqual({ sum: 3, rest: [3] });
   });
 
+  it('stacks guards under one head; an as-pattern names the whole and its parts', () => {
+    expect([m.sign(-2), m.sign(0), m.sign(5)]).toEqual(['neg', 'zero', 'pos']);
+    expect(m.keep(num(3))).toEqual([num(3)]);
+    expect(m.keep(num(0))).toEqual([]);
+    expect(m.keep(v('x'))).toEqual([]);
+    expect([m.grade(75), m.grade(65), m.grade(55), m.grade(5)]).toEqual(['first', 'upper second', 'lower second', 'other']);
+  });
+
   it('curries host and Mooi functions alike; zero-arity definitions are values', () => {
     expect(m.answer).toBe(42);
     const plus2 = app(m.plus, num(2));
@@ -97,7 +116,7 @@ describe('mooi', () => {
     expect(m.orElse(undefined, 7)).toBe(7);
     expect(m.orElse(0, 7)).toBe(0);
     expect(m.both(1, 2)).toBe(2);
-    expect([m.sign(-2), m.sign(0), m.sign(5)]).toEqual(['neg', 'zero', 'pos']);
+    expect([m.clamp(-1), m.clamp(4), m.clamp(12)]).toEqual([0, 4, 9]);
     expect(m.extend({ kind: 'point', x: 1 })).toEqual({ kind: 'point3', x: 1, z: 3 });
     expect(m.greet('mooi')).toBe('hello, mooi');
     expect(m.field({ f: 4 })).toBe(4);
