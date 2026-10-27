@@ -17,7 +17,7 @@ import { coverageDiff, coveragePlan, requireDevice } from './gpu-check.js';
 const library = compileLibraryFile('demos/nl/text.nl-lib');
 const nile = library.api;
 
-const PARA = PARAGRAPH;
+const PARA = `${PARAGRAPH} `; // repeated, so a space between paragraphs
 
 // CPU back half: decompose → sort → sort → combine → paint.
 const cpuCoverage = (beziers: number[][], width: number, height: number): Float64Array =>

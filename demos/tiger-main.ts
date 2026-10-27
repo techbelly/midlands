@@ -46,8 +46,8 @@ function cpuBackEnd(nile: Api, ctx: CanvasRenderingContext2D): BackEnd {
   };
 }
 
-// The GPU's plan is built for the canvas's size, so a back end remembers
-// the size it was built for, and is rebuilt when that changes.
+// The GPU's plan is built for the canvas's size: gpuFor below rebuilds the
+// back end when that changes, and disposes the old one.
 interface GpuBackEnd { run: BackEnd; dispose: () => void }
 function gpuBackEnd(ir: FusedIR, { device, context, format }: GpuCanvas): GpuBackEnd {
   const { width, height } = context.canvas;
@@ -71,8 +71,7 @@ const wasm = cpuBackEnd(nileWasm, ctx);
 // when the canvas changes size.
 const gpuFor = gpuBuilt((device, _size: { width: number; height: number }) => {
   const target = configureCanvas(device, canvasGpu);
-  if (!target) throw new Error('the GPU canvas has no WebGPU context');
-  return gpuBackEnd(RasterizePixelsIR, target);
+  return target && gpuBackEnd(RasterizePixelsIR, target);
 });
 const ensureGpu = async (): Promise<BackEnd | null> => (await gpuFor({ width: canvasGpu.width, height: canvasGpu.height }))?.run ?? null;
 

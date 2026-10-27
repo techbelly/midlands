@@ -181,9 +181,9 @@ interface Gpu {
   dispose(): void;
 }
 // The plans are built for the picture's size, and again when it changes.
-const gpuFor = gpuBuilt((device, size: { width: number; height: number }): Gpu => {
+const gpuFor = gpuBuilt((device, size: { width: number; height: number }): Gpu | null => {
   const target = configureCanvas(device, canvasGpu);
-  if (!target) throw new Error('the GPU canvas has no WebGPU context');
+  if (!target) return null;
   const plan = framePlan(RasterizePixelsIR, size.width, size.height); // WGSL from IR, in-browser
   const raster = createCoverageReadback(device, plan);
   const presenter = createPresenter(device, plan, { format: target.format }); // one black path

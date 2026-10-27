@@ -28,11 +28,14 @@ export function configureCanvas(device: GPUDevice, canvas: HTMLCanvasElement): G
 
 // Something built on the GPU for a key, such as a presenter for a size:
 // built on first use, kept while the key is the same, disposed and built
-// again when it changes, and null where there is no WebGPU. The key is
-// compared by its JSON.
-export function gpuBuilt<K, T extends { dispose(): void }>(build: (device: GPUDevice, key: K) => T): (key: K) => Promise<T | null> {
+// again when it changes. Null, once and for good, where there is no WebGPU
+// device or the build says it cannot (a canvas without a WebGPU context).
+// The key is compared by its JSON.
+export function gpuBuilt<K, T extends { dispose(): void }>(build: (device: GPUDevice, key: K) => T | null): (key: K) => Promise<T | null> {
   let have: { key: string; value: T } | null = null;
+  let unavailable = false;
   return async (key) => {
+    if (unavailable) return null;
     const k = JSON.stringify(key);
     if (have && have.key !== k) {
       have.value.dispose();
@@ -40,8 +43,12 @@ export function gpuBuilt<K, T extends { dispose(): void }>(build: (device: GPUDe
     }
     if (!have) {
       const device = await gpuDevice();
-      if (!device) return null;
-      have = { key: k, value: build(device, key) };
+      const value = device && build(device, key);
+      if (!value) {
+        unavailable = true;
+        return null;
+      }
+      have = { key: k, value };
     }
     return have.value;
   };

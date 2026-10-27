@@ -156,8 +156,8 @@ describe('matrices (roda/vector.nl)', () => {
     const lib = compileLibrary([...librarySourceTexts('demos/nl/vector.nl-lib'), undo]);
     expect(lib.unsupported).toEqual([]);
     const [M] = nile.Compose().run(maps);
-    const [I] = lib.api.Undo().run([M]);
-    [1, 0, 0, 1, 0, 0].forEach((v, i) => expect(IDENTITY[i]).toBeCloseTo(v, 9));
+    const [undone] = lib.api.Undo().run([M]);
+    IDENTITY.forEach((v, i) => expect(undone[i]).toBeCloseTo(v, 9));
   });
 });
 

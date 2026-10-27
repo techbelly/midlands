@@ -65,9 +65,9 @@ function compile(): boolean {
 // rasterizer it lowers is the library's, the same whatever the paint.
 interface GpuPaint { width: number; height: number; presenter: Presenter; context: GPUCanvasContext; dispose(): void }
 let paintIr: ModuleIR; // the library's IR, set before gpuFor asks
-const gpuFor = gpuBuilt((device, { paint, width, height }: { paint: string; width: number; height: number }): GpuPaint => {
+const gpuFor = gpuBuilt((device, { paint, width, height }: { paint: string; width: number; height: number }): GpuPaint | null => {
   const target = configureCanvas(device, canvasGpu);
-  if (!target) throw new Error('the GPU canvas has no WebGPU context');
+  if (!target) return null;
   const presenter = createPresenter(device, framePlan(fusedPipeline(paintIr, 'RasterizePixels'), width, height), { format: target.format, paint });
   return { width, height, presenter, context: target.context, dispose: () => presenter.dispose() };
 });

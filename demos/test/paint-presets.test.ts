@@ -1,5 +1,5 @@
 // The paint page's presets, each compiled once with the page's library and
-// glue: nothing unsupported, every pixel painted a finite colour, and the
+// glue: nothing unsupported, every pixel of a square painted a finite colour, and the
 // texture lowered to one WGSL paint() when its pipeline is map kernels, or
 // refused with a reason when it filters. (GPU execution is checked headless
 // by tools/check-paint-gpu.ts.)
@@ -19,8 +19,9 @@ describe('paint presets', () => {
       const library = compileLibrary([...paintLibrary, p.source, PAINT_GLUE]);
       expect(library.unsupported).toEqual([]);
 
+      // A pixel-aligned 10 × 6 square: exactly its 60 pixels, each painted a finite colour.
       const pixels = library.api.PaintBeziers({ min: [0, 0], max: [480, 360] }).run(square(100, 120, 110, 126));
-      expect(pixels.length).toBeGreaterThan(0);
+      expect(pixels).toHaveLength(60);
       for (const t of pixels) for (const x of t) expect(Number.isFinite(x)).toBe(true);
 
       const tex = lowerTexture(library.ir, 'Paint');
