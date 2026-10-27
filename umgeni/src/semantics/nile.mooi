@@ -12,14 +12,15 @@
 -- Names are bound to values, or (x') to the cells standing for one, read
 -- afresh each time.
 lookup ρ n = current (must (get ρ n) ("unbound name '" ++ n ++ "'"))
-current b | b.cells != null = tree b.shape (map (\c -> c.get unit) b.cells)
-current b                   = b
+current b
+  | b.cells != null = tree b.shape (map (\c -> c.get unit) b.cells)
+  | otherwise       = b
 cellsOf ρ n = let b = get ρ n in if b != null && b.cells != null then b else null
 bindPairs ρ pairs = foldl (\ρ [n, v] -> bind ρ n v) ρ pairs
 constCell x = {get: \_ -> x, set: \_ -> unit}
 
-scalarOf v | isScalar v = s v
-scalarOf v              = fail "an `if` statement condition must be scalar (use .x/.y to pick a component)"
+scalarOf scalar{expr} = expr
+scalarOf _            = fail "an `if` statement condition must be scalar (use .x/.y to pick a component)"
 
 patternNames varPat{name}       = [name]
 patternNames tuplePat{elements} = concatMap patternNames elements
@@ -30,29 +31,37 @@ expr num{value} ρ                 = scalar (D.num value)
 expr var{name} ρ                  = lookup ρ name
 expr binOp{op, left, right} ρ     = apply op [expr left ρ, expr right ρ]
 expr unOp{op, operand} ρ          = apply op [expr operand ρ]
-expr cond{cases, otherwise} ρ     = foldr (guard ρ) (expr otherwise ρ) cases
+expr cond{cases, otherwise: e} ρ  = foldr (guard ρ) (expr e ρ) cases
 expr tuple{elements} ρ            = tuple (map (\e -> expr e ρ) elements)
 expr field{object, field} ρ       = part (expr object ρ) field
 expr typed{expr: e, type: t} ρ    = fitted (expr e ρ) (P.type t) "cannot ascribe this value to its type"
 
 -- { a if c, rest } is select(c, a, rest), lifted like any operator.
-guard ρ arm rest = lift [R, R, R] (\[c, a, b] -> scalar (D.select (s c) (s a) (s b))) [expr arm.cond ρ, expr arm.value ρ, rest]
+guard ρ arm rest =
+  let select = \[c, a, b] -> scalar (D.select (s c) (s a) (s b))
+  in lift [R, R, R] select [expr arm.cond ρ, expr arm.value ρ, rest]
 
 -- An operator: a builtin on scalars, or a user operator's body with the
 -- arguments bound, its value of the operator's declared result type —
 -- lifted over records either way.
-apply op args | builtin op = lift (map (\_ -> R) args) (\xs -> scalar (prim op (map s xs))) args
-apply op args              = let d = must (P.op op) ("unknown operator " ++ op)
-                             in lift (map (\p -> p.shape) d.params) (\xs -> fitted (expr d.body (bindAll empty (map (\p -> p.name) d.params) xs)) d.result ("'" ++ op ++ "' does not produce its declared type")) args
+apply op args
+  | builtin op      = lift (map (\_ -> R) args) (\xs -> scalar (prim op (map s xs))) args
+  | P.op op == null = fail ("unknown operator " ++ op)
+  | otherwise       = let d = P.op op in lift (map (\p -> p.shape) d.params) (applyDefined op d) args
+applyDefined op d xs =
+  let ρ = bindAll empty (map (\p -> p.name) d.params) xs
+  in fitted (expr d.body ρ) d.result ("'" ++ op ++ "' does not produce its declared type")
 
 -- Statements are effects; each returns the environment that follows it.
 exec io decl{name, type: t, value} ρ = bind ρ name (share name (ascribe (expr value ρ) t))
-exec io patAssign{pattern, value} ρ  = foldl (assignOrBind) ρ (destructure pattern (share "#pat" (expr value ρ)))
+exec io patAssign{pattern, value} ρ  = foldl assignOrBind ρ (destructure pattern (share "#pat" (expr value ρ)))
 exec io assign{name, value} ρ        = assignTo ρ (name ++ "'") (expr value ρ)
 exec io out{exprs} ρ                 = send D.emit io.output "a '>>' value does not fit the output type" exprs ρ
-exec io in{exprs} ρ | io.flush       = fail "`<<` is not allowed in a flush body"
-exec io in{exprs} ρ                  = send D.feed io.input "a '<<' value does not fit the input type" exprs ρ
-exec io if{cond: c, then: t, else: f} ρ = D.branch (scalarOf (expr c ρ)) (\_ -> execs io t ρ) (\_ -> execs io (f ?? []) ρ); ρ
+exec io in{exprs} ρ
+  | io.flush  = fail "`<<` is not allowed in a flush body"
+  | otherwise = send D.feed io.input "a '<<' value does not fit the input type" exprs ρ
+exec io if{cond: c, then: t, else: f} ρ =
+  D.branch (scalarOf (expr c ρ)) (\_ -> execs io t ρ) (\_ -> execs io (f ?? []) ρ); ρ
 exec io forward{pipeline} ρ          = D.forward (map (stage ρ) pipeline); ρ
 
 execs io stmts ρ = foldl (\ρ st -> exec io st ρ) ρ stmts
@@ -60,15 +69,17 @@ execs io stmts ρ = foldl (\ρ st -> exec io st ρ) ρ stmts
 -- Each expression's value, fitted to the stream's shape, to the effect.
 send effect sh msg exprs ρ = each (\e -> effect (fitLeaves (expr e ρ) sh msg)) exprs; ρ
 
-assignOrBind ρ [n, v] | primed n = assignTo ρ n v
-assignOrBind ρ [n, v]            = bind ρ n v
+assignOrBind ρ [n, v]
+  | primed n  = assignTo ρ n v
+  | otherwise = bind ρ n v
 
 -- A stage of a mid-stream ⇒: its process and its arguments, fitted.
 stage ρ identityPipeline{} = null
-stage ρ stageRef{name}    = {name: name, args: []}
-stage ρ stageApp{name, args} =
-  let shapes = must (P.params name) ("⇒ names unknown process " ++ name)
-  in {name: name, args: concat (zipWith (\a sh -> fitLeaves (expr a ρ) sh "an argument does not fit its parameter") args shapes)}
+stage ρ stageRef{name}     = {name: name, args: []}
+stage ρ stageApp{name, args}
+  | P.params name == null = fail ("⇒ names unknown process " ++ name)
+  | otherwise             = {name: name, args: concat (zipWith (argument ρ) args (P.params name))}
+argument ρ a sh = fitLeaves (expr a ρ) sh "an argument does not fit its parameter"
 
 ascribe v null = v
 ascribe v t    = fitted v (P.type t) "a value does not fit its declared type"
@@ -79,8 +90,12 @@ leafName n i 1 = n
 leafName n i k = n ++ "#" ++ str i
 
 -- x' = v writes the cells standing for x'.
-assignTo ρ n v = let c = must (cellsOf ρ n) ("'" ++ n ++ " =' must update a state binding declared before ∀")
-                 in eachi (\x i -> (at c.cells i).set x) (fitLeaves v c.shape "a value does not fit the state it updates"); ρ
+assignTo ρ n v
+  | cellsOf ρ n == null = fail ("'" ++ n ++ " =' must update a state binding declared before ∀")
+  | otherwise =
+      let c  = cellsOf ρ n,
+          xs = fitLeaves v c.shape "a value does not fit the state it updates"
+      in eachi (\x i -> (at c.cells i).set x) xs; ρ
 
 -- A kernel, given its parameters bound (ρ0): state declared by its
 -- prologue, a step per token, a flush.
@@ -100,53 +115,61 @@ scanState ρ base [st, ...rest]  =
 declared decl{name} v           = [[name, v]]
 declared patAssign{pattern} v   = destructure pattern v
 layoutOf [] base                = []
-layoutOf [[n, v], ...rest] base = [{name: n, shape: shapeOf v, base: base, initial: leaves v}] ++ layoutOf rest (base + width (shapeOf v))
+layoutOf [[n, v], ...rest] base =
+  [{name: n, shape: shapeOf v, base: base, initial: leaves v}] ++ layoutOf rest (base + width (shapeOf v))
 sumWidths vars = sum (map (\[n, v] -> width (shapeOf v)) vars)
 
 -- Each phase sees the params and the *current* state: rebuilt per call,
 -- since on numbers D.state reads the live state.
-phase ρ0 layout = foldl (\ρ l -> bind ρ l.name (tree l.shape (map (\i -> (D.state (l.base + i)).get unit) (range (width l.shape))))) ρ0 layout
+phase ρ0 layout = foldl (\ρ l -> bind ρ l.name (stateValue l)) ρ0 layout
+stateValue l = tree l.shape (map (\i -> (D.state (l.base + i)).get unit) (range (width l.shape)))
 
--- One token. The arm's pattern binds the token's parts. Then every state
--- variable x gets its update for this token (below), the body runs with x'
--- bound where the body writes it, and the updates are written back to x's
--- slots.
-step k io ρ layout input | length k.forAlls == 0 = if width io.input == width io.output then D.emit (leaves input) else unit
-step k io ρ layout input =
-  let arm     = head k.forAlls,
-      ρ1      = bindPairs ρ (destructure arm.pattern input),
-      written = primedNames arm.body,
-      updates = filter (\u -> u != null) (map (stateUpdate ρ1 written) layout),
-      ρ2      = foldl bindUpdate ρ1 updates
-  in execs io arm.body ρ2; each writeBack updates
+-- One token. A kernel with no ∀ passes it through (when the types allow;
+-- a token that does not fit the output is dropped). Otherwise the arm's
+-- pattern binds the token's parts. Then every state variable x gets its
+-- update for this token (below), the body runs with x' bound where the
+-- body writes it, and the updates are written back to x's slots.
+step k io ρ layout input
+  | length k.forAlls == 0 = passThrough io input
+  | otherwise =
+      let arm     = head k.forAlls,
+          ρ1      = bindPairs ρ (destructure arm.pattern input),
+          written = primedNames arm.body,
+          updates = filter (\u -> u != null) (map (stateUpdate ρ1 written) layout),
+          ρ2      = foldl bindUpdate ρ1 updates
+      in execs io arm.body ρ2; each writeBack updates
+
+passThrough io input
+  | width io.input == width io.output = D.emit (leaves input)
+  | otherwise                         = unit
 
 -- How state variable `slot` is updated by this token, as cells standing
--- for x'. When the body writes x', the cells are fresh, start from the
--- pattern's x' if it bound one (∀ (x', …)) and from x otherwise, and are
--- bound as x' for the body (bindAs). When only the pattern gave x' a
--- value, that value is the update, as constant cells, and nothing is bound
--- (bindAs: null). Otherwise there is none.
-stateUpdate ρ written slot =
-  let primed = slot.name ++ "'"
-  in if member primed written then freshUpdate ρ slot primed
-     else if bound ρ primed then {slot: slot, bindAs: null, cells: map constCell (leaves (lookup ρ primed))}
-     else null
+-- for x'. When the body writes x', the cells are fresh{}: they start from
+-- the pattern's x' if it bound one (∀ (x', …)) and from x otherwise, and
+-- are bound as x' for the body. When only the pattern gave x' a value,
+-- that value is the update, as constant{} cells, and nothing is bound.
+-- Otherwise there is none.
+stateUpdate ρ written slot = updateOf ρ written slot (slot.name ++ "'")
+updateOf ρ written slot primed
+  | member primed written = freshUpdate ρ slot primed
+  | bound ρ primed        = constant{slot: slot, cells: map constCell (leaves (lookup ρ primed))}
+  | otherwise             = null
 
 freshUpdate ρ slot primed =
   let start = leaves (lookup ρ (if bound ρ primed then primed else slot.name))
-  in {slot: slot, bindAs: primed, cells: mapi (\x i -> D.cell (leafName primed i (length start)) x) start}
+  in fresh{slot: slot, cells: mapi (\x i -> D.cell (leafName primed i (length start)) x) start}
 
-bindUpdate ρ u | u.bindAs != null = bind ρ u.bindAs {cells: u.cells, shape: u.slot.shape}
-bindUpdate ρ u                    = ρ
+bindUpdate ρ fresh{slot, cells} = bind ρ (slot.name ++ "'") {cells: cells, shape: slot.shape}
+bindUpdate ρ _                  = ρ
 
 writeBack u = eachi (\c i -> (D.state (u.slot.base + i)).set (c.get unit)) u.cells
 
 primedNames stmts = concatMap primedIn stmts
-primedIn assign{name}       = [name ++ "'"]
-primedIn patAssign{pattern} = filter primed (patternNames pattern)
+primedIn assign{name}         = [name ++ "'"]
+primedIn patAssign{pattern}   = filter primed (patternNames pattern)
 primedIn if{then: t, else: f} = primedNames t ++ primedNames (f ?? [])
-primedIn _                  = []
+primedIn _                    = []
 
-isDecl decl{}     = true
+isDecl decl{}      = true
 isDecl patAssign{} = true
-isDecl _          = false
+isDecl _           = false

@@ -25,12 +25,13 @@ tuple parts = agg {k: "record", name: null, fields: map (\p -> {name: null, shap
 
 -- A scalar fills any shape; a record fits a shape of the same arity, field
 -- by field. (null: it does not fit.)
-fit v real{} | isScalar v = v
-fit v sh     | isScalar v = agg sh (map (\f -> fit v f.shape) sh.fields)
-fit v real{}              = null
-fit v sh | length v.parts != length sh.fields = null
-fit v sh = let fs = zipWith (\p f -> fit p f.shape) v.parts sh.fields
-           in if all (\x -> x != null) fs then agg sh fs else null
+fit v@scalar{} real{} = v
+fit v@scalar{} sh     = agg sh (map (\f -> fit v f.shape) sh.fields)
+fit v real{}          = null
+fit v sh
+  | length v.parts != length sh.fields = null
+  | otherwise = let fs = zipWith (\p f -> fit p f.shape) v.parts sh.fields
+                in if all (\x -> x != null) fs then agg sh fs else null
 
 -- A value fitted to a shape, or the failure named; and its leaves.
 fitted v sh msg   = must (fit v sh) msg
@@ -40,29 +41,39 @@ fitLeaves v sh msg = leaves (fitted v sh msg)
 -- argument is a bigger record — componentwise over that record's shape.
 lift shapes f args =
   let fs = zipWith fit args shapes
-  in if all (\x -> x != null) fs then f fs
-     else let sh = liftShape (filter (\a -> a != null) (zipWith (\a x -> if x == null then a else null) args fs))
-          in agg sh (mapi (\_ i -> lift shapes f (zipWith (\a x -> if x == null then component a i else a) args fs)) sh.fields)
+  in if all (\x -> x != null) fs then f fs else liftOver shapes f args fs
 
-liftShape [a, ...rest] | isScalar a = fail "operator argument does not fit its parameter"
-liftShape [a, ...rest] | any (\b -> not (sameShape (shapeOf b) a.shape)) rest = fail "cannot lift an operator across different record shapes"
-liftShape [a, ...rest] = a.shape
+-- The arguments that did not fit (the misfits) must share one record
+-- shape; component i of the result applies f with each misfit replaced
+-- by its component i.
+liftOver shapes f args fs =
+  let misfits   = filter (\a -> a != null) (zipWith (\a x -> if x == null then a else null) args fs),
+      sh        = liftShape misfits,
+      argsAt    = \i -> zipWith (\a x -> if x == null then component a i else a) args fs
+  in agg sh (mapi (\_ i -> lift shapes f (argsAt i)) sh.fields)
 
-component v i | isScalar v = v
-component v i = at v.parts i
+liftShape [scalar{}, ...rest] = fail "operator argument does not fit its parameter"
+liftShape [a, ...rest]
+  | any (\b -> not (sameShape (shapeOf b) a.shape)) rest = fail "cannot lift an operator across different record shapes"
+  | otherwise                                            = a.shape
 
-sameShape real{} real{}               = true
+component v@scalar{} i = v
+component v i          = at v.parts i
+
+sameShape real{} real{}                       = true
 sameShape record{fields: a} record{fields: b} = length a == length b && all id (zipWith (\x y -> sameShape x.shape y.shape) a b)
-sameShape _ _                         = false
+sameShape _ _                                 = false
 
-part v f | isScalar v = fail ("field '." ++ f ++ "' on a scalar")
-part v f = at v.parts (must (indexOf f (map (\x -> x.name) v.shape.fields)) ("no field '." ++ f ++ "'"))
+part scalar{} f = fail ("field '." ++ f ++ "' on a scalar")
+part v f
+  | fieldIndex v f == null = fail ("no field '." ++ f ++ "'")
+  | otherwise              = at v.parts (fieldIndex v f)
+fieldIndex v f = indexOf f (map (\x -> x.name) v.shape.fields)
 
 -- Take a value apart by a (possibly nested) tuple pattern.
 destructure varPat{name} v        = [[name, v]]
 destructure wildcardPat{} v       = []
-destructure tuplePat{elements} v | isScalar v = fail "cannot destructure a Real"
-destructure tuplePat{elements} v | length elements != length v.parts = fail "pattern binds the wrong number of components"
-destructure tuplePat{elements} v  = concat (zipWith destructure elements v.parts)
-
-isScalar v = v.k == "scalar"
+destructure tuplePat{} scalar{}   = fail "cannot destructure a Real"
+destructure tuplePat{elements} v
+  | length elements != length v.parts = fail "pattern binds the wrong number of components"
+  | otherwise                         = concat (zipWith destructure elements v.parts)

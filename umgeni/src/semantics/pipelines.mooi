@@ -28,10 +28,12 @@ stages c [el, ...rest] s  = let r = stage c el s, more = stages c rest r.stream
                             in {stages: r.stages ++ more.stages, output: more.output}
 
 stage c identityPipeline{} s   = {stages: [{k: "identity"}], stream: s}
-stage c groupBy{keys, stable} s = {stages: [{k: "groupBy", keyIndexes: map (\k -> P.realField s.shape k "GroupBy key") keys, stable: stable}],
-                                   stream: {shape: s.shape, unordered: not stable}}
+stage c groupBy{keys, stable} s =
+  {stages: [{k: "groupBy", keyIndexes: map (\k -> P.realField s.shape k "GroupBy key") keys, stable: stable}],
+   stream: {shape: s.shape, unordered: not stable}}
 stage c reduceBy{keys, fields} s =
-  {stages: [{k: "reduceBy", width: width s.shape, keyIndexes: map (\k -> (P.field s.shape k).offset) keys, fields: map (reduction c s) fields}],
+  {stages: [{k: "reduceBy", width: width s.shape,
+             keyIndexes: map (\k -> (P.field s.shape k).offset) keys, fields: map (reduction c s) fields}],
    stream: {shape: s.shape, unordered: false}}
 stage c stageRef{name} s        = named c name [] s
 stage c stageApp{name, args} s  = named c name args s
@@ -39,73 +41,92 @@ stage c stageApp{name, args} s  = named c name args s
 -- A reduced field: combined by its operator, a scalar expression over the
 -- two values being combined (#ra, #rb): locals the back end names.
 local n = scalar {k: "local", name: n}
-reduction c s f | s.unordered && not (commutative f.op) =
-  fail ("ReduceBy in '" ++ c.who ++ "' uses '" ++ f.op ++ "', not known to be commutative, on unordered groups; use 'GroupBy stable (…)'")
-reduction c s f =
-  let op = P.expr binOp{op: f.op, left: var{name: "#ra"}, right: var{name: "#rb"}} (bind (bind empty "#ra" (local "#ra")) "#rb" (local "#rb"))
-  in if op.k != "scalar" then fail ("ReduceBy operator '" ++ f.op ++ "' must combine Reals")
-     else {index: P.realField s.shape f.name "ReduceBy field", op: op.expr}
+reduction c s f
+  | s.unordered && not (commutative f.op) =
+      fail ("ReduceBy in '" ++ c.who ++ "' uses '" ++ f.op ++ "', not known to be commutative, on unordered groups; use 'GroupBy stable (…)'")
+  | otherwise =
+      let operands = bind (bind empty "#ra" (local "#ra")) "#rb" (local "#rb")
+      in combined s f (P.expr binOp{op: f.op, left: var{name: "#ra"}, right: var{name: "#rb"}} operands)
+combined s f scalar{expr} = {index: P.realField s.shape f.name "ReduceBy field", op: expr}
+combined s f _            = fail ("ReduceBy operator '" ++ f.op ++ "' must combine Reals")
 
 commutative op = member op ["+", "×", "◁", "▷", "∧", "∨"]
 
 -- A stage that reads tokens in arrival order may not follow unordered groups.
-ordered c what s | s.unordered = fail ("'" ++ what ++ "' in '" ++ c.who ++ "' consumes tokens in arrival order after a non-stable GroupBy; use 'GroupBy stable (…)' or reduce the groups first")
-ordered c what s = unit
+ordered c what s
+  | s.unordered = fail ("'" ++ what ++ "' in '" ++ c.who ++ "' consumes tokens in arrival order after a non-stable GroupBy; use 'GroupBy stable (…)' or reduce the groups first")
+  | otherwise   = unit
 
 -- A named stage: a builtin that needs the whole stream, a process-typed
 -- parameter, a template, or a plain process. Every one but SortBy reads
 -- tokens in arrival order, so each checks `ordered` before building its
 -- stage (`;` runs the check, which fails or passes, then the right side).
-named c "SortBy" [key] s | key.kind == "offset" = {stages: [{k: "sortBy", keyIndexes: [(P.field s.shape key.field).offset]}], stream: s}
+named c "SortBy" [offset{field}] s = {stages: [{k: "sortBy", keyIndexes: [(P.field s.shape field).offset]}], stream: s}
 named c "SortBy" args s  = fail ("SortBy in '" ++ c.who ++ "' expects a single @field key")
 named c "Reverse" args s = ordered c "Reverse" s; {stages: [{k: "reverse"}], stream: s}
 named c "DupCat" args s  = ordered c "DupCat" s; dupCat c (branches c "DupCat" args s)
 named c "DupZip" args s  = ordered c "DupZip" s; dupZip (branches c "DupZip" args s)
-named c name args s | lookupProc c.procs name != null = parameter c name args s
-named c name args s | P.template name != null = ordered c name s; spliced (instantiate c (P.template name) args s)
-named c name args s | not (P.known name) = fail ("pipeline '" ++ c.who ++ "' references unknown process '" ++ name ++ "'")
-named c name args s | P.stream name == null = fail ("pipeline stage '" ++ name ++ "' is not a plain stream")
-named c name args s = ordered c name s; {stages: [{k: "stage", name: name, args: map (argument c name) args}], stream: {shape: (P.stream name).output, unordered: false}}
+named c name args s
+  | lookupProc c.procs name != null = parameter c name args s
+  | P.template name != null         = ordered c name s; spliced (instantiate c (P.template name) args s)
+  | not (P.known name)              = fail ("pipeline '" ++ c.who ++ "' references unknown process '" ++ name ++ "'")
+  | P.stream name == null           = fail ("pipeline stage '" ++ name ++ "' is not a plain stream")
+  | otherwise                       = ordered c name s;
+                                      {stages: [{k: "stage", name: name, args: map (argument c name) args}],
+                                       stream: {shape: (P.stream name).output, unordered: false}}
 
 -- DupCat: both branches' output, the first's then the second's, so they
 -- must agree. DupZip: the two outputs paired.
-dupCat c [a, b] | width a.output != width b.output = fail ("DupCat in '" ++ c.who ++ "' takes two pipelines with the same output type")
-dupCat c [a, b] = {stages: [{k: "dupCat", branches: [a.stages, b.stages]}], stream: {shape: a.output, unordered: false}}
-dupZip [a, b]   = {stages: [{k: "dupZip", branches: [a.stages, b.stages]}], stream: {shape: pairOf a.output b.output, unordered: false}}
+dupCat c [a, b]
+  | width a.output != width b.output = fail ("DupCat in '" ++ c.who ++ "' takes two pipelines with the same output type")
+  | otherwise                        = {stages: [{k: "dupCat", branches: [a.stages, b.stages]}],
+                                        stream: {shape: a.output, unordered: false}}
+dupZip [a, b]   = {stages: [{k: "dupZip", branches: [a.stages, b.stages]}],
+                   stream: {shape: pairOf a.output b.output, unordered: false}}
 pairOf x y      = {k: "record", name: null, fields: [{name: null, shape: x}, {name: null, shape: y}]}
 
 -- A process-typed parameter: its argument's pipeline, spliced in, in the
 -- scope the argument was written in.
-parameter c name args s | length args > 0 = fail ("process parameter '" ++ name ++ "' takes no arguments")
-parameter c name args s = ordered c name s;
-                          (let cl = lookupProc c.procs name in spliced (stages (context c.who cl.env cl.procs) cl.elems s))
+parameter c name [] s   = ordered c name s;
+                          (let cl = lookupProc c.procs name
+                           in spliced (stages (context c.who cl.env cl.procs) cl.elems s))
+parameter c name args s = fail ("process parameter '" ++ name ++ "' takes no arguments")
 
-argument c name a | a.kind == "pipelineArg" || a.kind == "stageApp" = fail ("'" ++ c.who ++ "' passes a pipeline to '" ++ name ++ "'; higher-order arguments are not yet supported")
-argument c name a = leaves (P.expr a c.env)
+argument c name pipelineArg{} = higherOrder c name
+argument c name stageApp{}    = higherOrder c name
+argument c name a             = leaves (P.expr a c.env)
+higherOrder c name = fail ("'" ++ c.who ++ "' passes a pipeline to '" ++ name ++ "'; higher-order arguments are not yet supported")
 
 -- A pipeline spliced in as stages: it leaves its output, in order.
 spliced r = {stages: r.stages, stream: {shape: r.output, unordered: false}}
 
 -- Two pipeline arguments, each elaborated over the same input.
-branches c what args s | length args != 2 = fail (what ++ " in '" ++ c.who ++ "' takes two pipelines")
-branches c what args s = map (\a -> stages c (pipelineOf a what) s) args
+branches c what [a, b] s = map (\p -> stages c (pipelineOf p what) s) [a, b]
+branches c what args s   = fail (what ++ " in '" ++ c.who ++ "' takes two pipelines")
 
 -- An argument as a pipeline: written out, a single application, or a name.
-pipelineOf a w | a.kind == "pipelineArg"      = a.elements
-pipelineOf a w | a.kind == "stageApp"        = [a]
-pipelineOf a w | a.kind == "identityPipeline" = [a]
-pipelineOf a w | a.kind == "var"              = [stageRef{name: a.name}]
-pipelineOf a w                                = fail (w ++ " expects a process here")
+pipelineOf pipelineArg{elements} w  = elements
+pipelineOf a@stageApp{} w           = [a]
+pipelineOf a@identityPipeline{} w   = [a]
+pipelineOf var{name} w              = [stageRef{name: name}]
+pipelineOf a w                      = fail (w ++ " expects a process here")
 
 -- A template's body is a pipeline; its parameters are bound to the
 -- arguments, a process argument as a closure over the caller's scope, a
 -- value argument fitted to its type.
-instantiate c k args s | k.pipeline == null =
-  fail ("'" ++ k.name ++ "' takes a process parameter, so it must be a pipeline definition (⇒ …)")
-instantiate c k args s =
-  let names = concatMap (\g -> map (\n -> {name: n, type: g.type}) g.names) k.params
-  in if length args != length names then fail ("'" ++ k.name ++ "' takes " ++ str (length names) ++ " arguments, given " ++ str (length args))
-     else let callee = foldl (bindArg c k) {env: empty, procs: noProcs} (zipWith (\p a -> [p, a]) names args)
-          in stages (context c.who callee.env callee.procs) k.pipeline s
-bindArg c k acc [p, a] | P.isStream p.type = {...acc, procs: bindProc acc.procs p.name {elems: pipelineOf a ("'" ++ k.name ++ "'"), env: c.env, procs: c.procs}}
-bindArg c k acc [p, a] = {...acc, env: bind acc.env p.name (fitted (P.expr a c.env) (P.type p.type) ("argument '" ++ p.name ++ "' of '" ++ k.name ++ "' does not fit its parameter"))}
+instantiate c k args s
+  | k.pipeline == null =
+      fail ("'" ++ k.name ++ "' takes a process parameter, so it must be a pipeline definition (⇒ …)")
+  | length args != length (parameters k) =
+      fail ("'" ++ k.name ++ "' takes " ++ str (length (parameters k)) ++ " arguments, given " ++ str (length args))
+  | otherwise =
+      let callee = foldl (bindArg c k) {env: empty, procs: noProcs} (zipWith (\p a -> [p, a]) (parameters k) args)
+      in stages (context c.who callee.env callee.procs) k.pipeline s
+parameters k = concatMap (\g -> map (\n -> {name: n, type: g.type}) g.names) k.params
+bindArg c k acc [p, a]
+  | P.isStream p.type =
+      let closure = {elems: pipelineOf a ("'" ++ k.name ++ "'"), env: c.env, procs: c.procs}
+      in {...acc, procs: bindProc acc.procs p.name closure}
+  | otherwise =
+      let value = fitted (P.expr a c.env) (P.type p.type) ("argument '" ++ p.name ++ "' of '" ++ k.name ++ "' does not fit its parameter")
+      in {...acc, env: bind acc.env p.name value}

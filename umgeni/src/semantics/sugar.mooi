@@ -2,8 +2,9 @@
 -- Nile (state, primed updates, ifs), returning the kernel and what the
 -- sugar declared (a parallel backend lowers by the declaration).
 
-desugar k fieldsOf | any (\f -> f.cons != null) k.forAlls = windows k
-desugar k fieldsOf = scanIn k (find (\f -> f.scan != null) k.forAlls) fieldsOf
+desugar k fieldsOf
+  | any (\f -> f.cons != null) k.forAlls = windows k
+  | otherwise                            = scanIn k (find (\f -> f.scan != null) k.forAlls) fieldsOf
 scanIn k null fieldsOf = {kernel: k, declared: {}}
 scanIn k arm fieldsOf  = scan k arm fieldsOf
 
@@ -31,32 +32,37 @@ identityOf _   = null
 --     ∀ in#:  if on#: (if in#.key = prev#.key: p = prev#, q = in#, …pair…
 --                      else: p = prev#, …end…);  prev#' = in#;  on#' = 1
 --     flush:  if on#: p = prev#, …end…
-windows k | any (\f -> f.cons == null) k.forAlls = fail ("'" ++ k.name ++ "' mixes plain and windowed ∀ arms")
-windows k = windowsOf k (find (\f -> f.cons != null && f.cons != "end") k.forAlls) (find (\f -> f.cons == "end") k.forAlls)
-windowsOf k pair end | pair == null || length k.forAlls > (if end == null then 1 else 2) =
-  failIn k "windowed kernels take one 'p ∷ q' arm and at most one 'p ∷ ∅' arm"
-windowsOf k pair end | any (\f -> f.scan != null) k.forAlls = failIn k "with-clauses on windowed arms are not yet supported"
-windowsOf k pair end | k.type.kind != "streamType" = failIn k "windows need an explicit stream type"
-windowsOf k pair end =
-  let input = v "in#", prev = v "prev#",
-      pairArm = bind pair.pattern prev ++ bind pair.cons input ++ pair.body,
-      onEnd = if end == null then [] else bind end.pattern prev ++ end.body,
-      step = if pair.consKey == null then pairArm
-             else [when (bin "=" (fieldOf input pair.consKey) (fieldOf prev pair.consKey)) pairArm onEnd]
-  in {kernel: {...k, prologue: k.prologue ++ [typedDecl "prev#" (lit 0) k.type.input, decl "on#" (lit 0)],
-               forAlls: [forAll{pattern: varPat{name: "in#"}, cons: null, consKey: null, scan: null,
-                                body: [when (v "on#") step null, update "prev#" input, update "on#" (lit 1)]}],
-               flush: (if end == null then [] else [when (v "on#") onEnd null]) ++ k.flush},
-      declared: {window: {key: pair.consKey}}}
+windows k
+  | any (\f -> f.cons == null) k.forAlls = fail ("'" ++ k.name ++ "' mixes plain and windowed ∀ arms")
+  | otherwise =
+      windowsOf k (find (\f -> f.cons != null && f.cons != "end") k.forAlls) (find (\f -> f.cons == "end") k.forAlls)
+windowsOf k pair end
+  | pair == null || length k.forAlls > (if end == null then 1 else 2) =
+      failIn k "windowed kernels take one 'p ∷ q' arm and at most one 'p ∷ ∅' arm"
+  | any (\f -> f.scan != null) k.forAlls = failIn k "with-clauses on windowed arms are not yet supported"
+  | k.type.kind != "streamType"           = failIn k "windows need an explicit stream type"
+  | otherwise =
+      let input = v "in#", prev = v "prev#",
+          pairArm = bind pair.pattern prev ++ bind pair.cons input ++ pair.body,
+          onEnd = if end == null then [] else bind end.pattern prev ++ end.body,
+          step = if pair.consKey == null then pairArm
+                 else [when (bin "=" (fieldOf input pair.consKey) (fieldOf prev pair.consKey)) pairArm onEnd]
+      in {kernel: {...k, prologue: k.prologue ++ [typedDecl "prev#" (lit 0) k.type.input, decl "on#" (lit 0)],
+                   forAlls: [forAll{pattern: varPat{name: "in#"}, cons: null, consKey: null, scan: null,
+                                    body: [when (v "on#") step null, update "prev#" input, update "on#" (lit 1)]}],
+                   flush: (if end == null then [] else [when (v "on#") onEnd null]) ++ k.flush},
+          declared: {window: {key: pair.consKey}}}
 
 -- The input's key field under the arm's pattern: a field of a whole-token
 -- name, or the element a tuple pattern binds (a wildcard gets a name).
-keyOf k p key fieldsOf | p.kind == "varPat" = {pattern: p, key: fieldOf (v p.name) key}
-keyOf k p key fieldsOf | k.type.kind != "streamType" = failIn k "a keyed scan needs an explicit stream type"
-keyOf k p key fieldsOf | p.kind != "tuplePat" = failIn k ("cannot find '@" ++ key ++ "' under a wildcard pattern")
-keyOf k p key fieldsOf = keyAt k p key (indexOf key (fieldsOf k.type.input))
-keyAt k p key i | i == null || i >= length p.elements = failIn k ("'@" ++ key ++ "' is not a top-level field of the input")
-keyAt k p key i = keyIs k p key i (at p.elements i)
+keyOf k p@varPat{name} key fieldsOf = {pattern: p, key: fieldOf (v name) key}
+keyOf k p key fieldsOf
+  | k.type.kind != "streamType" = failIn k "a keyed scan needs an explicit stream type"
+  | p.kind != "tuplePat"        = failIn k ("cannot find '@" ++ key ++ "' under a wildcard pattern")
+  | otherwise                   = keyAt k p key (indexOf key (fieldsOf k.type.input))
+keyAt k p key i
+  | i == null || i >= length p.elements = failIn k ("'@" ++ key ++ "' is not a top-level field of the input")
+  | otherwise                           = keyIs k p key i (at p.elements i)
 keyIs k p key i varPat{name}  = {pattern: p, key: v name}
 keyIs k p key i tuplePat{}    = failIn k ("scan key '@" ++ key ++ "' must be a Real field")
 keyIs k p key i _             = {pattern: {...p, elements: mapi (\e j -> if j == i then varPat{name: "key#" ++ key} else e) p.elements},
@@ -71,9 +77,9 @@ decl n e        = decl{name: n, type: null, value: e}
 typedDecl n e t = decl{name: n, type: t, value: e}
 update n e      = assign{name: n, value: e}
 when c t f      = if{cond: c, then: t, else: f}
-bind p e | p.kind == "varPat"   = [decl p.name e]
-bind p e | p.kind == "tuplePat" = [patAssign{pattern: p, value: e}]
-bind p e                        = []
+bind varPat{name} e  = [decl name e]
+bind p@tuplePat{} e  = [patAssign{pattern: p, value: e}]
+bind p e             = []
 
 -- An error in kernel k, named.
 failIn k msg = fail ("'" ++ k.name ++ "': " ++ msg)
