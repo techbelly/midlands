@@ -109,6 +109,20 @@ PathCubic.get(t, 'n');              // a field
 const X = PaintedPixel.at('P.x');   // an offset, for hot loops
 ```
 
+A process run over the same array again keeps what it can. Its output is
+a function of the array and its parameters and nothing else, so the
+runtime remembers, per array, what each barrier (a sort, a group, a
+reverse) left and what the whole run produced, and a later run with
+different parameters starts at the last barrier whose upstream stages read
+none of the ones that changed ([runtime.ts](src/cpu/runtime.ts),
+`memoPipeline`; which stages read which parameters comes from the IR). The
+same array and parameters cost nothing; a new matrix for TextSpans keeps
+the layout's Reverses. A remembered run returns the kept array itself, so a
+process fed another's output finds its own memo too, and a chain of runs
+over unchanged inputs costs nothing. The one thing asked of the host is not
+to change an array, or its tokens, after running it. Token-by-token use
+keeps nothing.
+
 A process can also be the host's to define. Nile has no memory to read, so
 sampling an image, say, is declared in Nile by its signature alone, with
 its parameters, and defined by the host as an op over its flattened

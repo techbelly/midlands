@@ -16,7 +16,7 @@ is a start.
 |---|---|---|
 | [gezira/](gezira/) | Amelang's gezira kernels, unmodified: Béziers, strokes, rasterization, textures, gradients, compositing, filters | ~600 lines of Nile |
 | [roda/](roda/) | the library beyond gezira: cubics and matrices, a rasterizer declared for parallel lowering, the even-odd rule, dashes, clipping to a shape, mesh gradients, images, text layout | ~340 lines of Nile |
-| [umgeni/](umgeni/) | a compiler for (extended) Nile → JavaScript, WebAssembly and WebGPU | ~5,800 lines by stage: Nile → AST 900; AST → IR 2,200, of which 390 are Nile's meaning in Mooi; then a back end each, IR → JS 830 (with the CPU runtime), IR → wasm 660, IR → GPU 1,160 |
+| [umgeni/](umgeni/) | a compiler for (extended) Nile → JavaScript, WebAssembly and WebGPU | ~6,200 lines by stage: Nile → AST 900; AST → IR 2,200, of which 390 are Nile's meaning in Mooi; then a back end each, IR → JS 950 (with the CPU runtime), IR → wasm 660, IR → GPU 1,160 |
 | [mooi/](mooi/) | a small language for writing down what a language means, as equations | ~370 lines |
 | [demos/](demos/) | text (TrueType and colour emoji), the Ghostscript tiger, strokes, a paint gallery, Cairo's samples drawn by Nile | ~100 lines of Nile particular to the pages |
 | [docs/](docs/) | two papers: the project's, and the compiler's first design as history | |

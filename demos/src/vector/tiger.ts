@@ -26,8 +26,17 @@ const SVG_CAP = 0;
 
 // A path's stroke outline under the view: SvgStroke (nl/svg.nl) once per
 // subpath, the outlines filled together so overlaps aren't double-painted.
+// The join keeps its identity while its parts keep theirs (a run over an
+// unchanged subpath returns the same array), so the stages after it find
+// their kept work too (rt.memoPipeline).
+const joins = new WeakMap<Cubic[][], { parts: number[][][]; all: number[][] }>();
 function stroke(nile: Api, tiger: Svg, view: number[], w: number, minStroke: number, subpaths: Cubic[][]) {
-  return subpaths.flatMap((sub) => nile.SvgStroke({ V: view, R: tiger.matrix, w, minw: minStroke, l: SVG_JOIN, c: SVG_CAP }).run(sub));
+  const parts = subpaths.map((sub) => nile.SvgStroke({ V: view, R: tiger.matrix, w, minw: minStroke, l: SVG_JOIN, c: SVG_CAP }).run(sub));
+  const last = joins.get(subpaths);
+  if (last && parts.length === last.parts.length && parts.every((p, i) => p === last.parts[i])) return last.all;
+  const all = parts.flat();
+  joins.set(subpaths, { parts, all });
+  return all;
 }
 
 // One pipeline, two back ends. The front half is shared: each path's

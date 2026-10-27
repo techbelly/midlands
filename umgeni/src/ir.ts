@@ -175,6 +175,27 @@ export function inputWidthOf(f: FusedIR): number | null {
   return null;
 }
 
+// The parameter slots a run reads: in its stages' arguments, or in the
+// stages nested in a DupCat or DupZip. A run's output is a function of its
+// input and these slots alone (Nile has no other inputs), which is what
+// lets the runtime keep a barrier's output across runs (rt.memoPipeline).
+export function paramReads(run: FusedRun): number[] {
+  const out = new Set<number>();
+  const expr = (e: ScalarExpr) => {
+    for (const n of allNodes(e)) if (n.k === 'param') out.add(n.index);
+  };
+  const stages = (list: StageIR[]) => {
+    for (const s of list) {
+      if (s.k === 'stage') s.args.flat().forEach(expr);
+      else if (s.k === 'dupCat' || s.k === 'dupZip') s.branches.forEach(stages);
+      else if (s.k === 'reduceBy') s.fields.forEach((f) => expr(f.op));
+    }
+  };
+  if (run.k === 'kernels') run.stages.forEach((st) => st.args.flat().forEach(expr));
+  else stages([run]);
+  return [...out].sort((a, b) => a - b);
+}
+
 // The fused pipeline of that name: what a GPU host lowers. Throws when the
 // module has no such process, or has one that is a kernel or did not fuse.
 export function fusedPipeline(mod: ModuleIR, name: string): FusedIR {

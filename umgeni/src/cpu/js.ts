@@ -5,7 +5,7 @@
 // and returns a runtime Op. The generated source is a first-class artifact:
 // compileLibrary exposes it for inspection alongside the executable form.
 
-import { anyStmt, inputWidthOf, opCount, stmtExprs, type FusedIR, type FusedRun, type FusedStage, type KernelIR, type ModuleIR, type PipelineIR, type ScalarExpr, type StageIR, type Stmt, type WholeStreamStage } from '../ir.js';
+import { anyStmt, inputWidthOf, opCount, paramReads, stmtExprs, type FusedIR, type FusedRun, type FusedStage, type KernelIR, type ModuleIR, type PipelineIR, type ScalarExpr, type StageIR, type Stmt, type WholeStreamStage } from '../ir.js';
 import { compilePipeline, inWasm } from './wasm.js';
 import { stageShape } from '../passes/tail.js';
 import { renderCond, renderExpr, type Dialect, sanitize } from '../scalar.js';
@@ -104,10 +104,26 @@ function genStmts(stmts: Stmt[], indent: string, o: CodegenOptions, env: GenEnv)
   return lines.filter((l) => l !== '').join('\n');
 }
 
-// A standalone kernel is a segment of one, its arguments its own params.
-function genKernel(k: KernelIR, o: CodegenOptions): string {
+// A standalone kernel is a run of one, its arguments its own params, and
+// like a pipeline it keeps its output for a run over the same array
+// (memoCall: one part, reading every parameter).
+function genKernel(k: KernelIR, o: CodegenOptions, memos: string[]): string {
   const own: ScalarExpr[] = Array.from({ length: k.paramWidth }, (_, i) => ({ k: 'param', index: i }));
-  return `R[${JSON.stringify(k.name)}] = (P = []) => ${genRun([{ name: k.name, kernel: k, args: [own] }], o)};`;
+  const all = Array.from({ length: k.paramWidth }, (_, i) => i);
+  return memoCall(k.name, memos, [genRun([{ name: k.name, kernel: k, args: [own] }], o)], [false], [all]);
+}
+
+// A process run through rt.memoPipeline: its parts made on demand, which
+// are barriers, and the parameter slots each reads (runtime.ts). The memo
+// cell is one per process, at module scope.
+function memoCall(name: string, memos: string[], parts: string[], barrier: boolean[], reads: number[][]): string {
+  const cell = `M${memos.length}`;
+  memos.push(`const ${cell} = rt.memo(); // ${name}`);
+  return [
+    `R[${JSON.stringify(name)}] = (P = []) => rt.memoPipeline(${cell}, P, [`,
+    ...parts.map((s) => `    () => ${s},`),
+    `  ], ${JSON.stringify(barrier)}, ${JSON.stringify(reads)});`,
+  ].join('\n');
 }
 
 // The runtime expression for a non-kernel stage (shared by the fused and
@@ -259,34 +275,38 @@ function genWasm(runs: FusedRun[], inputWidth: number, paramWidth: number, wasmM
   return `rt.wasmPipeline(${name}, ${JSON.stringify(w.layout)}, P)`;
 }
 
-function genFused(p: FusedIR, o: CodegenOptions, wasmModules: string[]): string {
+// A fused pipeline: its runs as the parts, so a run over an array seen
+// before starts at the last barrier whose upstream read nothing that changed.
+function genFused(p: FusedIR, o: CodegenOptions, wasmModules: string[], memos: string[]): string {
+  const call = (parts: string[], barrier: boolean[], reads: number[][]) => memoCall(p.name, memos, parts, barrier, reads);
   if (o.target === 'wasm' && p.runs.every(inWasm)) {
     const w = inputWidthOf(p);
     if (w === null) throw new Error(`'${p.name}': cannot tell its input width`);
-    return `R[${JSON.stringify(p.name)}] = (P = []) => ${genWasm(p.runs, w, p.paramWidth, wasmModules)};`;
+    // One part, the module: it reads what all its runs read.
+    const all = [...new Set(p.runs.flatMap(paramReads))].sort((a, b) => a - b);
+    return call([genWasm(p.runs, w, p.paramWidth, wasmModules)], [false], [all]);
   }
-  const runs = p.runs.map((s) => {
-    if (s.k !== 'kernels') return `    ${genBuiltinStage(s, o)},`;
-    if (o.target === 'wasm' && inWasm(s)) return `    ${genWasm([s], s.stages[0].kernel.inputWidth, p.paramWidth, wasmModules)},`;
-    return `    ${genRun(s.stages, o)},`;
+  const parts = p.runs.map((s) => {
+    if (s.k !== 'kernels') return genBuiltinStage(s, o);
+    if (o.target === 'wasm' && inWasm(s)) return genWasm([s], s.stages[0].kernel.inputWidth, p.paramWidth, wasmModules);
+    return genRun(s.stages, o);
   });
-  return [
-    `R[${JSON.stringify(p.name)}] = (P = []) => rt.pipeline([`,
-    ...runs,
-    `]);`,
-  ].join('\n');
+  const barrier = p.runs.map((s) => s.k === 'sortBy' || s.k === 'groupBy' || s.k === 'reverse');
+  return call(parts, barrier, p.runs.map(paramReads));
 }
 
 export function generate(mod: ModuleIR, opts: CodegenOptions = {}): string {
   const wasmModules: string[] = [];
+  const memos: string[] = [];
   const defs = mod.processes.map((p) =>
-    p.k === 'kernel' ? genKernel(p, opts) : p.k === 'fused' ? genFused(p, opts, wasmModules) : genPipeline(p, opts));
+    p.k === 'kernel' ? genKernel(p, opts, memos) : p.k === 'fused' ? genFused(p, opts, wasmModules, memos) : genPipeline(p, opts));
   return [
     `(rt) => {`,
     `const R = Object.create(null);`,
     // Processes the host supplies: a place for each, filled by api.provide.
     ...mod.host.map((h) => `R[${JSON.stringify(h.name)}] = rt.hostProcess(R, ${JSON.stringify(h.name)});`),
     ...wasmModules,
+    ...memos,
     ...(opts.countOps ? [`let OPS = 0;`] : []),
     ...defs,
     // Factories also take their parameters by name (rt.nameParams).
