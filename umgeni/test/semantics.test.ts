@@ -9,7 +9,7 @@ import { parseProgram } from '../src/parser.js';
 import { kernelContexts } from '../src/elaborate.js';
 import { interpretKernel } from '../src/semantics/concrete.js';
 import { agree } from './agree.js';
-import { fixture, gezira, roda } from './sources.js';
+import { fixture, gezira, roda, strokeOracle, strokeSources } from './sources.js';
 
 const library = ['types', 'bezier', 'stroke', 'rasterize', 'texture', 'compositor', 'gradient', 'filter'].map((n) => gezira(`${n}.nl`));
 const PROGRAMS: [string, string[]][] = [
@@ -26,7 +26,7 @@ describe.each(PROGRAMS)('interpreter ≡ compiler, kernel by kernel: %s', (_, so
 import { dupCat, pipeline, reverse, run } from '../src/cpu/runtime.js';
 
 describe('mid-stream ⇒: interpreter ≡ compiler ≡ the 2012 runtime', () => {
-  const sources = ['types', 'bezier', 'stroke'].map((n) => gezira(`${n}.nl`));
+  const sources = strokeSources();
   const compiled = compileLibrary(sources);
   const { program, kernels } = kernelContexts(parseProgram(sources).modules, true);
   const interp = (name: string, params: number[] = []) => {
@@ -41,12 +41,11 @@ describe('mid-stream ⇒: interpreter ≡ compiler ≡ the 2012 runtime', () => 
       dupCat(interp('StrokeOneSide', p), pipeline([reverse(), interp('ReverseBeziers'), interp('StrokeOneSide', p)])),
     ]),
   };
-  const oracle: { cases: { process: string; params: number[]; input: number[][]; output: number[][] }[] } =
-    JSON.parse(fixture('stroke-oracle.json'));
+  const cases = strokeOracle();
   for (const process of Object.keys(build)) {
     it(process, () => {
-      for (const c of oracle.cases.filter((x) => x.process === process)) {
-        const got = run(build[process](c.params), c.input.map((t) => [...t]));
+      for (const c of cases.filter((x) => x.process === process)) {
+        const got = run(build[process](c.params ?? []), c.input.map((t) => [...t]));
         const want = run(compiled.api[process](c.params), c.input.map((t) => [...t]));
         expect(got.length).toBe(c.output.length);
         got.forEach((t, i) => t.forEach((x, j) => {

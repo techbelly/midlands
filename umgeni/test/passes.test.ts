@@ -7,13 +7,9 @@ import { foldModule, pruneModule } from '../src/passes/simplify.js';
 import { generate } from '../src/cpu/js.js';
 import { run } from '../src/cpu/runtime.js';
 import { needsWorklist } from '../src/passes/tail.js';
-import { allStmts, localReads, type KernelIR } from '../src/ir.js';
+import { allStmts, kernelOf, localReads, type KernelIR } from '../src/ir.js';
 
-function staticOps(library: ReturnType<typeof compileLibrary>, name: string): number {
-  const k = library.ir.processes.find((p) => p.name === name);
-  if (!k || k.k !== 'kernel') throw new Error(`no kernel ${name}`);
-  return kernelOpCount(k);
-}
+const staticOps = (library: ReturnType<typeof compileLibrary>, name: string): number => kernelOpCount(kernelOf(library.ir, name));
 
 
 describe('CSE pass', () => {
@@ -68,11 +64,7 @@ describe('CSE pass', () => {
 
 describe('simplify passes', () => {
   const single = (body: string[]) => compileLibrary([gezira('types.nl'), ['K : Point >> Real', '    ∀ p', ...body].join('\n')]);
-  const localsOf = (library: ReturnType<typeof compileLibrary>, name: string): string[] => {
-    const k = library.ir.processes.find((p) => p.name === name);
-    if (!k || k.k !== 'kernel') throw new Error(`no kernel ${name}`);
-    return [...allStmts(k.body)].flatMap((s) => (s.k === 'let' ? [s.name] : []));
-  };
+  const localsOf = (library: ReturnType<typeof compileLibrary>, name: string): string[] => [...allStmts(kernelOf(library.ir, name).body)].flatMap((s) => (s.k === 'let' ? [s.name] : []));
 
   it('folds an operation on constants, but not to infinity', () => {
     const lib = single(['        >> p.x × (1 / 2) + p.y / (1 / 0)']);
@@ -121,11 +113,7 @@ describe('sort fusion', () => {
 });
 
 describe('tail pass', () => {
-  const kernel = (library: ReturnType<typeof compileLibrary>, name: string): KernelIR => {
-    const k = library.ir.processes.find((p) => p.name === name);
-    if (!k || k.k !== 'kernel') throw new Error(`no kernel ${name}`);
-    return k;
-  };
+  const kernel = (library: ReturnType<typeof compileLibrary>, name: string): KernelIR => kernelOf(library.ir, name);
   it('marks a feed nothing follows, and only that one', () => {
     const library = compileLibrary([gezira('types.nl'), gezira('rasterize.nl')]);
     const feeds = [...allStmts(kernel(library, 'DecomposeBeziers').body)].filter((s) => s.k === 'feed');

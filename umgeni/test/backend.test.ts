@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gezira } from './sources.js';
+import { gezira, strokeSources } from './sources.js';
 import { compileLibrary, makeStreamer } from '../src/compile.js';
 
 
@@ -88,7 +88,7 @@ describe('generated kernels', () => {
   });
 
   it('compiles all of stroke.nl: mid-stream ⇒, generators, DupCat, Reverse', () => {
-    const library = compileLibrary([gezira('types.nl'), gezira('bezier.nl'), gezira('stroke.nl')]);
+    const library = compileLibrary(strokeSources());
     expect(library.unsupported).toEqual([]);
     expect(('StrokeBezierPath' in library.api)).toBe(true); // checked vs the original in stroke-oracle.test.ts
   });

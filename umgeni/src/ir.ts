@@ -183,6 +183,14 @@ export function fusedPipeline(mod: ModuleIR, name: string): FusedIR {
   return p;
 }
 
+// The kernel of that name. Throws when the module has no such process, or
+// has one that is a pipeline.
+export function kernelOf(mod: ModuleIR, name: string): KernelIR {
+  const p = mod.processes.find((p) => p.name === name);
+  if (!p || p.k !== 'kernel') throw new Error(`'${name}' is not a kernel`);
+  return p;
+}
+
 // Every kernel in a module, rewritten by f: on its own, or inside a fused
 // run. A pipeline (left unfused only when fusion bailed) holds none.
 export function mapKernels(mod: ModuleIR, f: (k: KernelIR) => KernelIR): ModuleIR {
