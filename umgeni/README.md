@@ -59,7 +59,10 @@ Nile ─Ohm─▶ syntax tree ─sugar.mooi─▶ core Nile ─nile.mooi, staged
     and Reverse, done in place in the module's memory), so tokens only leave
     linear memory as the final output. Its output is bit for bit the same as
     the JavaScript's, and about twice as fast on the text benchmark.
-    [runtime.ts](src/cpu/runtime.ts) streams tokens through both.
+    [runtime.ts](src/cpu/runtime.ts) streams tokens through both: the
+    protocol and composition (op.ts), the stages the runtime supplies
+    (stages.ts), work kept between runs (memo.ts), the wasm instances
+    (wasm-instance.ts) and the host's API (api.ts), gathered under one name.
   - [src/gpu/](src/gpu/): [lower.ts](src/gpu/lower.ts) turns a pipeline into
     a plan of GPU compute passes, applying one rule per declaration in the
     source. A run of kernels becomes one pass, with a thread per token or a
@@ -114,7 +117,7 @@ a function of the array and its parameters and nothing else, so the
 runtime remembers, per array, what each barrier (a sort, a group, a
 reverse) left and what the whole run produced, and a later run with
 different parameters starts at the last barrier whose upstream stages read
-none of the ones that changed ([runtime.ts](src/cpu/runtime.ts),
+none of the ones that changed ([memo.ts](src/cpu/memo.ts),
 `memoPipeline`; which stages read which parameters comes from the IR). The
 same array and parameters cost nothing; a new matrix for TextSpans keeps
 the layout's Reverses. A remembered run returns the kept array itself, so a

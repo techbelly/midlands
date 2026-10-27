@@ -8,7 +8,7 @@
 import { anyStmt, inputWidthOf, opCount, paramReads, stmtExprs, type FusedIR, type FusedRun, type FusedStage, type KernelIR, type ModuleIR, type PipelineIR, type ScalarExpr, type StageIR, type Stmt, type WholeStreamStage } from '../ir.js';
 import { compilePipeline, inWasm } from './wasm.js';
 import { stageShape, type StageShape } from '../passes/tail.js';
-import { renderCond, renderExpr, type Dialect, type Leaf, sanitize } from '../scalar.js';
+import { renderCond, renderExpr, type Dialect, type Leaf, sanitize } from '../clike.js';
 
 export interface CodegenOptions {
   // Emit conditions as JS booleans (`a < b`) instead of round-tripping
@@ -24,7 +24,7 @@ export interface CodegenOptions {
   target?: 'js' | 'wasm';
 }
 
-// A local as JS spells it: sanitize's form (scalar.ts) behind '_'.
+// A local as JS spells it: sanitize's form (clike.ts) behind '_'.
 const mangle = (name: string): string => '_' + sanitize(name);
 
 // How slot references and emit/feed render: the standalone-kernel default is
@@ -47,7 +47,7 @@ const KERNEL_ENV: GenEnv = {
   feed: (vals) => `feed([${vals.join(', ')}]);`,
 };
 
-// JS is the C-like rendering of scalar.ts with JS spellings.
+// JS is the C-like rendering of clike.ts with JS spellings.
 const jsDialect = (o: CodegenOptions, env: GenEnv): Dialect => ({
   num: (v) => (v < 0 ? `(${v})` : String(v)),
   leaf: (e) => leafJs(e, env),
@@ -119,7 +119,7 @@ function genKernel(k: KernelIR, o: CodegenOptions, memos: string[]): string {
 }
 
 // A process run through rt.memoPipeline: its parts made on demand, which
-// are barriers, and the parameter slots each reads (runtime.ts). The memo
+// are barriers, and the parameter slots each reads (memo.ts). The memo
 // cell is one per process, at module scope.
 function memoCall(name: string, memos: string[], parts: string[], barrier: boolean[], reads: number[][]): string {
   const cell = `M${memos.length}`;

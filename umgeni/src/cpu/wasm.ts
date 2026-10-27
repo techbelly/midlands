@@ -17,7 +17,7 @@
 //   state, params        → mutable f64 globals (params evaluated once, at init)
 //
 // Buffers grow from a bump allocator at the end of memory (memory.grow), and
-// an instance is reused across runs (runtime.ts), so a run allocates nothing.
+// an instance is reused across runs (wasm-instance.ts), so a run allocates nothing.
 //
 // All arithmetic is f64 with IEEE semantics identical to JavaScript's, and
 // every barrier is the same permutation the JS runtime applies, so a wasm
@@ -282,7 +282,7 @@ export const inWasm = (s: FusedRun): boolean =>
 
 export interface WasmPipeline {
   bytes: Uint8Array;
-  layout: WasmLayout; // what runtime.ts's wasmPipeline needs to drive it
+  layout: WasmLayout; // what wasm-instance.ts's wasmPipeline needs to drive it
 }
 
 // A section of the pipeline: a run of kernels, and the barriers applied to

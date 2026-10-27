@@ -12,7 +12,7 @@
 // is compared with tolerances, not bit-equality.
 
 import { allStmts, type ScalarExpr, type Stmt } from '../ir.js';
-import { renderCond, renderExpr, type Dialect, sanitize } from '../scalar.js';
+import { renderCond, renderExpr, type Dialect, sanitize } from '../clike.js';
 
 function fmt(v: number): string {
   if (Number.isInteger(v) && Math.abs(v) < 1e15) return v < 0 ? `(-${Math.abs(v)}.0)` : `${v}.0`;
@@ -20,7 +20,7 @@ function fmt(v: number): string {
   return v < 0 ? `(${s})` : s;
 }
 
-// A local as WGSL spells it: sanitize's form (scalar.ts) behind 'v', not
+// A local as WGSL spells it: sanitize's form (clike.ts) behind 'v', not
 // '_', since WGSL reserves identifiers starting with '__', which '#cse0'
 // would otherwise become. (The corpus is ASCII; Unicode identifiers are
 // legal in modern WGSL but not relied on yet.)
@@ -47,7 +47,7 @@ export interface WgslEnv extends WgslExprEnv {
 }
 const localName = (c: WgslExprEnv, n: string) => (c.local ? c.local(n) : mangle(n));
 
-// WGSL is the C-like rendering of scalar.ts with WGSL spellings.
+// WGSL is the C-like rendering of clike.ts with WGSL spellings.
 const dialect = (c: WgslExprEnv): Dialect => ({
   num: fmt,
   leaf: (e) =>
