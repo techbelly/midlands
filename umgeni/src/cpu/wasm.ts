@@ -633,7 +633,20 @@ export function compilePipeline(runs: FusedRun[], inputWidth: number, pipelinePa
     f.emit(gget(OUTP));
   });
 
-  // Types, deduplicated; then the module.
+  const bytes = encodeModule(sigs, bodies, globals, pages, { push: PUSH, pushAll: PUSH_ALL, init: INIT, end: END, out: OUTP });
+  return { bytes, layout: { outBase, outWidth, inBase, inWidth: w0, inTokens: IN_TOKENS } };
+}
+
+// The module's bytes: its functions' types (deduplicated), the drain import,
+// the memory, the globals, the exports a host drives it by, and the bodies.
+// Function index 0 is the import; sigs and bodies are the rest, in order.
+function encodeModule(
+  sigs: { params: number[]; results: number[] }[],
+  bodies: Map<number, Fn>,
+  globals: { type: number; init: number[] }[],
+  pages: number,
+  exports: { push: number; pushAll: number; init: number; end: number; out: number },
+): Uint8Array {
   const typeOf = new Map<string, number>();
   const types: number[][] = [];
   const typeFor = (params: number[], results: number[]) => {
@@ -651,7 +664,7 @@ export function compilePipeline(runs: FusedRun[], inputWidth: number, pipelinePa
     if (!f) fail(`function ${i + 1} has no body`);
     return f!.body();
   });
-  const bytes = [
+  return new Uint8Array([
     0x00, 0x61, 0x73, 0x6d, 1, 0, 0, 0,
     ...section(1, vec(types)),
     ...section(2, vec([[...str('env'), ...str('drain'), 0x00, ...uleb(drainType)]])),
@@ -660,13 +673,12 @@ export function compilePipeline(runs: FusedRun[], inputWidth: number, pipelinePa
     ...section(6, vec(globals.map((gl) => [gl.type, 1, ...gl.init, OP.end]))),
     ...section(7, vec([
       [...str('memory'), 0x02, 0],
-      [...str('push'), 0x00, ...uleb(PUSH)],
-      [...str('pushAll'), 0x00, ...uleb(PUSH_ALL)],
-      [...str('init'), 0x00, ...uleb(INIT)],
-      [...str('end'), 0x00, ...uleb(END)],
-      [...str('out'), 0x03, ...uleb(OUTP)],
+      [...str('push'), 0x00, ...uleb(exports.push)],
+      [...str('pushAll'), 0x00, ...uleb(exports.pushAll)],
+      [...str('init'), 0x00, ...uleb(exports.init)],
+      [...str('end'), 0x00, ...uleb(exports.end)],
+      [...str('out'), 0x03, ...uleb(exports.out)],
     ])),
     ...section(10, vec(funcBodies)),
-  ];
-  return { bytes: new Uint8Array(bytes), layout: { outBase, outWidth, inBase, inWidth: w0, inTokens: IN_TOKENS } };
+  ]);
 }
