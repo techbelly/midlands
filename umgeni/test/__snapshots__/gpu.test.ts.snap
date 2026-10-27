@@ -35,11 +35,15 @@ fn st0(a0 : f32, a1 : f32, a2 : f32, a3 : f32, a4 : f32, a5 : f32) {
       for (var k = 0u; k < 6u; k += 1u) { T0[k] = F0[sp0 * 6u + k]; }
     }
     again = false;
-    let vinside_0 = select(0.0, 1.0, ((floor(T0[0u]) == floor(T0[4u])) || (ceil(T0[0u]) == ceil(T0[4u]))));
-    let vinside_1 = select(0.0, 1.0, ((floor(T0[1u]) == floor(T0[5u])) || (ceil(T0[1u]) == ceil(T0[5u]))));
+    let v_cse0 = floor(T0[0u]);
+    let v_cse1 = floor(T0[4u]);
+    let vinside_0 = select(0.0, 1.0, ((v_cse0 == v_cse1) || (ceil(T0[0u]) == ceil(T0[4u]))));
+    let v_cse2 = floor(T0[1u]);
+    let v_cse3 = floor(T0[5u]);
+    let vinside_1 = select(0.0, 1.0, ((v_cse2 == v_cse3) || (ceil(T0[1u]) == ceil(T0[5u]))));
     if (((vinside_0 != 0.0) && (vinside_1 != 0.0))) {
-      let vP_0 = select(floor(T0[4u]), floor(T0[0u]), (floor(T0[0u]) < floor(T0[4u])));
-      let vP_1 = select(floor(T0[5u]), floor(T0[1u]), (floor(T0[1u]) < floor(T0[5u])));
+      let vP_0 = select(v_cse1, v_cse0, (v_cse0 < v_cse1));
+      let vP_1 = select(v_cse3, v_cse2, (v_cse2 < v_cse3));
       let vw = ((vP_0 + 1.0) - ((T0[4u] + T0[0u]) / 2.0));
       let vh = (T0[5u] - T0[1u]);
       {
@@ -52,27 +56,31 @@ fn st0(a0 : f32, a1 : f32, a2 : f32, a3 : f32, a4 : f32, a5 : f32) {
         }
       }
     } else {
-      let v_cse0 = ((T0[0u] + T0[2u]) / 2.0);
-      let v_cse1 = ((T0[2u] + T0[4u]) / 2.0);
-      let vABBC_0 = ((v_cse0 + v_cse1) / 2.0);
-      let v_cse2 = ((T0[1u] + T0[3u]) / 2.0);
-      let v_cse3 = ((T0[3u] + T0[5u]) / 2.0);
-      let vABBC_1 = ((v_cse2 + v_cse3) / 2.0);
+      let v_cse5 = ((T0[0u] + T0[2u]) / 2.0);
+      let v_cse7 = ((T0[2u] + T0[4u]) / 2.0);
+      let vABBC_0 = ((v_cse5 + v_cse7) / 2.0);
+      let v_cse9 = ((T0[1u] + T0[3u]) / 2.0);
+      let v_cse11 = ((T0[3u] + T0[5u]) / 2.0);
+      let vABBC_1 = ((v_cse9 + v_cse11) / 2.0);
       let vmin_0 = floor(vABBC_0);
       let vmin_1 = floor(vABBC_1);
       let vmax_0 = ceil(vABBC_0);
       let vmax_1 = ceil(vABBC_1);
-      let vnearmin_0 = select(0.0, 1.0, (select((vABBC_0 - vmin_0), (-(vABBC_0 - vmin_0)), ((vABBC_0 - vmin_0) < 0.0)) < 0.1));
-      let vnearmin_1 = select(0.0, 1.0, (select((vABBC_1 - vmin_1), (-(vABBC_1 - vmin_1)), ((vABBC_1 - vmin_1) < 0.0)) < 0.1));
-      let vnearmax_0 = select(0.0, 1.0, (select((vABBC_0 - vmax_0), (-(vABBC_0 - vmax_0)), ((vABBC_0 - vmax_0) < 0.0)) < 0.1));
-      let vnearmax_1 = select(0.0, 1.0, (select((vABBC_1 - vmax_1), (-(vABBC_1 - vmax_1)), ((vABBC_1 - vmax_1) < 0.0)) < 0.1));
+      let v_cse12 = (vABBC_0 - vmin_0);
+      let vnearmin_0 = select(0.0, 1.0, (select(v_cse12, (-v_cse12), (v_cse12 < 0.0)) < 0.1));
+      let v_cse13 = (vABBC_1 - vmin_1);
+      let vnearmin_1 = select(0.0, 1.0, (select(v_cse13, (-v_cse13), (v_cse13 < 0.0)) < 0.1));
+      let v_cse14 = (vABBC_0 - vmax_0);
+      let vnearmax_0 = select(0.0, 1.0, (select(v_cse14, (-v_cse14), (v_cse14 < 0.0)) < 0.1));
+      let v_cse15 = (vABBC_1 - vmax_1);
+      let vnearmax_1 = select(0.0, 1.0, (select(v_cse15, (-v_cse15), (v_cse15 < 0.0)) < 0.1));
       let vM_0 = select(select(vABBC_0, vmax_0, (vnearmax_0 != 0.0)), vmin_0, (vnearmin_0 != 0.0));
       let vM_1 = select(select(vABBC_1, vmax_1, (vnearmax_1 != 0.0)), vmin_1, (vnearmin_1 != 0.0));
       if (sp0 < 128u) {
         F0[sp0 * 6u + 0u] = vM_0;
         F0[sp0 * 6u + 1u] = vM_1;
-        F0[sp0 * 6u + 2u] = v_cse1;
-        F0[sp0 * 6u + 3u] = v_cse3;
+        F0[sp0 * 6u + 2u] = v_cse7;
+        F0[sp0 * 6u + 3u] = v_cse11;
         F0[sp0 * 6u + 4u] = T0[4u];
         F0[sp0 * 6u + 5u] = T0[5u];
         sp0 += 1u;
@@ -82,8 +90,8 @@ fn st0(a0 : f32, a1 : f32, a2 : f32, a3 : f32, a4 : f32, a5 : f32) {
       {
         let next0 = T0[0u];
         let next1 = T0[1u];
-        let next2 = v_cse0;
-        let next3 = v_cse2;
+        let next2 = v_cse5;
+        let next3 = v_cse9;
         let next4 = vM_0;
         let next5 = vM_1;
         T0[0] = next0;
@@ -130,35 +138,35 @@ fn st1(a0 : f32, a1 : f32, a2 : f32, a3 : f32) {
       let vp_2 = S1[2];
       let vp_3 = S1[3];
       let vq_0 = a0;
-      let v_cse0 = select(vp_2, (-vp_2), (vp_2 < 0.0));
+      let v_cse2 = select(vp_2, (-vp_2), (vp_2 < 0.0));
       {
         let px = i32(floor(vp_0));
         let py = i32(floor(vp_1));
         if (px >= 0 && px < i32(META.minor) && py >= 0 && py < i32(META.major)) {
           let ci = u32(py) * META.minor + u32(px);
-          COV[ci] = min(COV[ci] + select(1.0, v_cse0, (v_cse0 < 1.0)), 1.0);
+          COV[ci] = min(COV[ci] + select(1.0, v_cse2, (v_cse2 < 1.0)), 1.0);
         }
       }
-      let v_cse1 = select(vp_3, (-vp_3), (vp_3 < 0.0));
+      let v_cse5 = select(vp_3, (-vp_3), (vp_3 < 0.0));
       {
         let px = i32(floor((vp_0 + 1.0)));
         let py = i32(floor(vp_1));
         if (px >= 0 && px < i32(META.minor) && py >= 0 && py < i32(META.major)) {
           let ci = u32(py) * META.minor + u32(px);
-          COV[ci] = min(COV[ci] + select(1.0, v_cse1, (v_cse1 < 1.0)), 1.0);
+          COV[ci] = min(COV[ci] + select(1.0, v_cse5, (v_cse5 < 1.0)), 1.0);
         }
       }
     } else {
       let vp_0_u1 = S1[0];
       let vp_1_u1 = S1[1];
       let vp_2_u1 = S1[2];
-      let v_cse2 = select(vp_2_u1, (-vp_2_u1), (vp_2_u1 < 0.0));
+      let v_cse8 = select(vp_2_u1, (-vp_2_u1), (vp_2_u1 < 0.0));
       {
         let px = i32(floor(vp_0_u1));
         let py = i32(floor(vp_1_u1));
         if (px >= 0 && px < i32(META.minor) && py >= 0 && py < i32(META.major)) {
           let ci = u32(py) * META.minor + u32(px);
-          COV[ci] = min(COV[ci] + select(1.0, v_cse2, (v_cse2 < 1.0)), 1.0);
+          COV[ci] = min(COV[ci] + select(1.0, v_cse8, (v_cse8 < 1.0)), 1.0);
         }
       }
     }
@@ -179,8 +187,9 @@ fn st0(a0 : f32, a1 : f32, a2 : f32, a3 : f32) {
   var vk_H_p = S0[1];
   var von_H_p = S0[2];
   let vH = select(0.0, S0[0], ((S0[2] != 0.0) && (a1 == S0[1])));
-  st1(a0, a1, (vH + a2), (vH + a3));
-  vs_H_p = (vH + a3);
+  let v_cse0 = (vH + a3);
+  st1(a0, a1, (vH + a2), v_cse0);
+  vs_H_p = v_cse0;
   vk_H_p = a1;
   von_H_p = 1.0;
   S0[0] = vs_H_p;
@@ -192,13 +201,13 @@ fn fl1() {
     let vp_0_u2 = S1[0];
     let vp_1_u2 = S1[1];
     let vp_2_u2 = S1[2];
-    let v_cse0 = select(vp_2_u2, (-vp_2_u2), (vp_2_u2 < 0.0));
+    let v_cse2 = select(vp_2_u2, (-vp_2_u2), (vp_2_u2 < 0.0));
     {
       let px = i32(floor(vp_0_u2));
       let py = i32(floor(vp_1_u2));
       if (px >= 0 && px < i32(META.minor) && py >= 0 && py < i32(META.major)) {
         let ci = u32(py) * META.minor + u32(px);
-        COV[ci] = min(COV[ci] + select(1.0, v_cse0, (v_cse0 < 1.0)), 1.0);
+        COV[ci] = min(COV[ci] + select(1.0, v_cse2, (v_cse2 < 1.0)), 1.0);
       }
     }
   }

@@ -22,7 +22,9 @@ is a start.
 | [docs/](docs/) | two papers: the project's, and the compiler's first design as history | |
 
 The sizes are counted by `npm run sizes` (lines of source, comments included;
-`--files` lists the compiler file by file), and rounded here. The back ends
+`--files` lists the compiler file by file), and rounded here. `npm run corpus`
+hashes the generated code of every library, so a change to the compiler that
+should change nothing can show that it did not. The back ends
 are the optional part: any one of the three is a working compiler.
 
 ## Running it

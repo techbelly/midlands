@@ -10,6 +10,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "sizes": "npx tsx tools/sizes.ts",
+    "corpus": "npx tsx tools/corpus.ts",
     "demo:build": "node demos/tools/build.mjs",
     "demo:serve": "node demos/tools/build.mjs && npx esbuild --servedir=demos/dist",
     "bench": "npx tsx demos/tools/bench.ts",

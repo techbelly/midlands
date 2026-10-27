@@ -36,9 +36,12 @@ function cseKernel(p: KernelIR): KernelIR {
   };
 }
 
-// Materialize a shared subtree only if it is at least this many ops — a
-// single shared add is not worth a let.
-const MIN_OPS = 2;
+// Materialize a shared subtree of at least this many ops. One: a single
+// floor or subtraction repeated three times is three operations, and on the
+// paragraph benchmark sharing them cut executed IR ops by a further 15% for
+// 2% more generated text (it was 2, on the thought that a let is not worth
+// a single add; the measurement said otherwise).
+const MIN_OPS = 1;
 
 // Versions of the mutable names, mixed into value keys: each assignment
 // bumps one, so a read before and after it gets different keys. Both passes
