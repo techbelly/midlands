@@ -25,7 +25,9 @@ The sizes are counted by `npm run sizes` (lines of source, comments included;
 `--files` lists the compiler file by file), and rounded here. `npm run corpus`
 hashes the generated code of every library, as JavaScript, as WebAssembly
 and as the WGSL the GPU lowering gives, so a change to the compiler that
-should change nothing can show that it did not. The back ends
+should change nothing can show that it did not; `npm test` holds the compiler
+to the hashes recorded in tools/corpus.json, and `npm run corpus -- --record`
+records new ones once a change is meant. The back ends
 are the optional part: any one of the three is a working compiler.
 
 ## Running it
