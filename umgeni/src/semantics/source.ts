@@ -7,3 +7,4 @@ export const valuesSource = read('./values.mooi');
 export const nileSource = read('./nile.mooi');
 export const sugarSource = read('./sugar.mooi');
 export const pipelinesSource = read('./pipelines.mooi');
+export const streamsSource = read('./streams.mooi');

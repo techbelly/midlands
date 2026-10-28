@@ -282,7 +282,7 @@
     },
     "prelude": {
       "comment": "The prelude's words (mooi/src/prelude.ts), except as a record's key. Kept by hand.",
-      "match": "(?<![\\p{L}\\p{N}_'])(all|any|at|compact|concat|concatMap|drop|each|eachi|fail|filter|find|fmt|foldl|foldr|head|id|indexOf|indices|length|map|mapi|member|must|not|otherwise|range|replicate|str|sum|take|zip|zipWith)(?![\\p{L}\\p{N}_']|\\s*:)",
+      "match": "(?<![\\p{L}\\p{N}_'])(all|any|at|compact|concat|concatMap|drop|each|eachi|fail|filter|find|fmt|foldl|foldr|head|id|indexOf|indices|length|map|mapi|member|must|not|otherwise|range|replicate|reverse|str|sum|take|zip|zipWith)(?![\\p{L}\\p{N}_']|\\s*:)",
       "name": "support.function.prelude.mooi"
     }
   }

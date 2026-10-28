@@ -33,6 +33,7 @@ export function prelude(fail: (msg: string) => never): Record<string, unknown> {
     replicate: (n: number, x: unknown) => Array.from({ length: n }, () => x),
     compact: (xs: unknown[]) => xs.filter((x) => x != null),
     indices: (xs: unknown[]) => xs.map((_, i) => i),
+    reverse: (xs: unknown[]) => [...xs].reverse(),
     concat: (xss: unknown[][]) => xss.flat(1),
     concatMap: (f: F, xs: unknown[]) => xs.flatMap((x) => app(f, x) as unknown[]),
     length: (xs: unknown[]) => xs.length,

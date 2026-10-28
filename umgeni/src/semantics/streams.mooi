@@ -1,0 +1,33 @@
+-- What a process does to a whole stream, and so what a mid-stream ⇒ means:
+-- the process *becomes* the pipeline it names, which receives the rest of
+-- the input, as in the 2012 C runtime. nile.mooi says what one token does;
+-- this says how the tokens follow one another.
+--
+-- From the host: start (a stage of a ⇒, {name, args}, as a running kernel
+-- whose prologue, step and flush each say what they did: the tokens it
+-- emitted, out; those it fed back, fed; and the stages it became, or null)
+-- and the prelude.
+--
+-- A stream is a list and each token a call deeper, so this is an oracle
+-- for short streams (some hundreds of tokens), not a way to run Nile.
+
+-- The prologue first, then a step per token, then the flush. The tokens a
+-- step feeds back are taken before the rest of the input, the last fed
+-- first. The prologue runs as the first token arrives, so that token is
+-- taken before anything the prologue fed back. A ⇒ ends the process: what
+-- it emitted, then the pipeline it became, run on everything still pending.
+process m []           = after m (m.prologue unit) []
+process m [t, ...rest] = let r = m.prologue unit in after m {...r, fed: r.fed ++ [t]} rest
+
+after m r pending
+  | r.became != null = r.out ++ pipeline r.became (reverse r.fed ++ pending)
+  | otherwise        = r.out ++ consume m (reverse r.fed ++ pending)
+
+consume m [t, ...rest] = after m (m.step t) rest
+consume m []           = let r = m.flush unit in r.out ++ pipeline (r.became ?? []) []
+
+-- A pipeline, each stage given what the one before produced; (→) passes
+-- the stream on.
+pipeline stages input = foldl (\xs st -> stage st xs) input stages
+stage null xs = xs
+stage st xs   = process (start st) xs

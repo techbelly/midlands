@@ -56,3 +56,68 @@ describe('mid-stream ⇒: interpreter ≡ compiler ≡ the 2012 runtime', () => 
     });
   }
 });
+
+// The same ⇒, said in Mooi (streams.mooi: a process over a whole stream),
+// against the interpreter above, bit for bit, and the 2012 runtime.
+import { interpretProcess } from '../src/semantics/streams.js';
+
+describe('mid-stream ⇒ as streams.mooi says it ≡ the interpreter ≡ the 2012 runtime', () => {
+  const sources = strokeSources();
+  const { program, kernels } = kernelContexts(parseProgram(sources).modules, true);
+  const interp = (name: string, params: number[] = []) => interpretKernel(program, kernels.get(name)!, params, (n) => kernels.get(n));
+  const proc = interpretProcess(program, (n) => kernels.get(n));
+  // StrokeBezierPath's DupCat and Reverse are pipeline structure, not ⇒.
+  const strokePath = (p: number[], xs: number[][]) => {
+    const s = proc('SanitizeBezierPath', [], xs);
+    return [...proc('StrokeOneSide', p, s), ...proc('StrokeOneSide', p, proc('ReverseBeziers', [], [...s].reverse()))];
+  };
+  const build: Record<string, [(p: number[], xs: number[][]) => number[][], (p: number[]) => ReturnType<typeof interp>]> = {
+    OffsetBezier: [(p, xs) => proc('OffsetBezier', p, xs), (p) => interp('OffsetBezier', p)],
+    StrokeOneSide: [(p, xs) => proc('StrokeOneSide', p, xs), (p) => interp('StrokeOneSide', p)],
+    StrokeBezierPath: [strokePath, (p) => pipeline([
+      interp('SanitizeBezierPath'),
+      dupCat(interp('StrokeOneSide', p), pipeline([reverse(), interp('ReverseBeziers'), interp('StrokeOneSide', p)])),
+    ])],
+  };
+  for (const [process, [mooi, ts]] of Object.entries(build)) {
+    it(process, () => {
+      for (const c of strokeOracle().filter((x) => x.process === process)) {
+        const got = mooi(c.params ?? [], c.input.map((t) => [...t]));
+        const want = run(ts(c.params ?? []), c.input.map((t) => [...t]));
+        expect(got.length).toBe(c.output.length);
+        got.forEach((t, i) => t.forEach((x, j) => {
+          expect(Math.abs(x - c.output[i][j])).toBeLessThan(1e-6);
+          expect(Object.is(x, want[i][j])).toBe(true);
+        }));
+      }
+    });
+  }
+});
+
+// Where there is no recording: a prologue that feeds back (RectangleSpans),
+// a step that feeds back before a ⇒ downstream (DashBeziers into roda's
+// pieces), against the interpreter bit for bit.
+describe('streams.mooi ≡ the interpreter, beyond the recordings', () => {
+  const sources = [...['types', 'bezier', 'stroke', 'rasterize'].map((n) => gezira(`${n}.nl`)), ...['vector', 'dash'].map((n) => roda(`${n}.nl`))];
+  const { program, kernels } = kernelContexts(parseProgram(sources).modules, true);
+  const interp = (name: string, params: number[]) => interpretKernel(program, kernels.get(name)!, params, (n) => kernels.get(n));
+  const proc = interpretProcess(program, (n) => kernels.get(n));
+  const line = (x0: number, y0: number, x1: number, y1: number) => [x0, y0, (x0 + x1) / 2, (y0 + y1) / 2, x1, y1];
+  const cases: [string, number[], number[][][]][] = [
+    ['RectangleSpans', [0, 0, 2, 2], [[], [[1.25, 0]], [[0.5, 0.5], [3, 3], [1.5, 1]]]],
+    ['RectangleSpans', [-1, 0.5, 1.5, 3], [[], [[0, 1], [-0.5, 2]]]],
+    ['DashBeziers', [20, 10, 5, 5, 3], [[line(0, 0, 60, 0), line(60, 0, 100, 40)]]],
+    ['StrokePiecesOneSide', [4, -1, -1], [[line(0, 0, 10, 0), line(10, 0, 10, 10)], [line(0, 0, 10, 0), line(20, 0, 30, 5), line(30, 5, 0, 0)]]],
+    ['StrokePiecesOneSide', [2, 4, 0], [[line(0, 0, 10, 0), line(20, 0, 30, 5)]]],
+  ];
+  for (const [process, params, inputs] of cases) {
+    it(`${process} (${params})`, () => {
+      for (const input of inputs) {
+        const got = proc(process, params, input.map((t) => [...t]));
+        const want = run(interp(process, params), input.map((t) => [...t]));
+        expect(got.length).toBe(want.length);
+        got.forEach((t, i) => t.forEach((x, j) => expect(Object.is(x, want[i][j])).toBe(true)));
+      }
+    });
+  }
+});

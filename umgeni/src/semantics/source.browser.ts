@@ -7,8 +7,11 @@ import nile from './nile.mooi';
 import sugar from './sugar.mooi';
 // @ts-expect-error
 import pipelines from './pipelines.mooi';
+// @ts-expect-error
+import streams from './streams.mooi';
 
 export const valuesSource: string = values;
 export const nileSource: string = nile;
 export const sugarSource: string = sugar;
 export const pipelinesSource: string = pipelines;
+export const streamsSource: string = streams;
