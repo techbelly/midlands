@@ -1,8 +1,13 @@
 // A library as its own derivative. Every kernel is rewritten on dual numbers
 // (semantics/dual.ts) in n directions: each expression becomes its value and
 // n derivatives, each token, state slot and local as many times wider. What
-// comes out is ordinary IR, so fusion, CSE and every back end take it as
-// they take anything: a derivative kernel is a kernel with wider tokens.
+// comes out is ordinary IR, so fusion, CSE, JavaScript and WebAssembly take
+// it as they take anything: a derivative kernel is a kernel with wider
+// tokens. (Two limits show at great width. WebAssembly passes a token as a
+// function's parameters, of which it allows 1,000, so a Bezier has a wasm
+// derivative in up to 165 directions. And the GPU lowering refuses a
+// rasterizer's derivative as it stands: its grid holds keys and summed
+// fields, and the keys' derivatives, though they are zero, are neither.)
 //
 // This is the interpreter on dual numbers, staged. Elaboration left each
 // kernel as the arithmetic its meaning performs; the same rules
@@ -120,7 +125,11 @@ function kernel(k: KernelIR, n: number, A: DualArithmetic<ScalarExpr>): KernelIR
       case 'param': return { v: e, d: new Array<ScalarExpr>(n).fill(ZERO) };
       case 'input': return slots('input', w, e.index);
       case 'state': return slots('state', s, e.index);
-      case 'local': return env.get(e.name) ?? { v: e, d: new Array<ScalarExpr>(n).fill(ZERO) };
+      case 'local': {
+        const x = env.get(e.name);
+        if (!x) throw new Error(`derivative of '${k.name}': '${e.name}' is read before it is bound`);
+        return x;
+      }
       case 'bin': return A.bin(e.op, dual(e.a, env), dual(e.b, env));
       case 'un': return A.un(e.op, dual(e.a, env));
       case 'select': return A.select(dual(e.cond, env), dual(e.then, env), dual(e.else, env));

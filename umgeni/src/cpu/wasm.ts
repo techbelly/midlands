@@ -271,7 +271,10 @@ function reverseBody(f: Fn): void {
 const PAGE = 65536;
 const OUT_TOKENS = 256;
 const IN_TOKENS = 256;
-const STACK_BYTES = 1 << 15;
+// A feeding stage's worklist: 32 KiB, or room for 64 tokens if they are
+// wide (a library compiled as its derivative has tokens many times as wide,
+// passes/derivative.ts, and ten of them is not a worklist).
+const stackBytes = (tokenWidth: number): number => Math.max(1 << 15, 64 * 8 * tokenWidth);
 
 type Barrier = Extract<FusedRun, { k: 'sortBy' | 'groupBy' | 'reduceBy' | 'reverse' }>;
 type ReduceBy = Extract<Barrier, { k: 'reduceBy' }>;
@@ -329,6 +332,7 @@ interface Slot {
   stage: FusedStage;
   shape: StageShape;
   stackBase: number;
+  stackEnd: number;
   sp: number;
   args: number[];
   state: number[];
@@ -398,9 +402,9 @@ export function compilePipeline(runs: FusedRun[], inputWidth: number, pipelinePa
     const slots = section.stages.map((stage): Slot => {
       const shape = stageShape(stage.kernel.body);
       const stackBase = top;
-      if (shape === 'worklist') top += STACK_BYTES;
+      if (shape === 'worklist') top += stackBytes(stage.kernel.inputWidth);
       return {
-        stage, shape, stackBase,
+        stage, shape, stackBase, stackEnd: top,
         sp: m.global(I32, i32c(stackBase)),
         args: stage.args.flat().map(() => m.global(F64, f64c(0))),
         state: stage.kernel.stateInit.map(() => m.global(F64, f64c(0))),
@@ -616,7 +620,7 @@ function stmts(f: Fn, s: Slot, env: Env, inputs: number[], list: Stmt[], depth: 
           break;
         }
         pushToken(f, s.sp, w, (i) => num(f, st.values[i], env));
-        f.emit(ifThen([...gget(s.sp), ...i32c(s.stackBase + STACK_BYTES), OP.i32GtU], [OP.unreachable]));
+        f.emit(ifThen([...gget(s.sp), ...i32c(s.stackEnd), OP.i32GtU], [OP.unreachable]));
         break;
       case 'if':
         cond(f, st.cond, env);

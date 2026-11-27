@@ -109,6 +109,21 @@ describe('compiled derivative ≡ interpreter on duals, whole pipelines', () => 
   });
 });
 
+describe('a derivative in many directions', () => {
+  // Tokens 65 times as wide: gezira's DecomposeBeziers halves a long curve
+  // many times over, and each half not yet taken waits on the stage's
+  // worklist. The WebAssembly back end's worklist was sized in bytes, and
+  // held ten such tokens.
+  it('a Bezier 1000 pixels long through RasterizeParallel, 64 directions: wasm as JavaScript', () => {
+    const n = 64;
+    const input = [dualToken([3.3, 2.1, 480.2, 310.7, 990.4, 610.9], n, (d) => Array.from({ length: 6 }, (_, k) => (d % 6 === k ? 1 : 0)))];
+    const js = run(compileLibrary(rasterizers, { directions: n }).api.RasterizeParallel([]), input.map((t) => [...t]));
+    const wasm = run(compileLibrary(rasterizers, { directions: n, target: 'wasm' }).api.RasterizeParallel([]), input.map((t) => [...t]));
+    expect(js.length).toBeGreaterThan(1000);
+    same(wasm, js, n, 'RasterizeParallel');
+  });
+});
+
 describe('what has no derivative says so', () => {
   it('a ReduceBy by an operator other than +, a DupZip, and what uses them', () => {
     const sources = [

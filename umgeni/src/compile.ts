@@ -40,7 +40,8 @@ export interface CompileOptions extends CodegenOptions {
   /** Compile the library as its own derivative in this many directions
    *  (passes/derivative.ts): every token is 1 + directions times as wide,
    *  its values and then each direction's derivatives. Processes that have
-   *  no derivative are listed as unsupported. Default: none. */
+   *  no derivative are listed as unsupported. With target 'wasm' a token
+   *  may be at most 1,000 numbers wide. Default: none. */
   directions?: number;
 }
 
