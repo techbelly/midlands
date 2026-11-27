@@ -7,12 +7,20 @@ import { lineCubic } from './src/samples/path.js';
 import { nile, sources } from './nl/vector.nl-lib';
 import { quoteNile } from './src/quote.js';
 import { Resolution } from './src/resolution.js';
+import { Rasterizer } from './src/rasterizer.js';
 import { whitePage } from './src/page.js';
 
-(document.getElementById('nile') as HTMLElement).textContent = quoteNile(
-  sources,
-  ['StrokeOutline', 'StrokeBezierPath', 'FillBeziers', 'Rasterize', 'PaintSpans'],
-);
+// The Nile the page runs, quoted; said again when the rasterizer changes.
+// FillBeziers is ClipBeziers → Rasterize; with the exact rasterizer the page
+// runs those two stages itself, the second one swapped.
+const quote = () => {
+  (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
+    sources,
+    rasterizer.exact
+      ? rasterizer.quoted(['StrokeOutline', 'StrokeBezierPath', 'ClipBeziers', 'Rasterize', 'PaintSpans'])
+      : ['StrokeOutline', 'StrokeBezierPath', 'FillBeziers', 'Rasterize', 'PaintSpans'],
+  );
+};
 
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
@@ -47,7 +55,8 @@ function draw(): void {
   const outlines = paths.map((p) => strokeOutline(nile, IDENTITY, ui.w * k, join, ui.cap, [at(p)]));
   let spans = 0;
   for (const outline of outlines) {
-    const s = nile.FillBeziers({ min: [0, 0], max: [W, H] }).run(outline);
+    const page = { min: [0, 0], max: [W, H] };
+    const s = rasterizer.exact ? nile.RasterizeExact().run(nile.ClipBeziers(page).run(outline)) : nile.FillBeziers(page).run(outline);
     spans += s.length;
     paintSpans(img, nile, s, hexRGB('#2b6cb0'));
   }
@@ -80,10 +89,15 @@ function draw(): void {
   }
   const pieces = outlines.reduce((n, o) => n + o.length, 0);
   statsEl.textContent = `${pieces} outline beziers · ${spans.toLocaleString()} spans · ${resolution.label(W, H)}`;
-  perfEl.textContent = `CPU (JavaScript) · ${ms.toFixed(1)} ms`;
+  perfEl.textContent = `CPU (JavaScript, ${rasterizer.label}) · ${ms.toFixed(1)} ms`;
 }
 
 const resolution = new Resolution(draw);
+const rasterizer = new Rasterizer(() => {
+  quote();
+  draw();
+});
+quote();
 
 function group(id: string, set: (v: string) => void): void {
   const el = document.getElementById(id)!;

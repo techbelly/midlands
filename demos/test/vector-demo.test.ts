@@ -8,7 +8,7 @@ import { compileLibraryFile, read } from '../src/sources.js';
 import { strokeOutline, IDENTITY } from '../src/vector/draw.js';
 import { blankImage, inkedPixels, paintSpans } from '../src/vector/spans.js';
 import { parseSvg, pathCubics, pathSubpaths } from '../src/vector/svg.js';
-import { drawTiger, fitView } from '../src/vector/tiger.js';
+import { drawTiger, fitView, paintPaths, tigerPaths } from '../src/vector/tiger.js';
 
 
 const library = compileLibraryFile('demos/nl/vector.nl-lib');
@@ -59,6 +59,29 @@ describe('the tiger demo, headless', () => {
     const img = blankImage(200, 200);
     drawTiger(img, tiger, fitView(200, 200), library.api);
     expect(createHash('sha256').update(img.data).digest('hex')).toMatchSnapshot();
+  });
+
+  // The page's option: the same paths through roda/rasterize-exact.nl. It
+  // is the same tiger, apart from the edge pixels gezira's snap to the grid
+  // puts a little differently; and it is pinned too.
+  it('renders the tiger by the exact rasterizer: the same picture but for its edges', () => {
+    const W = 200;
+    const usual = blankImage(W, W);
+    const exact = blankImage(W, W);
+    const paths = tigerPaths(tiger, fitView(W, W), library.api, W, W);
+    paintPaths(usual, library.api, paths);
+    paintPaths(exact, library.api, paths, 'RasterizeExact');
+    let differing = 0;
+    let worst = 0;
+    for (let i = 0; i < usual.data.length; i += 4) {
+      const d = Math.max(...[0, 1, 2].map((c) => Math.abs(usual.data[i + c] - exact.data[i + c])));
+      if (d > 0) differing++;
+      worst = Math.max(worst, d);
+    }
+    expect(differing).toBeGreaterThan(0);
+    expect(differing).toBeLessThan(W * W * 0.25);
+    expect(worst).toBeLessThan(80); // of 255
+    expect(createHash('sha256').update(exact.data).digest('hex')).toMatchSnapshot();
   });
 
   it('strokes subpaths as SVG draws them: closed only by Z', () => {

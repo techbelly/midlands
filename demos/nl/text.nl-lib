@@ -1,5 +1,6 @@
 -- The text demo's Nile program: gezira's kernels, unmodified, plus the
--- demos' text and span stages and umgeni's scan-form rasterizer.
+-- demos' text and span stages, umgeni's scan-form rasterizer and roda's
+-- exact one, which the page offers in its place.
 -- One source per line, relative to this file.
 ../../gezira/types.nl
 ../../gezira/bezier.nl
@@ -8,3 +9,4 @@
 ../../roda/text.nl
 ../../roda/spans.nl
 ../../roda/rasterize-parallel.nl
+../../roda/rasterize-exact.nl

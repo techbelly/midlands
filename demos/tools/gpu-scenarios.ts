@@ -227,6 +227,22 @@ export const loweringScenarios: Scenario[] = [
     compare: compareCoverage(0.2, drew),
   },
   {
+    // roda/rasterize-exact.nl: two worklist kernels fused ahead of the grid,
+    // with a square root and a division in the cut. In f32 the cut point is
+    // still put on the grid line exactly, so a sample lands in its own cell.
+    what: 'RasterizePixelsExact vs the CPU',
+    cpu: () => {
+      const { nile, beziers, W, H } = lowering();
+      return coverage(paintCoverage(nile.RasterizeExact().run(beziers), W, H));
+    },
+    gpu: (device) => {
+      const { library, W, H, flat, n } = lowering();
+      return renderCoverage(device, coveragePlan(library.ir, 'RasterizePixelsExact', W, H), flat, n, [], 'RasterizePixelsExact');
+    },
+    // What is left is f32 arithmetic and the grid's fixed point.
+    compare: compareCoverage(0.001, drew),
+  },
+  {
     what: 'RasterizeMapped (TransformBeziers (M) fused ahead, M from P) vs the CPU',
     cpu: () => {
       const { nile, beziers, W, H } = lowering();

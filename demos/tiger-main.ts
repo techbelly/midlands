@@ -7,16 +7,20 @@ import { paintPaths, tigerPaths, toBatches, type TigerPath } from './src/vector/
 import type { FusedIR } from '../umgeni/src/ir.js';
 import { createPresenter, framePlan } from '../umgeni/src/gpu/present.js';
 import { configureCanvas, gpuBuilt, showOnly, type GpuCanvas, whitePage } from './src/page.js';
-import { nile, nileWasm, sources, RasterizePixelsIR } from './nl/vector.nl-lib';
+import { nile, nileWasm, sources, RasterizePixelsIR, RasterizePixelsExactIR } from './nl/vector.nl-lib';
 import svgSrc from './tiger.svg';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
 import { Resolution } from './src/resolution.js';
+import { Rasterizer } from './src/rasterizer.js';
 
-(document.getElementById('nile') as HTMLElement).textContent = quoteNile(
-  sources,
-  ['PathCubics', 'SvgFillBeziers', 'SvgStroke', 'StrokeOutline', 'StrokeBezierPath', 'ClipBeziers', 'RasterizeParallel', 'RasterizePixels', 'PaintSpans'],
-);
+// The Nile the page runs, quoted; said again when the rasterizer changes.
+const quote = () => {
+  (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
+    sources,
+    rasterizer.quoted(['PathCubics', 'SvgFillBeziers', 'SvgStroke', 'StrokeOutline', 'StrokeBezierPath', 'ClipBeziers', 'RasterizeParallel', 'RasterizePixels', 'PaintSpans']),
+  );
+};
 
 const tiger = parseSvg(svgSrc, nile);
 
@@ -32,7 +36,8 @@ const base = () => Math.min(canvas.width, canvas.height) / 900;
 // A back end rasterizes and composites the paths, and resolves to its time
 // in ms. Each is built once from the compiled library and the canvas it
 // draws on — the same Nile either way: RasterizeParallel → PaintSpans as
-// JS for the CPU, RasterizePixels as WGSL lowered from its IR for the GPU.
+// JS for the CPU, RasterizePixels as WGSL lowered from its IR for the GPU
+// (or the exact rasterizer's two pipelines, when the page's option is on).
 type BackEnd = (paths: TigerPath[]) => Promise<number>;
 
 function cpuBackEnd(nile: Api, ctx: CanvasRenderingContext2D): BackEnd {
@@ -40,7 +45,7 @@ function cpuBackEnd(nile: Api, ctx: CanvasRenderingContext2D): BackEnd {
     const t0 = performance.now();
     const { width, height } = ctx.canvas;
     const img = whitePage(ctx, width, height);
-    paintPaths(img, nile, paths);
+    paintPaths(img, nile, paths, rasterizer.spans('RasterizeParallel'));
     ctx.putImageData(img, 0, 0);
     return performance.now() - t0;
   };
@@ -68,12 +73,13 @@ const cpu = cpuBackEnd(nile, ctx);
 const wasm = cpuBackEnd(nileWasm, ctx);
 
 // The GPU back end is built on first use, if WebGPU is there, and again
-// when the canvas changes size.
-const gpuFor = gpuBuilt((device, _size: { width: number; height: number }) => {
+// when the canvas changes size or the rasterizer changes.
+const gpuFor = gpuBuilt((device, key: { width: number; height: number; exact: boolean }) => {
   const target = configureCanvas(device, canvasGpu);
-  return target && gpuBackEnd(RasterizePixelsIR, target);
+  return target && gpuBackEnd(key.exact ? RasterizePixelsExactIR : RasterizePixelsIR, target);
 });
-const ensureGpu = async (): Promise<BackEnd | null> => (await gpuFor({ width: canvasGpu.width, height: canvasGpu.height }))?.run ?? null;
+const ensureGpu = async (): Promise<BackEnd | null> =>
+  (await gpuFor({ width: canvasGpu.width, height: canvasGpu.height, exact: rasterizer.exact }))?.run ?? null;
 
 // What the renderer menu's entries mean: which Nile runs the front half,
 // which back end finishes the frame (null when this browser has no GPU),
@@ -123,12 +129,17 @@ async function draw(): Promise<void> {
   const backMs = await backEnd(paths);
   statsEl.textContent = `${tiger.paths.length} paths · ${segs.toLocaleString()} cubics · ${z.toFixed(1)}× · ${resolution.label(canvas.width, canvas.height)}`;
   perfEl.textContent =
-    `front (CPU Nile, ${mode.frontLabel}) ${frontMs.toFixed(0)} ms + raster & composite (${mode.backLabel}) ${backMs.toFixed(0)} ms ` +
+    `front (CPU Nile, ${mode.frontLabel}) ${frontMs.toFixed(0)} ms + raster & composite (${mode.backLabel}, ${rasterizer.label}) ${backMs.toFixed(0)} ms ` +
     `= ${(frontMs + backMs).toFixed(0)} ms a frame`;
 }
 
 const scheduleDraw = frameScheduler(draw);
 const resolution = new Resolution(scheduleDraw);
+const rasterizer = new Rasterizer(() => {
+  quote();
+  scheduleDraw();
+});
+quote();
 
 // View controls, attached to BOTH canvases (only one is visible at a time;
 // the GPU canvas needs its own listeners too). Double-click cycles the zoom

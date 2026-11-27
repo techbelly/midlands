@@ -25,14 +25,18 @@ import { createCoverageReadback, type CoverageReadback } from '../umgeni/src/gpu
 import { createPresenter, framePlan, type Presenter, pathBatch } from '../umgeni/src/gpu/present.js';
 import { configureCanvas, gpuBuilt, showOnly, whitePage } from './src/page.js';
 import { Resolution } from './src/resolution.js';
-import { compileMs, nile, nileWasm, sources, RasterizePixelsIR } from './nl/text.nl-lib';
+import { Rasterizer } from './src/rasterizer.js';
+import { compileMs, nile, nileWasm, sources, RasterizePixelsIR, RasterizePixelsExactIR } from './nl/text.nl-lib';
 import { quoteNile } from './src/quote.js';
 import { frameScheduler } from './src/schedule.js';
 
-(document.getElementById('nile') as HTMLElement).textContent = quoteNile(
-  sources,
-  ['TextSpans', 'TextBeziers', 'PlaceBeziers', 'TextLayout', 'WordWidths', 'LayoutGlyphs', 'Rasterize', 'RasterizeParallel', 'RasterizePixels', 'PaintSpans'],
-);
+// The Nile the page runs, quoted; said again when the rasterizer changes.
+const quote = () => {
+  (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
+    sources,
+    rasterizer.quoted(['TextSpans', 'TextBeziers', 'PlaceBeziers', 'TextLayout', 'WordWidths', 'LayoutGlyphs', 'Rasterize', 'RasterizeParallel', 'RasterizePixels', 'PaintSpans']),
+  );
+};
 
 
 const canvas2d = document.getElementById('canvas') as HTMLCanvasElement;
@@ -96,14 +100,14 @@ function cpuRenderer(api: Api, label: string): Renderer {
       let spans = 0;
       const colourRuns = runs(api, text, params);
       for (const r of colourRuns) {
-        const s = api.Rasterize().run(placed(api, r, params));
+        const s = api[rasterizer.spans('Rasterize')]().run(placed(api, r, params));
         spans += s.length;
         paintSpans(img, api, s, colorOf(r));
       }
       ctx2d.putImageData(img, 0, 0);
       return {
         stats: `${colourRuns.length} colour runs → ${spans.toLocaleString()} spans · compiled in ${compileMs} ms (at build time)`,
-        perf: `CPU (${label}) · ${(performance.now() - t0).toFixed(1)} ms`,
+        perf: `CPU (${label}, ${rasterizer.label}) · ${(performance.now() - t0).toFixed(1)} ms`,
       };
     },
   };
@@ -125,7 +129,7 @@ function readbackRenderer(gpu: Gpu): Renderer {
       const paintMs = drawCoverage(coverage);
       return {
         stats: `${n} beziers`,
-        perf: `GPU readback · front ${frontMs.toFixed(1)} ms · raster ${gpuMs.toFixed(1)} ms (1 fence) · paint ${paintMs.toFixed(1)} ms` +
+        perf: `GPU readback (${rasterizer.label}) · front ${frontMs.toFixed(1)} ms · raster ${gpuMs.toFixed(1)} ms (1 fence) · paint ${paintMs.toFixed(1)} ms` +
           (gpu.raster.overflowed() ? ' · WORKLIST OVERFLOW' : ''),
       };
     },
@@ -149,7 +153,7 @@ function presentedRenderer(gpu: Gpu): Renderer {
       const submitMs = performance.now() - t0;
       return {
         stats: `${batches.reduce((n, b) => n + b.n, 0)} beziers in ${batches.length} colour runs`,
-        perf: `GPU zero-fence · front (CPU Nile) ${frontMs.toFixed(1)} ms · submit ${submitMs.toFixed(2)} ms · fences: 0 (presented async)`,
+        perf: `GPU zero-fence (${rasterizer.label}) · front (CPU Nile) ${frontMs.toFixed(1)} ms · submit ${submitMs.toFixed(2)} ms · fences: 0 (presented async)`,
       };
     },
   };
@@ -180,11 +184,12 @@ interface Gpu {
   context: GPUCanvasContext;
   dispose(): void;
 }
-// The plans are built for the picture's size, and again when it changes.
-const gpuFor = gpuBuilt((device, size: { width: number; height: number }): Gpu | null => {
+// The plans are built for the picture's size and the rasterizer, and again
+// when either changes.
+const gpuFor = gpuBuilt((device, size: { width: number; height: number; exact: boolean }): Gpu | null => {
   const target = configureCanvas(device, canvasGpu);
   if (!target) return null;
-  const plan = framePlan(RasterizePixelsIR, size.width, size.height); // WGSL from IR, in-browser
+  const plan = framePlan(size.exact ? RasterizePixelsExactIR : RasterizePixelsIR, size.width, size.height); // WGSL from IR, in-browser
   const raster = createCoverageReadback(device, plan);
   const presenter = createPresenter(device, plan, { format: target.format }); // one black path
   return { device, context: target.context, raster, presenter, dispose: () => { raster.dispose(); presenter.dispose(); } };
@@ -194,7 +199,7 @@ const gpuFor = gpuBuilt((device, size: { width: number; height: number }): Gpu |
 async function renderer(mode: string): Promise<Renderer | null> {
   if (mode === 'cpu') return cpuRenderer(nile, 'JavaScript');
   if (mode === 'wasm') return cpuRenderer(nileWasm, 'WebAssembly');
-  const gpu = await gpuFor(SIZE);
+  const gpu = await gpuFor({ ...SIZE, exact: rasterizer.exact });
   if (!gpu) return null;
   return mode === 'gpu0' ? presentedRenderer(gpu) : readbackRenderer(gpu);
 }
@@ -221,6 +226,11 @@ async function render(): Promise<void> {
 
 const rerender = frameScheduler(render);
 const resolution = new Resolution(rerender);
+const rasterizer = new Rasterizer(() => {
+  quote();
+  rerender();
+});
+quote();
 textEl.addEventListener('input', rerender);
 sizeEl.addEventListener('input', rerender);
 modeEl.addEventListener('change', rerender);

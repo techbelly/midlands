@@ -10,6 +10,7 @@ declare module '*.nl-lib' {
   export const sources: string[]; // the library's Nile, in manifest order
   // One <Name>IR per fused process; only those the pages lower are declared.
   export const RasterizePixelsIR: FusedIR;
+  export const RasterizePixelsExactIR: FusedIR;
   export const RasterizePixelsEvenOddIR: FusedIR;
 }
 declare module '*.nl' {

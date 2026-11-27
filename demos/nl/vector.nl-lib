@@ -1,6 +1,7 @@
 -- The vector demos' Nile program (tiger, strokes): gezira's kernels,
 -- stroke.nl among them, unmodified, plus the demos' vector, SVG and span
--- stages and umgeni's parallel rasterizer, which both tiger back ends use.
+-- stages and umgeni's parallel rasterizer, which both tiger back ends use,
+-- with roda's exact one, which the pages offer in its place.
 -- One source per line, relative to this file.
 ../../gezira/types.nl
 ../../gezira/bezier.nl
@@ -11,6 +12,7 @@
 svg.nl
 ../../roda/spans.nl
 ../../roda/rasterize-parallel.nl
+../../roda/rasterize-exact.nl
 ../../roda/evenodd.nl
 ../../roda/dash.nl
 ../../roda/clip.nl

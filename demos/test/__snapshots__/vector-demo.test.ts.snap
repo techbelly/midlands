@@ -1,3 +1,5 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`the tiger demo, headless > renders the same tiger, pixel for pixel 1`] = `"8e6238915004f94981732079f3f39408d4f1d0d794f13a58b57c44975bcbafe9"`;
+
+exports[`the tiger demo, headless > renders the tiger by the exact rasterizer: the same picture but for its edges 1`] = `"5aef9bdd22bdf9d76accc3458e9ea96d3630dd9dbd0881324dd1f660f6fa027c"`;

@@ -16,6 +16,7 @@
     </select>
   </label>
   <label><input id="hires" type="checkbox"> device resolution</label>
+  <label><input id="exact" type="checkbox"> exact rasterizer</label>
 </section>
 <section slot="demo">
 <canvas id="view" width="680" height="680"></canvas>
@@ -24,7 +25,8 @@
 <section slot="help">
   double-click to zoom in (100%, 200%, 400%, then back), and drag to pan. The
   renderer menu switches between the CPU (JavaScript or WebAssembly) and the
-  GPU; all three run the same Nile.
+  GPU; all three run the same Nile. <i>exact rasterizer</i> swaps gezira's
+  rasterizer for one that cuts each curve where it meets the pixel grid.
 </section>
 <section slot="stats">
 <p>Rendering: about 310 lines of Nile and 190 of TypeScript, compiled by umgeni. The page’s interface isn’t counted.</p>
