@@ -36,6 +36,18 @@ root builds `dist/` and serves it; `npm run demo:build` just builds.
   they stay on the CPU. `npm run check:samples` runs the samples' own
   pipelines that lower (the even-odd rule, the clip join, the mesh) on a real
   GPU against the CPU.
+- **derivative**: a circle looks for a letter. The page compiles its Nile
+  ([nl/derivative.nl-lib](nl/derivative.nl-lib), the rasterizers) a second
+  time in the browser as its own derivative (umgeni's
+  [passes/derivative.ts](../umgeni/src/passes/derivative.ts)), in two
+  directions for each of a closed curve's 32 control points, so every pixel
+  of the curve's picture comes back with how it changes as each point
+  moves. [src/derivative/fit.ts](src/derivative/fit.ts) follows that
+  downhill towards a glyph's picture. Two shapes go side by side, one led by
+  roda's exact rasterizer and one by gezira's, whose slope is that of the
+  steps its snap to the grid makes; three small panels show the edge
+  samples, their running sum and the derivative itself. The tiger, text and
+  strokes pages offer the exact rasterizer too, as a checkbox.
 
 The pages other than samples are fragments in [pages/](pages/): a title, a
 one-line lede, the renderer switcher, the demo, how to use it, its static

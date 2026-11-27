@@ -27,6 +27,7 @@ const PAGES = [
   ['strokes.html', 'strokes'],
   ['paint.html', 'paint'],
   ['samples.html', 'samples'],
+  ['derivative.html', 'derivative'],
 ];
 
 const SHARED_CSS = `

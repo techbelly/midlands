@@ -1,0 +1,12 @@
+-- The derivative page's Nile program: gezira's rasterizer, unmodified, and
+-- roda's two (the one declared for parallel lowering and the exact one),
+-- with the page's own two pipelines. The page compiles the same sources a
+-- second time in the browser, as their own derivative.
+-- One source per line, relative to this file.
+../../gezira/types.nl
+../../gezira/bezier.nl
+../../gezira/rasterize.nl
+../../gezira/texture.nl
+../../roda/rasterize-parallel.nl
+../../roda/rasterize-exact.nl
+derivative.nl

@@ -1,0 +1,108 @@
+<meta name="width" content="860">
+<style>
+  .pair { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .pair figure { margin: 0; flex: 1 1 380px; min-width: 0; }
+  .pair figcaption, .trio figcaption { font-size: 0.9rem; color: #444; margin-bottom: 0.25rem; }
+  .pair figcaption b, .trio figcaption b { color: #222; }
+  .pair canvas { touch-action: none; cursor: grab; image-rendering: pixelated; }
+  .trio { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; }
+  .trio figure { margin: 0; flex: 1 1 220px; min-width: 0; }
+  .trio canvas { image-rendering: pixelated; }
+  .row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin: 0.6rem 0; }
+  .row input[type=text] { font: inherit; width: 2.2rem; text-align: center; padding: 0.15rem; }
+  .row button { font: inherit; padding: 0.15rem 0.7rem; border: 1px solid #bbb; background: #f5f5f5; border-radius: 4px; cursor: pointer; }
+  .key { font-size: 0.85rem; color: #555; margin: 0.4rem 0 0; }
+  .key i { display: inline-block; width: 0.8em; height: 0.8em; vertical-align: -0.05em; margin: 0 0.3em 0 0.9em; border-radius: 2px; }
+  .said { font-variant-numeric: tabular-nums; color: #666; font-size: 0.9rem; min-height: 1.4em; margin: 0.25rem 0 0; }
+</style>
+<h1>Derivative</h1>
+<section slot="lede">
+  Nile, run on a different kind of number: the pipeline that draws a curve
+  also says how the picture changes as the curve moves. Followed downhill, a
+  circle finds a letter.
+</section>
+<section slot="demo">
+<div class="row">
+  <label>look for <input id="letter" type="text" maxlength="2" value="S" aria-label="the letter to look for"></label>
+  <span id="quick"></span>
+  <button id="again">start again</button>
+  <label><input id="forces" type="checkbox" checked> show the pull on each point</label>
+</div>
+<div class="pair">
+  <figure>
+    <figcaption><b>Led by the exact rasterizer</b> (roda's <code>RasterizeExact</code>)</figcaption>
+    <canvas id="exact" width="384" height="384"></canvas>
+    <p class="said" id="exact-said"></p>
+  </figure>
+  <figure>
+    <figcaption><b>Led by gezira's rasterizer</b> (<code>RasterizeParallel</code>)</figcaption>
+    <canvas id="snapped" width="384" height="384"></canvas>
+    <p class="said" id="snapped-said"></p>
+  </figure>
+</div>
+<p class="key">
+  <i style="background:#191919; margin-left:0"></i>shape and letter agree
+  <i style="background:#f47230"></i>shape where the letter is not
+  <i style="background:#84b9f3"></i>letter the shape has not reached
+</p>
+<div class="trio">
+  <figure>
+    <figcaption><b>Charge.</b> The outline's signed height in each pixel, after <code>ReduceBy</code>: all the pipeline knows of the curve.</figcaption>
+    <canvas id="charge" width="240" height="240"></canvas>
+  </figure>
+  <figure>
+    <figcaption><b>Its sum</b> along each row, after <code>WindScan</code>: the picture.</figcaption>
+    <canvas id="sum" width="240" height="240"></canvas>
+  </figure>
+  <figure>
+    <figcaption><b>Its derivative.</b> How each pixel changes as the marked point moves <span id="which">right</span>: the same pipeline, on dual numbers.</figcaption>
+    <canvas id="moving" width="240" height="240"></canvas>
+  </figure>
+</div>
+<p class="key">
+  In the last three: <i style="background:#1757ac; margin-left:0.3em"></i>less, or downward
+  <i style="background:#dc3c3d"></i>more, or upward.
+  They show the shape on the left. Point at one of its control points to mark it; hold shift for its movement down.
+</p>
+</section>
+<section slot="help">
+  type a letter, or pick one, and watch both circles look for it. Drag any
+  control point away and let go: the shape goes back to looking. Letters with
+  a hole in them (O, a, e) are beyond one closed curve.
+</section>
+<section slot="stats">
+<p>Rendering: about 120 lines of Nile and 190 of TypeScript; the looking (the error, its blur, the step) is the TypeScript. The page’s interface isn’t counted.</p>
+</section>
+<section slot="description">
+<p>
+  Nothing in this Nile was written to be differentiated. <code>RasterizeExact</code>
+  is the rasterizer the other pages can draw with: it cuts each curve where it
+  turns and where it meets the pixel grid, says the area each piece leaves in
+  its pixel, sums those by pixel and runs the sum along each row. When this
+  page loads, umgeni compiles the same source a second time, in your browser,
+  as its own derivative: every number in every kernel becomes the number and
+  how it changes as each of the shape's 32 control points moves across or
+  down, 64 directions in all. The compiled code is then an ordinary pipeline
+  whose tokens are 65 times as wide. The arithmetic of those wider numbers is
+  written once, and the interpreter of Nile's meaning uses it too, which is
+  how the compiled derivative is checked.
+</p>
+<p>
+  So each pixel of the shape's picture comes back with 64 slopes, and plain
+  TypeScript does the looking: it compares the picture with the letter's,
+  asks of each pixel on the outline which way would lessen the difference
+  nearby, and moves the control points a little that way, a thousand times.
+  The view of the difference starts blurred and sharpens, because a pixel's
+  coverage only changes where the outline is, and an outline cannot answer
+  for what it is not touching.
+</p>
+<p>
+  The two shapes differ in one stage. gezira's rasterizer moves each cut of a
+  curve onto the pixel grid when it is within a tenth of a pixel of it, so as
+  a point moves the area it computes goes in small steps about the true one,
+  and the slope it reports is the slope of the steps. The exact rasterizer
+  cuts where the curve meets the grid, and its slope is the area's. Both
+  shapes take the same steps by the same rule; the one with the truer slope
+  gets further.
+</p>
+</section>

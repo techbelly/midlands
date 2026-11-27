@@ -63,5 +63,6 @@ await page('tiger-main.ts', 'tiger-app.js');
 await page('strokes-main.ts', 'strokes-app.js');
 await page('paint-main.ts', 'paint-app.js');
 await page('samples-main.ts', 'samples-app.js');
+await page('derivative-main.ts', 'derivative-app.js');
 for (const f of readdirSync(join(demos, 'pages'))) writeFileSync(join(dist, f), renderPage(f, readFileSync(join(demos, 'pages', f), 'utf8')));
-console.log('demos/dist written — open index.html (text), tiger.html, strokes.html, paint.html, samples.html');
+console.log('demos/dist written — open index.html (text), tiger.html, strokes.html, paint.html, samples.html, derivative.html');
