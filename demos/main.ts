@@ -34,7 +34,7 @@ import { frameScheduler } from './src/schedule.js';
 const quote = () => {
   (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
     sources,
-    rasterizer.quoted(['TextSpans', 'TextBeziers', 'PlaceBeziers', 'TextLayout', 'WordWidths', 'LayoutGlyphs', 'Rasterize', 'RasterizeParallel', 'RasterizePixels', 'PaintSpans']),
+    rasterizer.quoted(['TextSpans', 'TextBeziers', 'PlaceBeziers', 'TextLayout', 'WordWidths', 'LayoutGlyphs', 'Rasterize', 'RasterizeParallel', 'RasterizePixels', 'RasterizeBy', 'EdgeSums', 'PaintSpans']),
   );
 };
 

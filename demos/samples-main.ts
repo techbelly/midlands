@@ -37,7 +37,7 @@ function tigerAt(size: number) {
 
 const modeEl = document.getElementById('mode') as HTMLSelectElement;
 const perfEl = document.getElementById('perf')!;
-(document.getElementById('nile') as HTMLElement).textContent = quoteNile(sources, ['FillWinding', 'FillEvenOdd', 'StrokeOutline', 'ClipPaint', 'Intersect', 'RasterizeParallel', 'PaintSpans']);
+(document.getElementById('nile') as HTMLElement).textContent = quoteNile(sources, ['FillWinding', 'FillEvenOdd', 'StrokeOutline', 'ClipPaint', 'Intersect', 'RasterizeParallel', 'RasterizeBy', 'EdgeSums', 'PaintSpans']);
 const grid = document.getElementById('samples')!;
 
 // A card, as the page needs it after building: the two canvases (one per

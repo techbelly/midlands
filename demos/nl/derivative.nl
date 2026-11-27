@@ -5,7 +5,7 @@
 -- h along a row, in WindScan, is the picture. One pipeline for each of the
 -- two ways of cutting a curve.
 EdgeCharge : Bezier >> EdgeSample
-    ⇒ MonotoneBeziers → DecomposeExact → GroupBy (@y, @x) → ReduceBy (@y, @x; a ⊕ +, h ⊕ +)
+    ⇒ EdgeSums (MonotoneBeziers → DecomposeExact)
 
 EdgeChargeSnapped : Bezier >> EdgeSample
-    ⇒ DecomposeBeziers → GroupBy (@y, @x) → ReduceBy (@y, @x; a ⊕ +, h ⊕ +)
+    ⇒ EdgeSums (DecomposeBeziers)

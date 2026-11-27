@@ -1,7 +1,7 @@
 # roda
 
 The Nile written beyond gezira: what a 2D graphics library needs that
-Amelang's 600 lines did not cover, in about 430 more. Gezira is the island
+Amelang's 600 lines did not cover, in about 450 more. Gezira is the island
 in the Nile at Cairo; Roda is the island beside it.
 
 Each file is one idea, and each is plain Nile apart from the declared access
@@ -11,7 +11,7 @@ adjacent pairs `p ∷ q`), which are what let a pipeline lower to the GPU.
 | file | what it adds | lines |
 |---|---|---|
 | [vector.nl](vector.nl) | cubic Béziers (gezira's are quadratic): flattening, transforms; affine maps composed (`∘`), inverted (`⁻¹`), and `Compose`, which folds a list of maps for a host; fill and stroke pipelines from cubics | 52 |
-| [rasterize-parallel.nl](rasterize-parallel.nl) | gezira's rasterizer with its sort and windowed scan declared: `GroupBy → ReduceBy` and a running sum by row, so the GPU may accumulate edge samples in any order | 20 |
+| [rasterize-parallel.nl](rasterize-parallel.nl) | a rasterizer said once, `RasterizeBy`: curves cut into edge samples, the samples summed by pixel in any order (`GroupBy → ReduceBy`), the sums run along each row, the winding turned into coverage. The cutting and the fill rule are its two parameters; gezira's cutting with the non-zero rule is `RasterizeParallel`, which the GPU lowers | 35 |
 | [rasterize-exact.nl](rasterize-exact.nl) | a rasterizer exact for the curve it is given: a quadratic cut where it turns and where it meets the pixel grid, each piece saying the area under the curve itself. gezira's moves a split point onto the grid when it is within a tenth of a pixel, and takes a piece as its chord; this one's coverage follows its control points smoothly, so its derivative is the area's, and the CPU and the GPU agree on it | 92 |
 | [spans.nl](spans.nl) | coverage spans painted in one colour, as pixels for a host to write | 19 |
 | [evenodd.nl](evenodd.nl) | the even-odd fill rule: one operator folding the winding into a triangle wave | 23 |

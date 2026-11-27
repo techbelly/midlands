@@ -23,8 +23,8 @@ const BLACK: Rgba = [0, 0, 0, 1];
 const HELP: Rgba = [1, 0.2, 0.2, 0.6]; // the samples' "helping lines"
 const circle = (x: number, y: number, r: number): Path => path().arc(x, y, r, 0, TAU).build();
 
-const STROKE = ['StrokeOutline', 'StrokeBezierPath', 'FillWinding', 'RasterizeParallel', 'PaintSpans'];
-const FILL = ['FlattenCubics', 'FillWinding', 'RasterizeParallel', 'PaintSpans'];
+const STROKE = ['StrokeOutline', 'StrokeBezierPath', 'FillWinding', 'RasterizeParallel', 'RasterizeBy', 'PaintSpans'];
+const FILL = ['FlattenCubics', 'FillWinding', 'RasterizeParallel', 'RasterizeBy', 'PaintSpans'];
 
 // The arc samples share their helping lines.
 function arcHelp(s: Sheet, xc: number, yc: number, r: number, a1: number, a2: number): void {
@@ -284,7 +284,7 @@ cairo_stroke (cr);`,
     },
   },
   {
-    id: 'fill_style', title: 'fill style', nile: ['FillEvenOdd', 'RasterizeEvenOdd', 'SpansOfEvenOdd', 'FillWinding', 'RasterizeParallel', 'SpansOf'],
+    id: 'fill_style', title: 'fill style', nile: ['FillEvenOdd', 'RasterizeEvenOdd', 'SpansOfEvenOdd', 'FillWinding', 'RasterizeParallel', 'SpansOf', 'RasterizeBy', 'EdgeSums'],
     cairo: `cairo_set_line_width (cr, 6);
 
 cairo_rectangle (cr, 12, 12, 232, 70);

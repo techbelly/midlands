@@ -40,7 +40,8 @@ export class Rasterizer {
     const at = names.findIndex((n) => usual.has(n));
     const rest = names.filter((n) => !usual.has(n));
     if (at < 0) return names;
-    return [...rest.slice(0, at), 'MonotoneBeziers', 'DecomposeExact', 'RasterizeExact', ...(names.includes('RasterizePixels') ? ['RasterizePixelsExact'] : []), ...rest.slice(at)];
+    const exact = ['MonotoneBeziers', 'DecomposeExact', 'RasterizeExact', ...(names.includes('RasterizePixels') ? ['RasterizePixelsExact'] : []), 'RasterizeBy', 'EdgeSums'];
+    return [...rest.slice(0, at), ...exact.filter((n) => !rest.includes(n)), ...rest.slice(at)];
   }
 
   /** For a timing line: which rasterizer drew. */

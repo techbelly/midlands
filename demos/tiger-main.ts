@@ -18,7 +18,7 @@ import { Rasterizer } from './src/rasterizer.js';
 const quote = () => {
   (document.getElementById('nile') as HTMLElement).textContent = quoteNile(
     sources,
-    rasterizer.quoted(['PathCubics', 'SvgFillBeziers', 'SvgStroke', 'StrokeOutline', 'StrokeBezierPath', 'ClipBeziers', 'RasterizeParallel', 'RasterizePixels', 'PaintSpans']),
+    rasterizer.quoted(['PathCubics', 'SvgFillBeziers', 'SvgStroke', 'StrokeOutline', 'StrokeBezierPath', 'ClipBeziers', 'RasterizeParallel', 'RasterizePixels', 'RasterizeBy', 'EdgeSums', 'PaintSpans']),
   );
 };
 

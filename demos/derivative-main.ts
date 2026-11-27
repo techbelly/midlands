@@ -18,7 +18,7 @@ const POINTS = 32;    // the shape's control points
 const STEPS = 900;
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-el('nile').textContent = quoteNile(sources, ['RasterizeExact', 'MonotoneBeziers', 'DecomposeExact', 'RasterizeParallel', 'DecomposeBeziers', 'WindScan', 'SpansOf', 'EdgeCharge']);
+el('nile').textContent = quoteNile(sources, ['RasterizeBy', 'EdgeSums', 'RasterizeExact', 'RasterizeParallel', 'MonotoneBeziers', 'DecomposeExact', 'DecomposeBeziers', 'WindScan', 'SpansOf', 'EdgeCharge']);
 
 // The same sources, as their own derivative: 2 directions a control point.
 // WebAssembly if the browser will compile a module this size where it

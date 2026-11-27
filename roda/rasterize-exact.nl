@@ -84,7 +84,7 @@ DecomposeExact : Bezier >> EdgeSample
                 C.y - A.y)
 
 RasterizeExact : Bezier >> CoverageSpan
-    ⇒ MonotoneBeziers → DecomposeExact → GroupBy (@y, @x) → ReduceBy (@y, @x; a ⊕ +, h ⊕ +) → WindScan → SpansOf
+    ⇒ RasterizeBy (MonotoneBeziers → DecomposeExact, SpansOf)
 
 -- The pixels themselves, for the GPU presenter (as RasterizePixels is to
 -- RasterizeParallel).
