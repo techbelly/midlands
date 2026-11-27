@@ -183,6 +183,15 @@ function draw(): void {
   pixels(movingCtx, (i) => signed(slope[down ? 1 : 0][i], most));
   ring(movingCtx);
   el('which').textContent = down ? 'down' : 'right';
+  // The panel summed is how the shape's area changes, which the curve's own
+  // formula also says; and the same sum by gezira's rasterizer, of this shape.
+  const direction = 2 * marked + (down ? 1 : 0);
+  const summed = (spans: number[][]) => spans.reduce((sum, s) => sum + s[4 * (direction + 1) + 2] * s[3], 0);
+  const px = (v: number) => `${v < 0 ? '−' : ''}${Math.abs(v).toFixed(4)}`;
+  el('slope-said').textContent =
+    `Summed over the picture, that is ${px(summed(fit.spans))} px² of area for each pixel the point moves ${down ? 'down' : 'right'}. ` +
+    `The curve's own formula says ${px(fit.areaSlope(marked, down))}. ` +
+    `The same sum by gezira's rasterizer, for this shape: ${px(summed(library.api.RasterizeParallel().run(fit.tokens())))}.`;
   el('perf').textContent = `The rasterizer as its own derivative: ${note} · ${stepMs.toFixed(1)} ms a step for each shape`;
   el('stats').textContent = `${POINTS} control points, ${POINTS} beziers · ${SIZE} × ${SIZE} px · each token ${1 + 2 * POINTS} times as wide as the rasterizer's own`;
 }

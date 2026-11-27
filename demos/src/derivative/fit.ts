@@ -44,6 +44,8 @@ export interface Fit {
   move(point: number, to: number[]): void; // a control point taken somewhere by hand
   rekindle(): void;                     // look again from here, the blur part way out
   beziers(): number[][];                // the shape as the rasterizer takes it
+  tokens(): number[][];                 // the same, each with how it moves as each control point does
+  areaSlope(point: number, down: boolean): number; // how the shape's area changes as a point moves, by formula
 }
 
 // The control points of a circle, to start from.
@@ -202,6 +204,21 @@ export function createFit(library: CompiledLibrary, rasterizer: Rasterizer, targ
       spread.fill(0);
     },
     beziers,
+    tokens,
+    // The area inside a path of quadratics is half the sum of
+    // (2 A×B + A×C + 2 B×C) / 3 over its beziers: quadratic in the control
+    // points, so a difference either side of a point is its slope exactly.
+    areaSlope(point, down) {
+      const cross = (a: number[], b: number[]) => a[0] * b[1] - a[1] * b[0];
+      const area = () => beziers().reduce((sum, [ax, ay, bx, by, cx, cy]) => sum + (2 * cross([ax, ay], [bx, by]) + cross([ax, ay], [cx, cy]) + 2 * cross([bx, by], [cx, cy])) / 3, 0) / 2;
+      const c = down ? 1 : 0, was = q[point][c], here = area();
+      q[point][c] = was + 1;
+      const after = area();
+      q[point][c] = was - 1;
+      const before = area();
+      q[point][c] = was;
+      return (Math.sign(here) * (after - before)) / 2;
+    },
   };
 }
 
