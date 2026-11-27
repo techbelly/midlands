@@ -38,7 +38,7 @@ export interface Fit {
   readonly gradient: Float64Array;      // how the error changes as each coordinate moves
   readonly step: number;
   readonly error: number;               // the squared error, summed
-  readonly overlap: number;             // the part of shape ∪ target that is both, 0..1
+  readonly overlap: number;             // how far the shape's picture, as its own rasterizer draws it, agrees with the target's
   readonly settled: boolean;
   advance(): void;                      // one step downhill
   move(point: number, to: number[]): void; // a control point taken somewhere by hand
@@ -126,14 +126,11 @@ export function createFit(library: CompiledLibrary, rasterizer: Rasterizer, targ
     each((s, at) => (coverage[at] = s[2]));
     const wrong = new Float64Array(size * size);
     error = 0;
-    let both = 0, either = 0;
     for (let i = 0; i < size * size; i++) {
       wrong[i] = coverage[i] - target[i];
       error += wrong[i] * wrong[i];
-      both += Math.min(coverage[i], target[i]);
-      either += Math.max(coverage[i], target[i]);
     }
-    overlap = either > 0 ? both / either : 0;
+    overlap = agreement(coverage, target);
     // What each pixel of the outline is to answer for: the error about it.
     const r = radius();
     const seen = r > 0 ? blurred(wrong, size, r) : wrong;
@@ -148,7 +145,9 @@ export function createFit(library: CompiledLibrary, rasterizer: Rasterizer, targ
     });
   }
 
-  // The control points spaced evenly along their own polygon.
+  // The control points spaced evenly along their own polygon. What the
+  // step remembered of each point's motion is dropped, since the points are
+  // not where they were; so the few steps after are short ones.
   function respace(): void {
     const side = q.map((p, i) => Math.hypot(q[(i + 1) % m][0] - p[0], q[(i + 1) % m][1] - p[1]));
     const round = side.reduce((a, b) => a + b, 0);
@@ -231,6 +230,17 @@ export function fitted(beziers: number[][], size: number, part = 0.76): number[]
   // A fraction of a pixel off centre, so that no straight side lies along the grid.
   const ox = size / 2 - (k * (x0 + x1)) / 2 + 0.137, oy = size / 2 - (k * (y0 + y1)) / 2 + 0.271;
   return beziers.map((b) => b.map((v, i) => (i % 2 === 0 ? ox + k * v : oy + k * v)));
+}
+
+// How much of two pictures is in both: the part of their union that is
+// their intersection, 0..1.
+export function agreement(a: Float64Array, b: Float64Array): number {
+  let both = 0, either = 0;
+  for (let i = 0; i < a.length; i++) {
+    both += Math.min(a[i], b[i]);
+    either += Math.max(a[i], b[i]);
+  }
+  return either > 0 ? both / either : 0;
 }
 
 export function coverageOf(spans: number[][], size: number): Float64Array {

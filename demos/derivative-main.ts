@@ -2,11 +2,14 @@
 // rasterizer that draws it. The Nile is nl/derivative.nl-lib; the page
 // compiles it a second time here, in the browser, as its own derivative
 // (umgeni's passes/derivative.ts), and src/derivative/fit.ts does the
-// looking. Two shapes take the same steps side by side, one led by roda's
-// exact rasterizer and one by gezira's.
+// looking. Two shapes take the same steps side by side from the same
+// circle, one led by roda's exact rasterizer and one by gezira's; the
+// circle is set down at random within a pixel each time, and the page
+// keeps count of how far each has got, since one of them ends somewhere
+// else for every start.
 
 import { compileLibrary, type CompiledLibrary } from '../umgeni/src/compile.js';
-import { circle, coverageOf, createFit, fitted, type Fit, type Rasterizer } from './src/derivative/fit.js';
+import { agreement, circle, coverageOf, createFit, fitted, type Fit, type Rasterizer } from './src/derivative/fit.js';
 import { parseTrueType } from './src/text/ttf.js';
 import { quoteNile } from './src/quote.js';
 import { nile, sources } from './nl/derivative.nl-lib';
@@ -47,22 +50,34 @@ interface Side {
   said: HTMLElement;
   fit: Fit | null;
   held: number | null; // the control point being dragged
+  ends: number[];      // how far each start for this letter got, once settled
 }
 const sides: Side[] = [
-  { rasterizer: 'RasterizeExact', canvas: el('exact'), said: el('exact-said'), fit: null, held: null },
-  { rasterizer: 'RasterizeParallel', canvas: el('snapped'), said: el('snapped-said'), fit: null, held: null },
+  { rasterizer: 'RasterizeExact', canvas: el('exact'), said: el('exact-said'), fit: null, held: null, ends: [] },
+  { rasterizer: 'RasterizeParallel', canvas: el('snapped'), said: el('snapped-said'), fit: null, held: null, ends: [] },
 ];
 let target: Float64Array = new Float64Array(SIZE * SIZE);
 let marked = 0;       // the control point the derivative panel is about
 let down = false;     // …moving down, not right (shift)
 let stepMs = 0;
+let looking = '';     // the letter being looked for
+let nudge = [0, 0];   // where within a pixel this start's circle was set down
+let counted = true;   // this start's ends are in the tally (or it was touched, and will not be)
+
+// How far a shape has got: its picture as the exact rasterizer draws it,
+// whichever rasterizer led it, against the letter's.
+const reached = (fit: Fit) => agreement(coverageOf(nile.RasterizeExact().run(fit.beziers()), SIZE), target);
 
 function lookFor(ch: string): boolean {
   const glyph = font.glyphFor(ch);
   if (glyph.beziers.length === 0) return false;
+  if (ch !== looking) for (const s of sides) s.ends = [];
+  looking = ch;
   target = coverageOf(nile.RasterizeExact().run(fitted(glyph.beziers, SIZE)), SIZE);
+  nudge = [Math.random() - 0.5, Math.random() - 0.5];
+  counted = false;
   for (const s of sides) {
-    s.fit = createFit(library, s.rasterizer, target, circle(POINTS, SIZE / 2, SIZE / 2, SIZE * 0.3), { size: SIZE, points: POINTS, steps: STEPS });
+    s.fit = createFit(library, s.rasterizer, target, circle(POINTS, SIZE / 2 + nudge[0], SIZE / 2 + nudge[1], SIZE * 0.3), { size: SIZE, points: POINTS, steps: STEPS });
     s.held = null;
   }
   return true;
@@ -140,8 +155,22 @@ function draw(): void {
       return [0, 1, 2].map((k) => 255 - both * (255 - INK[k]) - over * (255 - OVER[k]) - under * (255 - UNDER[k]));
     });
     outline(ctx, fit, forces);
-    s.said.textContent = `step ${Math.min(fit.step, STEPS)} of ${STEPS} · shape and letter agree over ${(100 * fit.overlap).toFixed(1)}%`;
+    s.said.textContent = `step ${Math.min(fit.step, STEPS)} of ${STEPS} · shape and letter agree over ${(100 * reached(fit)).toFixed(1)}%`;
   }
+  // Once both have settled untouched, where they ended joins the count.
+  if (!counted && sides.every((s) => s.fit!.settled)) {
+    counted = true;
+    for (const s of sides) s.ends.push(reached(s.fit!));
+  }
+  const range = (ends: number[]) => {
+    const lo = (100 * Math.min(...ends)).toFixed(1), hi = (100 * Math.max(...ends)).toFixed(1);
+    return lo === hi ? `${lo}%` : `${lo} to ${hi}%`;
+  };
+  const signedPx = (v: number) => `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(2)}`;
+  const starts = sides[0].ends.length;
+  el('tally').textContent =
+    `Both start from one circle, set down at random within a pixel: this time ${signedPx(nudge[0])}, ${signedPx(nudge[1])} px from the middle.` +
+    (starts === 0 ? '' : ` Over ${starts === 1 ? 'the one start' : `the ${starts} starts`} for ${looking} that settled untouched: the exact rasterizer's shape ended at ${range(sides[0].ends)}, gezira's at ${range(sides[1].ends)}.`);
   // What the pipeline says of the shape on the left.
   const fit = sides[0].fit!;
   const ring = (ctx: CanvasRenderingContext2D) => {
@@ -204,18 +233,27 @@ function frame(): void {
   let busy = false;
   const t0 = performance.now();
   let steps = 0;
-  for (const s of sides) {
-    const fit = s.fit!;
-    if (fit.settled || s.held !== null) continue;
-    for (let i = 0; i < 3 && !fit.settled; i++) {
-      fit.advance();
-      steps++;
+  try {
+    for (const s of sides) {
+      const fit = s.fit!;
+      if (fit.settled || s.held !== null) continue;
+      for (let i = 0; i < 3 && !fit.settled; i++) {
+        fit.advance();
+        steps++;
+      }
+      busy ||= !fit.settled;
     }
-    busy ||= !fit.settled;
+    if (steps > 0) stepMs = (performance.now() - t0) / steps;
+    draw();
+  } catch (e) {
+    // Nothing here should throw; if something does, say so and stop, where
+    // a loop that died quietly would look like a shape that had settled.
+    el('perf').textContent = `Stopped: ${String((e as Error).message ?? e)}`;
+    el('perf').className = 'perf err';
+    return;
   }
-  if (steps > 0) stepMs = (performance.now() - t0) / steps;
-  draw();
   if (busy) schedule();
+  else if (el<HTMLInputElement>('repeat').checked && sides.every((s) => s.held === null)) setTimeout(start, 700);
 }
 function schedule(): void {
   if (scheduled) return;
@@ -228,12 +266,14 @@ function schedule(): void {
 const letter = el<HTMLInputElement>('letter');
 function start(): void {
   const ch = [...letter.value].pop();
-  if (ch && lookFor(ch)) letter.value = ch;
+  // A character with no outline (a space) is not something to look for.
+  letter.value = ch && lookFor(ch) ? ch : looking;
   schedule();
 }
 letter.addEventListener('input', start);
 el('again').addEventListener('click', start);
 el('forces').addEventListener('change', schedule);
+el('repeat').addEventListener('change', schedule);
 for (const ch of ['S', 'C', 'G', '5', 'L', 'r', '&', '?']) {
   const b = document.createElement('button');
   b.textContent = ch;
@@ -247,9 +287,12 @@ for (const ch of ['S', 'C', 'G', '5', 'L', 'r', '&', '?']) {
 // Pointing marks a control point; dragging takes it somewhere, and letting
 // go sets the shape looking again from there.
 for (const s of sides) {
+  // Where the pointer is in the picture, kept to the picture: a captured
+  // pointer can be anywhere on the screen.
   const where = (e: PointerEvent): number[] => {
     const r = s.canvas.getBoundingClientRect();
-    return [((e.clientX - r.left) / r.width) * SIZE, ((e.clientY - r.top) / r.height) * SIZE];
+    const within = (v: number) => Math.max(0, Math.min(SIZE, v));
+    return [within(((e.clientX - r.left) / r.width) * SIZE), within(((e.clientY - r.top) / r.height) * SIZE)];
   };
   const nearest = (at: number[]): number | null => {
     let best: number | null = null, d = 4; // pixels of the picture
@@ -273,6 +316,7 @@ for (const s of sides) {
     const i = nearest(where(e));
     if (i === null) return;
     s.held = marked = i;
+    counted = true; // a start that was helped is not one to count
     s.canvas.setPointerCapture(e.pointerId);
   });
   const release = () => {
