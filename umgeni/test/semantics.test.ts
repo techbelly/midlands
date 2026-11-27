@@ -15,6 +15,7 @@ const library = ['types', 'bezier', 'stroke', 'rasterize', 'texture', 'composito
 const PROGRAMS: [string, string[]][] = [
   ['gezira + paint scenes', [...library, fixture('paint-scenes.nl')]],
   ['RasterizeParallel', [gezira('types.nl'), gezira('bezier.nl'), gezira('rasterize.nl'), gezira('texture.nl'), roda('rasterize-parallel.nl')]],
+  ['RasterizeExact', [gezira('types.nl'), gezira('bezier.nl'), gezira('rasterize.nl'), gezira('texture.nl'), roda('rasterize-parallel.nl'), roda('rasterize-exact.nl')]],
   ['chari kernels', [fixture('chari-kernels.nl')]],
 ];
 
