@@ -1,0 +1,12 @@
+-- The hinting page's Nile program: gezira's types and rasterizer, and roda's
+-- two (the one declared for parallel lowering, which says the stages every
+-- rasterizer shares, and the exact one, which the page draws with). The page
+-- compiles the same sources a second time in the browser, as their own
+-- derivative. Nothing here is the page's own.
+-- One source per line, relative to this file.
+../../gezira/types.nl
+../../gezira/bezier.nl
+../../gezira/rasterize.nl
+../../gezira/texture.nl
+../../roda/rasterize-parallel.nl
+../../roda/rasterize-exact.nl

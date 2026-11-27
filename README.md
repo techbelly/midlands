@@ -18,7 +18,7 @@ is a start.
 | [roda/](roda/) | the library beyond gezira: cubics and matrices, a rasterizer declared for parallel lowering and one exact for its curves, the even-odd rule, dashes, clipping to a shape, mesh gradients, images, text layout | ~450 lines of Nile |
 | [umgeni/](umgeni/) | a compiler for (extended) Nile → JavaScript, WebAssembly and WebGPU | ~6,500 lines by stage: Nile → AST 940; AST → IR 2,550, of which 470 are Nile's meaning in Mooi; then a back end each, IR → JS 1,070 (with the CPU runtime), IR → wasm 710, IR → GPU 1,270 |
 | [mooi/](mooi/) | a small language for writing down what a language means, as equations | ~390 lines |
-| [demos/](demos/) | text (TrueType and colour emoji), the Ghostscript tiger, strokes, a paint gallery, Cairo's samples drawn by Nile, and a circle that finds a letter by the rasterizer's own derivative | ~115 lines of Nile particular to the pages |
+| [demos/](demos/) | text (TrueType and colour emoji), the Ghostscript tiger, strokes, a paint gallery, Cairo's samples drawn by Nile, a circle that finds a letter by the rasterizer's own derivative, and small text that finds the pixel grid by it | ~115 lines of Nile particular to the pages |
 | [docs/](docs/) | two papers: the project's, and the compiler's first design as history | |
 
 The sizes are counted by `npm run sizes` (lines of source, comments included;

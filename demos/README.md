@@ -48,6 +48,17 @@ root builds `dist/` and serves it; `npm run demo:build` just builds.
   steps its snap to the grid makes; three small panels show the edge
   samples, their running sum and the derivative itself. The tiger, text and
   strokes pages offer the exact rasterizer too, as a checkbox.
+- **hinting**: a paragraph of small text finds the pixel grid. The same
+  rasterizers ([nl/hinting.nl-lib](nl/hinting.nl-lib), with nothing of the
+  page's own) compiled as their own derivative, this time with a direction
+  for each knot of a warp of each axis of a line, a knot to a pixel line.
+  A line has hundreds of knots and a letter lies among twenty or so, so
+  each letter is rasterized by itself with those and the pictures added.
+  [src/hinting/hint.ts](src/hinting/hint.ts) slides the knots to bring down
+  the picture's grey (the sum of c (1 − c)), holding the blurred picture and
+  the spacing; stems and baselines come to rest on pixel lines without
+  anything saying what they are. Two sliders let go of what holds the
+  letters, and the page shows what then becomes of them.
 
 The pages other than samples are fragments in [pages/](pages/): a title, a
 one-line lede, the renderer switcher, the demo, how to use it, its static

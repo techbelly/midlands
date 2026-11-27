@@ -1,0 +1,129 @@
+<meta name="width" content="860">
+<style>
+  .row { display: flex; gap: 0.4rem 1.2rem; align-items: center; flex-wrap: wrap; margin: 0.6rem 0; }
+  .row textarea { font: inherit; width: 100%; box-sizing: border-box; padding: 0.3rem 0.4rem; resize: vertical; }
+  .row input[type=range] { width: 6rem; vertical-align: middle; }
+  .row select { font: inherit; }
+  .row button { font: inherit; padding: 0.15rem 0.7rem; border: 1px solid #bbb; background: #f5f5f5; border-radius: 4px; cursor: pointer; }
+  .row output { display: inline-block; min-width: 4.2em; color: #555; font-variant-numeric: tabular-nums; }
+  .pair { display: flex; gap: 1rem 1.6rem; flex-wrap: wrap; margin-top: 0.9rem; }
+  figure { margin: 0; min-width: 0; }
+  .pair figure { width: min-content; }
+  figure.large { margin-top: 0.9rem; }
+  figcaption { font-size: 0.9rem; color: #444; margin-bottom: 0.35rem; }
+  figcaption b { color: #222; }
+  .page { position: relative; display: inline-block; line-height: 0; max-width: 100%; overflow-x: auto; }
+  .page canvas { width: auto; border: none; image-rendering: pixelated; cursor: crosshair; touch-action: none; }
+  .page .lens { position: absolute; display: none; box-sizing: border-box; border: 1px solid rgba(226, 92, 20, 0.55); border-radius: 2px; pointer-events: none; }
+  canvas.large { image-rendering: pixelated; display: block; margin-top: 0.35rem; }
+  .said { font-variant-numeric: tabular-nums; color: #666; font-size: 0.9rem; min-height: 1.4em; margin: 0.25rem 0 0; }
+  .key { font-size: 0.85rem; color: #555; margin: 0.6rem 0 0; }
+  .key i { display: inline-block; width: 0.8em; height: 0.8em; vertical-align: -0.05em; margin: 0 0.3em 0 0.9em; border-radius: 2px; }
+</style>
+<h1>Hinting</h1>
+<section slot="lede">
+  Small text set down anywhere is grey. Here it finds the pixel grid by
+  itself: the rasterizer says how each pixel changes as the outline moves,
+  and the outline moves to make the picture less grey.
+</section>
+<section slot="demo">
+<div class="row">
+  <textarea id="text" rows="3" spellcheck="false" aria-label="the text to set">Small text set down anywhere is grey. A stem a pixel and a third wide lands across two columns of pixels, and the baseline part way down a row. Here each line is let slide, a knot to every pixel line, until its picture is less grey and still looks the same from a little way off. Nobody has said what a stem is, or a baseline: only how grey a pixel is, and how each one changes as the outline moves, which the rasterizer knew already.</textarea>
+</div>
+<div class="row">
+  <label>at <input id="size" type="range" min="9" max="24" step="1" value="13"> <output id="size-said"></output></label>
+  <label>each pixel as <select id="times"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select> of your screen's across</label>
+  <button id="again">set it down elsewhere</button>
+</div>
+<div class="row">
+  <label>keep the blurred picture <input id="keep" type="range" min="0" max="8" step="0.5" value="4"> <output id="keep-said"></output></label>
+  <label>keep the spacing even <input id="even" type="range" min="0" max="6" step="0.5" value="2"> <output id="even-said"></output></label>
+  <button id="loose">let go of both</button>
+  <button id="held">hold as at first</button>
+</div>
+<div class="pair">
+  <figure>
+    <figcaption><b>As it was set down</b>, by <code>RasterizeExact</code>.</figcaption>
+    <div class="page"><canvas id="before"></canvas><div class="lens"></div></div>
+    <p class="said" id="before-said"></p>
+  </figure>
+  <figure>
+    <figcaption><b>As it has moved</b>, by the same rasterizer.</figcaption>
+    <div class="page"><canvas id="after"></canvas><div class="lens"></div></div>
+    <p class="said" id="after-said"></p>
+  </figure>
+</div>
+<figure class="large">
+  <figcaption>
+    <b>Large</b>, what is in the box (point at either paragraph to move it): as it was set down, then as it has moved.
+    <label style="margin-left: 0.8em"><input id="outlines" type="checkbox" checked> show the outlines</label>
+  </figcaption>
+  <canvas class="large" id="before-large"></canvas>
+  <canvas class="large" id="after-large"></canvas>
+</figure>
+<p class="key">
+  <i style="background:#1757ac; margin-left:0"></i>the outline as the font has it
+  <i style="background:#e25c14"></i>the outline where the knots have taken it; and along the top and
+  down the left, how far each pixel line's knot has slid.
+</p>
+</section>
+<section slot="help">
+  watch the paragraph on the right come into focus, then compare the two.
+  Type something else, or choose a size. <i>set it down elsewhere</i> puts the
+  paragraph some other fraction of a pixel off the grid. Point at a line to
+  see part of it large. The two sliders are what holds the letters: <i>let go
+  of both</i> to see what sharpness alone asks for.
+</section>
+<section slot="stats">
+<p>Rendering: about 130 lines of Nile, none of them the page’s own, and 280 of TypeScript: the lines, the warp, what to want (the grey, the blurred picture, the even spacing) and the step. The page’s interface isn’t counted.</p>
+</section>
+<section slot="description">
+<p>
+  A font’s outlines know nothing of pixels. Set at 13 px wherever the line
+  happens to fall, a stem a pixel and a third wide lands across two columns
+  and is drawn as two columns of grey; the baseline lands part way down a
+  row. Fonts carry hints to put this right, small programs written glyph by
+  glyph that move stems and baselines onto the grid, and renderers that do
+  without them look for stems themselves. This page has neither. It has the
+  rasterizer, and the rasterizer’s derivative.
+</p>
+<p>
+  <code>RasterizeExact</code> is the rasterizer the other pages can draw
+  with, and nothing in it was written for this. umgeni compiles it a second
+  time, in your browser, as its own derivative: every number becomes the
+  number and how it changes along each of a set of directions. The
+  directions here are the knots of a warp. Each line of the paragraph has a
+  knot on every pixel line, across and down; each may slide along its axis,
+  and a point of an outline moves with the two knots it lies between. So
+  each pixel comes back with how its coverage would change as each knot
+  slid.
+</p>
+<p>
+  A line has some four hundred knots, and a letter lies among twenty or so.
+  So each letter is rasterized by itself, with a direction for each knot it
+  lies among and no others, and the letters’ pictures are added: they do not
+  cover one another, so the sum is the line’s picture exactly, and each
+  letter’s slopes go to the knots they belong to. Every letter of a line
+  answers to the same knots down, which is why a line keeps one baseline.
+</p>
+<p>
+  The rest is a few lines of arithmetic in TypeScript. A pixel’s grey is
+  c (1 − c) for coverage c: nothing when it is wholly inked or wholly clear.
+  The sum is brought down, with two things held: the picture blurred a pixel
+  each way is to stay what it was, and neighbouring knots are to slide
+  together. Stems come to rest on pixel lines and the baseline on a row,
+  because that is where the grey is least, and nobody has said what a stem
+  or a baseline is.
+</p>
+<p>
+  What holds the letters matters as much as what moves them. Let go of both
+  and the paragraph is sharper still and no longer says anything: arches and
+  bowls close up into slabs, which are the sharpest things there are. Either
+  hold alone keeps it readable. And the page shows what this cannot do. A
+  diagonal or a curve has grey however it is placed, so letters made of them
+  gain little. Thin strokes are drawn lighter when they come to rest a pixel
+  wide. A hinter that knows what a stem is can keep every stem the same
+  width, and every line’s letters the same height; this knows only the
+  picture, a line at a time.
+</p>
+</section>
