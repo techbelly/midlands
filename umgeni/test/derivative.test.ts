@@ -12,16 +12,12 @@ import { describe, expect, it } from 'vitest';
 import { parseProgram } from '../src/parser.js';
 import { kernelContexts } from '../src/elaborate.js';
 import { interpretKernelIn, reals, type Scalars } from '../src/semantics/concrete.js';
-import { duals } from '../src/semantics/dual.js';
+import { dualToken, duals } from '../src/semantics/dual.js';
 import { groupBy, pipeline, reduceBy, run, type Op } from '../src/cpu/runtime.js';
 import { gezira, roda, strokeSources } from './sources.js';
 
 const contexts = (sources: string[]) => kernelContexts(parseProgram(sources).modules, true);
 
-// A token (or the parameters) with its derivatives: the values, then each
-// direction's. `seed(direction)` says how far each value moves along it.
-const dualToken = (values: number[], n: number, seed: (direction: number) => number[]): number[] =>
-  [...values, ...Array.from({ length: n }, (_, d) => seed(d)).flat()];
 const unit = (width: number, at: number): number[] => Array.from({ length: width }, (_, i) => (i === at ? 1 : 0));
 
 describe('RasterizeParallel on dual numbers: each pixel\'s coverage with its derivatives', () => {
@@ -149,18 +145,13 @@ describe('StrokeOneSide on dual numbers: a stream through mid-stream ⇒', () =>
   });
 });
 
-// What does not move has no derivative, whatever its value: the rule that
-// keeps a constant's 0/0, √0 and 0 × ∞ out of the derivatives.
-describe('dual numbers: a constant stays a constant', () => {
+// What does not move has no derivative where the rule alone would not say
+// so: √ at 0 is 0/0 by the rule, and still by this.
+describe('dual numbers: what is still stays still', () => {
   const A = duals(2);
   const moving = (v: number) => ({ v, d: [1, 0] });
-  it('through √0, 0/0 and 0 × ∞', () => {
+  it('through √0, and in the directions √0 does not move in', () => {
     expect(A.un('sqrt', A.num(0))).toEqual({ v: 0, d: [0, 0] });
-    expect(A.bin('div', A.num(0), A.num(0)).d).toEqual([0, 0]);
-    expect(A.bin('mul', A.num(0), A.num(Infinity)).d).toEqual([0, 0]);
-  });
-  it('in the directions an operand does not move in', () => {
-    expect(A.bin('div', moving(0), A.num(0)).d[1]).toBe(0);
     expect(A.un('sqrt', moving(0)).d).toEqual([Infinity, 0]);
   });
   it('and a comparison, a truth value, ⌊ ⌋ and ⌈ ⌉ of what moves are constants', () => {

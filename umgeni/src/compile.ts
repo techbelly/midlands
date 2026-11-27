@@ -1,6 +1,7 @@
 // The whole toolchain, end to end:
 //   source text -> parse -> AST -> elaborate -> IR -> fuse, fold, CSE, prune, tail
 //     -> generate -> JS (with wasm modules inside, when asked) -> Ops
+// and, when asked for a library's derivative, IR -> its derivative first.
 //
 // compileLibrary exposes every intermediate stage as data (AST, IR, generated
 // source), in keeping with the project's inspectability principle.
@@ -10,6 +11,7 @@ import { parseProgram } from './parser.js';
 import { elaborateProgram } from './elaborate.js';
 import { generate, type CodegenOptions } from './cpu/js.js';
 import { cseModule } from './passes/cse.js';
+import { derivativeModule } from './passes/derivative.js';
 import { foldModule, pruneModule } from './passes/simplify.js';
 import { fuseModule } from './passes/fuse.js';
 import { tailModule } from './passes/tail.js';
@@ -35,6 +37,11 @@ export interface CompileOptions extends CodegenOptions {
    *  and popping (passes/tail.ts). Default true: measured −9% wall on the
    *  paragraph benchmark's JS build, output identical. */
   tail?: boolean;
+  /** Compile the library as its own derivative in this many directions
+   *  (passes/derivative.ts): every token is 1 + directions times as wide,
+   *  its values and then each direction's derivatives. Processes that have
+   *  no derivative are listed as unsupported. Default: none. */
+  directions?: number;
 }
 
 export interface CompiledLibrary {
@@ -59,6 +66,12 @@ export function compileLibrary(sources: string[], opts: CompileOptions = {}): Co
   // goes before CSE so its keys see folded constants; pruning after, since
   // CSE's own lets can be the last readers of a dead one.
   let ir = elaborated.ir;
+  let unsupported = elaborated.unsupported;
+  if (opts.directions) {
+    const derived = derivativeModule(ir, opts.directions);
+    ir = derived.ir;
+    unsupported = [...unsupported, ...derived.unsupported];
+  }
   if (opts.fuse ?? true) ir = fuseModule(ir);
   if (opts.cse ?? true) ir = pruneModule(cseModule(foldModule(ir)));
   if (opts.tail ?? true) ir = tailModule(ir);
@@ -67,7 +80,7 @@ export function compileLibrary(sources: string[], opts: CompileOptions = {}): Co
   // its token layouts, host-process slots and (with countOps) its counter.
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
   const R = new Function('rt', `return (${source})(rt);`)(rt) as Record<string, rt.Factory>;
-  return { api: rt.api(R), source, unsupported: elaborated.unsupported, templates: elaborated.templates, ir, modules, ops: rt.opsCounter(R) };
+  return { api: rt.api(R), source, unsupported, templates: elaborated.templates, ir, modules, ops: rt.opsCounter(R) };
 }
 
 // Convenience: instantiate one process and drive it via a Streamer.
